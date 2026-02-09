@@ -1,0 +1,112 @@
+appId: com.changsha.pipeline.calc
+productName: 浆体管道临界流速计算工具
+copyright: Copyright © 2024 长沙有色冶金设计研究院有限公司
+
+directories:
+  buildResources: build
+  output: release
+
+# 更新服务器配置
+# 选项1: 使用 GitHub Releases (推荐)
+# publish:
+#   provider: github
+#   owner: your-username
+#   repo: your-repo-name
+
+# 选项2: 使用通用 HTTP 服务器
+publish:
+  provider: generic
+  url: https://your-update-server.com/updates
+  # 或者使用本地/内网服务器
+  # url: http://192.168.1.100:8080/updates
+
+files:
+  - dist/**
+  - electron/**
+  - backend/**
+  - requirements.txt
+  - package.json
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!.editorconfig"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
+  - "!**/{appveyor.yml,.travis.yml,circle.yml}"
+  - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  requestedExecutionLevel: asInvoker
+  sign: false
+  signingHashAlgorithms: null
+  certificateFile: null
+  certificatePassword: null
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ${productName}
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  license: LICENSE.txt
+  menuCategory: false
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.utilities
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  title: ${productName} ${version}
+  icon: build/icon.icns
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+  category: Utility
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+appImage:
+  artifactName: ${productName}-${version}-${arch}.AppImage
+
+deb:
+  depends:
+    - python3
+    - python3-pip
+
+extraResources:
+  - from: backend
+    to: backend
+    filter:
+      - "**/*"
+  - from: requirements.txt
+    to: requirements.txt
