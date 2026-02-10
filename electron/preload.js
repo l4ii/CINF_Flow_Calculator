@@ -3,9 +3,6 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // 暴露安全的API给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
-  platform: process.platform,
-  isDev: process.env.NODE_ENV === 'development' || !require('electron').app.isPackaged,
-  
   // 更新相关 API
   update: {
     // 检查更新

@@ -1,35 +1,34 @@
 @echo off
-chcp 65001 >nul
-echo 正在启动浆体管道临界流速计算工具...
+cd /d "%~dp0"
+chcp 65001 >nul 2>nul
+
+echo [Flow Cal] Starting...
 echo.
 
-echo [1/3] 检查Python环境...
+echo [1/3] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo 错误: 未找到Python环境，请先安装Python
+    echo Error: Python not found. Please install Python.
     pause
     exit /b 1
 )
 
-echo [2/3] 检查Node.js环境...
+echo [2/3] Checking Node.js...
 node --version >nul 2>&1
 if errorlevel 1 (
-    echo 错误: 未找到Node.js环境，请先安装Node.js
+    echo Error: Node.js not found. Please install Node.js.
     pause
     exit /b 1
 )
 
-echo [3/3] 启动应用...
-echo.
-echo 提示: 请保持此窗口打开，关闭窗口将停止后端服务
+echo [3/3] Starting app...
+echo Keep this window open - closing it will stop the backend.
 echo.
 
-start "前端开发服务器" cmd /k "npm run dev:react"
-timeout /t 3 /nobreak >nul
-start "Electron应用" cmd /k "npm run dev:electron"
+start /d "%~dp0" "Frontend+Electron" cmd /k "npm run dev"
 timeout /t 2 /nobreak >nul
 
-echo 正在启动后端API服务器...
+echo Starting backend API...
 python backend/app.py
 
 pause

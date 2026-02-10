@@ -89,22 +89,6 @@ export default function MainContent({
     }))
   }
 
-  // 将数学符号转换为普通文本（用于参数描述显示）
-  const convertMathSymbolsToText = (text: string): string => {
-    return text
-      .replace(/ω_s/g, 'omega_s')
-      .replace(/ω/g, 'omega')
-      .replace(/λ/g, 'lambda')
-      .replace(/θ/g, 'theta')
-      .replace(/Δρ/g, 'Delta rho')
-      .replace(/ρg/g, 'rho_g')
-      .replace(/ρk/g, 'rho_k')
-      .replace(/ρ/g, 'rho')
-      .replace(/Cv/g, 'Cv')
-      .replace(/d85/g, 'd85')
-      .replace(/d90/g, 'd90')
-  }
-
   // 渲染包含LaTeX数学符号的描述文本
   const renderDescriptionWithMath = (text: string): JSX.Element[] => {
     // 匹配 $...$ 格式的LaTeX数学表达式
@@ -159,6 +143,13 @@ export default function MainContent({
       // 克诺罗兹法
       'sqrt_term': '平方根项',
       'sin_theta': 'sin(θ)',
+      
+      // 沿程摩阻损失：i_k = λ·(V²·ρ_k)/(2gD·ρ_s)
+      'numerator': '流速平方与浆体密度项',
+      'denominator': '重力与管径项',
+      
+      // 密度混合公式：ρ_k = 1/(Cw/ρg+(1-Cw)/ρs)，混合项为浓度与密度加权倒数
+      'denom': '浓度与密度加权倒数项',
     }
     
     const label = labelMap[key] || key
@@ -178,6 +169,9 @@ export default function MainContent({
       'leading_coef': '\\frac{2.26}{\\sqrt{\\lambda}}',
       'sqrt_term': '\\sqrt{gD \\cdot \\frac{\\Delta\\rho}{\\rho}}',
       'sin_theta': '\\sin(\\theta)',
+      'numerator': 'V^2 \\cdot \\rho_k',
+      'denominator': '2gD \\cdot \\rho_s',
+      'denom': '\\frac{C_w}{\\rho_g} + \\frac{1-C_w}{\\rho_s}',
     }
     
     const mathFormula = mathFormulas[key]
@@ -208,7 +202,13 @@ export default function MainContent({
       .replace(/ρ/g, '\\rho')
       .replace(/ω/g, '\\omega')
       .replace(/λ/g, '\\lambda')
+      .replace(/β/g, '\\beta')
+      .replace(/·/g, ' \\cdot ')
       .replace(/√/g, '\\sqrt')
+      .replace(/\bQk\b/g, 'Q_k')
+      .replace(/\bCd\b/g, 'C_d')
+      .replace(/\bDL\b/g, 'D_L')
+      .replace(/\bV_L\b/g, 'V_L')
       // 处理分数形式 (a/b) 或 (ps - pl)/pl
       .replace(/\(([^()]+)\/([^()]+)\)/g, '\\frac{$1}{$2}')
       // 处理次方：先处理分数次方 ^(1/3) 或 ^(1/6) 或 ^(1/2)
@@ -542,7 +542,7 @@ export default function MainContent({
               <h1 className={`text-2xl font-bold mb-2 ${
                 darkMode ? 'text-gray-100' : 'text-gray-900'
               }`}>
-                长沙院浆体管道临界流速计算工具
+                长沙院浆体管道计算工具
               </h1>
               <p className={`text-xs ${
                 darkMode ? 'text-gray-400' : 'text-gray-500'
@@ -551,62 +551,46 @@ export default function MainContent({
               </p>
             </div>
 
-            {/* Frame - 公司介绍 */}
+            {/* Frame - 公司介绍：左图右文，下方信息栏 */}
             <div className={`rounded-xl shadow-lg border-0 overflow-hidden ${
               darkMode ? 'bg-gradient-to-br from-gray-800 to-gray-900' : 'bg-white'
             }`}>
-              {/* 公司图片 - 顶部 */}
-              <div className="relative w-full">
-                <div className="relative overflow-hidden" style={{ maxHeight: '820px' }}>
+              {/* 上区：图片左侧 + 文字右侧 */}
+              <div className="flex flex-row gap-6 p-6 pb-4">
+                <div className="flex-shrink-0 w-64 sm:w-72">
                   <img 
                     src="/pic1.png" 
                     alt="长沙有色冶金设计研究院" 
-                    className="w-full object-cover"
-                    style={{ height: '820px', objectPosition: 'center' }}
+                    className="w-full h-48 sm:h-56 object-cover rounded-lg"
                   />
-                  <div className={`absolute inset-0 bg-gradient-to-t ${
-                    darkMode ? 'from-gray-900/80 via-gray-900/40 to-transparent' : 'from-black/60 via-black/30 to-transparent'
-                  }`}></div>
-                  {/* 标题叠加在图片上 */}
-                  <div className="absolute bottom-0 left-0 right-0 px-8 py-8">
-                    <h2 className={`text-3xl font-bold tracking-tight mb-2 ${
-                      darkMode ? 'text-white' : 'text-white'
-                    }`}>
-                      公司简介
-                    </h2>
-                    <div className={`text-base ${
-                      darkMode ? 'text-gray-200' : 'text-gray-100'
-                    }`}>
-                      长沙有色冶金设计研究院有限公司
-                    </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className={`text-xl font-bold tracking-tight mb-2 ${
+                    darkMode ? 'text-gray-100' : 'text-gray-900'
+                  }`}>
+                    公司简介
+                  </h2>
+                  <div className={`text-sm font-medium mb-3 ${
+                    darkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}>
+                    长沙有色冶金设计研究院有限公司
                   </div>
+                  <p className={`text-base leading-relaxed ${
+                    darkMode ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>
+                      长沙有色冶金设计研究院有限公司
+                    </strong>
+                    {' '}（简称长沙有色院）于1953年正式成立，国家高新技术企业，国家技术创新示范企业，国家企业技术中心，是我国最早成立的大型综合性设计研究单位之一，隶属于中国铝业集团有限公司，为中铝国际工程股份有限公司的子公司。
+                  </p>
                 </div>
               </div>
 
-              {/* 内容区域 */}
-              <div className="px-8 py-8">
-                {/* 公司介绍内容 */}
+              {/* 下区：信息栏（发展历程、核心优势等） */}
+              <div className="px-8 pb-8 pt-2">
                 <div className={`space-y-6 text-base leading-relaxed ${
                   darkMode ? 'text-gray-300' : 'text-gray-700'
                 }`}>
-                  {/* 第一段 - 突出显示 */}
-                  <div className={`p-6 rounded-lg ${
-                    darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-blue-50/50 border border-blue-100'
-                  }`}>
-                    <p className={`text-lg leading-relaxed ${
-                      darkMode ? 'text-gray-200' : 'text-gray-800'
-                    }`}>
-                      <strong className={`text-xl font-bold block mb-3 ${
-                        darkMode ? 'text-white' : 'text-gray-900'
-                      }`}>
-                        长沙有色冶金设计研究院有限公司
-                      </strong>
-                      <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
-                        （简称长沙有色院）于1953年正式成立，国家高新技术企业，国家技术创新示范企业，国家企业技术中心，是我国最早成立的大型综合性设计研究单位之一，隶属于中国铝业集团有限公司，为中铝国际工程股份有限公司的子公司。
-                      </span>
-                    </p>
-                  </div>
-                  
                   {/* 发展历程 */}
                   <div>
                     <h3 className={`text-lg font-semibold mb-3 ${
@@ -752,116 +736,85 @@ export default function MainContent({
                   </div>
                 </div>
 
-                {/* 业务联系信息 */}
+                {/* 公司信息 - 横向展示 */}
                 <div className={`pt-8 border-t ${
                   darkMode ? 'border-gray-700' : 'border-gray-200'
                 }`}>
-                  <h3 className={`text-xl font-bold mb-6 ${
+                  <h3 className={`text-xl font-bold mb-4 ${
+                    darkMode ? 'text-white' : 'text-gray-900'
+                  }`}>
+                    公司信息
+                  </h3>
+                  <div className={`p-6 rounded-xl mb-8 flex flex-wrap gap-6 ${
+                    darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'
+                  }`}>
+                    <div className="flex items-start min-w-0 flex-1 basis-40">
+                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
+                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
+                      }`}></div>
+                      <div className="min-w-0">
+                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
+                          darkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>联系地址</div>
+                        <div className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>湖南省长沙市雨花区木莲东路299号</div>
+                      </div>
+                    </div>
+                    <div className="flex items-start min-w-0 flex-1 basis-24">
+                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
+                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
+                      }`}></div>
+                      <div className="min-w-0">
+                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
+                          darkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>邮政编码</div>
+                        <div className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>410019</div>
+                      </div>
+                    </div>
+                    <div className="flex items-start min-w-0 flex-1 basis-32">
+                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
+                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
+                      }`}></div>
+                      <div className="min-w-0">
+                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
+                          darkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>办公室</div>
+                        <a href="tel:0731-84397032" className={`text-sm hover:opacity-80 transition-opacity ${
+                          darkMode ? 'text-blue-400' : 'text-blue-600'
+                        }`}>0731-84397032</a>
+                      </div>
+                    </div>
+                    <div className="flex items-start min-w-0 flex-1 basis-32">
+                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
+                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
+                      }`}></div>
+                      <div className="min-w-0">
+                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
+                          darkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>传真</div>
+                        <div className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>0731-82228112</div>
+                      </div>
+                    </div>
+                    <div className="flex items-start min-w-0 flex-1 basis-48">
+                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
+                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
+                      }`}></div>
+                      <div className="min-w-0">
+                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
+                          darkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>Email</div>
+                        <a href="mailto:cinf@chinalco.com.cn" className={`text-sm hover:opacity-80 transition-opacity ${
+                          darkMode ? 'text-blue-400' : 'text-blue-600'
+                        }`}>cinf@chinalco.com.cn</a>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 业务联系 - 各部门 */}
+                  <h3 className={`text-xl font-bold mb-4 ${
                     darkMode ? 'text-white' : 'text-gray-900'
                   }`}>
                     业务联系
                   </h3>
-                  
-                  {/* 基础联系信息卡片 */}
-                  <div className={`p-6 rounded-xl mb-6 ${
-                    darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'
-                  }`}>
-                        <div className="space-y-4">
-                          <div className="flex items-start">
-                            <div className={`w-1 h-6 rounded-full mr-3 mt-1 ${
-                              darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                            }`}></div>
-                            <div className="flex-1">
-                              <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                联系地址
-                              </div>
-                              <div className={`text-sm ${
-                                darkMode ? 'text-gray-200' : 'text-gray-800'
-                              }`}>
-                                湖南省长沙市雨花区木莲东路299号
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-start">
-                            <div className={`w-1 h-6 rounded-full mr-3 mt-1 ${
-                              darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                            }`}></div>
-                            <div className="flex-1">
-                              <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                邮政编码
-                              </div>
-                              <div className={`text-sm ${
-                                darkMode ? 'text-gray-200' : 'text-gray-800'
-                              }`}>
-                                410019
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-start">
-                            <div className={`w-1 h-6 rounded-full mr-3 mt-1 ${
-                              darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                            }`}></div>
-                            <div className="flex-1">
-                              <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                办公室
-                              </div>
-                              <a 
-                                href="tel:0731-84397032"
-                                className={`text-sm hover:opacity-80 transition-opacity ${
-                                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                                }`}
-                              >
-                                0731-84397032
-                              </a>
-                            </div>
-                          </div>
-                          <div className="flex items-start">
-                            <div className={`w-1 h-6 rounded-full mr-3 mt-1 ${
-                              darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                            }`}></div>
-                            <div className="flex-1">
-                              <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                传真
-                              </div>
-                              <div className={`text-sm ${
-                                darkMode ? 'text-gray-200' : 'text-gray-800'
-                              }`}>
-                                0731-82228112
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-start">
-                            <div className={`w-1 h-6 rounded-full mr-3 mt-1 ${
-                              darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                            }`}></div>
-                            <div className="flex-1">
-                              <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                Email
-                              </div>
-                              <a 
-                                href="mailto:cinf@chinalco.com.cn" 
-                                className={`text-sm hover:opacity-80 transition-opacity ${
-                                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                                }`}
-                              >
-                                cinf@chinalco.com.cn
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-                  </div>
-
-                  {/* 各部门联系信息 */}
                   <div className="space-y-4">
                         <div className={`p-5 rounded-lg ${
                           darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-white border border-gray-200 shadow-sm'
@@ -991,7 +944,7 @@ export default function MainContent({
             <h1 className={`text-2xl font-bold mb-2 ${
               darkMode ? 'text-gray-100' : 'text-gray-900'
             }`}>
-              长沙院浆体管道临界流速计算工具
+              长沙院浆体管道计算工具
             </h1>
             <p className={`text-xs ${
               darkMode ? 'text-gray-400' : 'text-gray-500'
@@ -1075,156 +1028,157 @@ export default function MainContent({
             <h1 className={`text-2xl font-bold mb-2 ${
               darkMode ? 'text-gray-100' : 'text-gray-900'
             }`}>
-              长沙院浆体管道临界流速计算工具
+              设置
             </h1>
             <p className={`text-xs ${
               darkMode ? 'text-gray-400' : 'text-gray-500'
             }`}>
-              基于行业标准公式计算浆体管道临界流速的专业工具
+              显示、语言与应用更新
             </p>
           </div>
 
-          {/* Frame - 设置 */}
-          <div className={`rounded-lg shadow-sm border p-5 mb-5 ${
-            darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
-          }`}>
-            <h2 className={`text-xl font-semibold mb-4 ${
-              darkMode ? 'text-gray-100' : 'text-gray-900'
-            }`}>
-              设置
-            </h2>
-            
+          {/* 设置卡片容器 */}
+          <div className="space-y-5">
             {/* 显示模式设置 */}
-            <div className={`mb-6 p-4 rounded-lg border ${
-              darkMode ? 'bg-gray-600 border-gray-500' : 'bg-gray-50 border-gray-200'
+            <div className={`rounded-lg shadow-sm border p-5 ${
+              darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
             }`}>
-              <h3 className={`text-base font-semibold mb-3 ${
-                darkMode ? 'text-gray-200' : 'text-gray-700'
+              <h2 className={`text-base font-semibold mb-4 ${
+                darkMode ? 'text-gray-200' : 'text-gray-900'
               }`}>
                 显示模式
-              </h3>
-            <div className="space-y-3">
-              <button
-                onClick={() => onDarkModeChange && onDarkModeChange(false)}
-                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center justify-between ${
-                  !darkModeValue
-                    ? darkMode
+              </h2>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => onDarkModeChange && onDarkModeChange(false)}
+                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                    !darkModeValue
                       ? 'bg-blue-600 text-white'
-                      : 'bg-blue-600 text-white'
-                    : darkMode
-                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <div>
+                      : darkMode
+                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
                   <div className="font-medium">浅色显示</div>
                   <div className={`text-xs mt-1 ${
-                    !darkModeValue ? 'opacity-80' : 'opacity-60'
+                    !darkModeValue ? 'opacity-90' : 'opacity-60'
                   }`}>
                     默认模式，适合日间使用
                   </div>
-                </div>
-                {!darkModeValue && <span className="text-xl">✓</span>}
-              </button>
-              <button
-                onClick={() => onDarkModeChange && onDarkModeChange(true)}
-                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center justify-between ${
-                  darkModeValue
-                    ? darkMode
+                </button>
+                <button
+                  onClick={() => onDarkModeChange && onDarkModeChange(true)}
+                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                    darkModeValue
                       ? 'bg-blue-600 text-white'
-                      : 'bg-blue-600 text-white'
-                    : darkMode
-                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <div>
+                      : darkMode
+                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
                   <div className="font-medium">暗色模式</div>
                   <div className={`text-xs mt-1 ${
-                    darkModeValue ? 'opacity-80' : 'opacity-60'
+                    darkModeValue ? 'opacity-90' : 'opacity-60'
                   }`}>
                     护眼模式，适合夜间使用
                   </div>
-                </div>
-                {darkModeValue && <span className="text-xl">✓</span>}
-              </button>
-            </div>
-            </div>
-
-            {/* 语言设置 */}
-            <div className={`p-4 rounded-lg border ${
-              darkMode ? 'bg-gray-600 border-gray-500' : 'bg-gray-50 border-gray-200'
-            }`}>
-              <h3 className={`text-base font-semibold mb-3 ${
-                darkMode ? 'text-gray-200' : 'text-gray-700'
-              }`}>
-                语言调节
-              </h3>
-              <div className="space-y-3">
-                <button
-                  onClick={() => onLanguageChange && onLanguageChange('zh')}
-                  className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center justify-between ${
-                    language === 'zh'
-                      ? darkMode
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-blue-600 text-white'
-                      : darkMode
-                      ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div>
-                    <div className="font-medium">中文</div>
-                    <div className={`text-xs mt-1 ${
-                      language === 'zh' ? 'opacity-80' : 'opacity-60'
-                    }`}>
-                      简体中文
-                    </div>
-                  </div>
-                  {language === 'zh' && <span className="text-xl">✓</span>}
-                </button>
-                <button
-                  onClick={() => onLanguageChange && onLanguageChange('en')}
-                  className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center justify-between ${
-                    language === 'en'
-                      ? darkMode
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-blue-600 text-white'
-                      : darkMode
-                      ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div>
-                    <div className="font-medium">English</div>
-                    <div className={`text-xs mt-1 ${
-                      language === 'en' ? 'opacity-80' : 'opacity-60'
-                    }`}>
-                      English
-                    </div>
-                  </div>
-                  {language === 'en' && <span className="text-xl">✓</span>}
                 </button>
               </div>
             </div>
 
-            {/* 更新检查 */}
-            {typeof window !== 'undefined' && (window as any).electronAPI?.update && (
-              <div className={`mt-6 p-4 rounded-lg border ${
-                darkMode ? 'bg-gray-600 border-gray-500' : 'bg-gray-50 border-gray-200'
+            {/* 语言设置 */}
+            <div className={`rounded-lg shadow-sm border p-5 ${
+              darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+            }`}>
+              <h2 className={`text-base font-semibold mb-4 ${
+                darkMode ? 'text-gray-200' : 'text-gray-900'
               }`}>
-                <h3 className={`text-base font-semibold mb-3 ${
-                  darkMode ? 'text-gray-200' : 'text-gray-700'
+                语言调节
+              </h2>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => onLanguageChange && onLanguageChange('zh')}
+                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                    language === 'zh'
+                      ? 'bg-blue-600 text-white'
+                      : darkMode
+                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="font-medium">中文</div>
+                  <div className={`text-xs mt-1 ${
+                    language === 'zh' ? 'opacity-90' : 'opacity-60'
+                  }`}>
+                    简体中文
+                  </div>
+                </button>
+                <button
+                  onClick={() => onLanguageChange && onLanguageChange('en')}
+                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                    language === 'en'
+                      ? 'bg-blue-600 text-white'
+                      : darkMode
+                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="font-medium">English</div>
+                  <div className={`text-xs mt-1 ${
+                    language === 'en' ? 'opacity-90' : 'opacity-60'
+                  }`}>
+                    English
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* 关于软件的建议 */}
+            <div className={`rounded-lg shadow-sm border p-5 ${
+              darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+            }`}>
+              <h2 className={`text-base font-semibold mb-4 ${
+                darkMode ? 'text-gray-200' : 'text-gray-900'
+              }`}>
+                关于软件的建议
+              </h2>
+              <p className={`text-sm mb-4 ${
+                darkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}>
+                如有功能建议、问题反馈或合作意向，欢迎联系开发团队。
+              </p>
+              <a
+                href={`mailto:xuqianglai@outlook.com?subject=${encodeURIComponent('【长沙院浆体管道计算工具】软件建议与反馈')}&body=${encodeURIComponent(
+                  '软件名称：长沙院浆体管道计算工具\n\n' +
+                  '建议/反馈类型：□ 功能建议  □ 问题反馈  □ 其他\n\n' +
+                  '内容说明：\n\n\n\n'
+                )}`}
+                className={`inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  darkMode
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                联系开发团队
+              </a>
+            </div>
+
+            {/* 应用更新 */}
+            {typeof window !== 'undefined' && (window as any).electronAPI?.update && (
+              <div className={`rounded-lg shadow-sm border p-5 ${
+                darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+              }`}>
+                <h2 className={`text-base font-semibold mb-4 ${
+                  darkMode ? 'text-gray-200' : 'text-gray-900'
                 }`}>
                   应用更新
-                </h3>
+                </h2>
+                <div className={`text-sm mb-4 ${
+                  darkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}>
+                  当前版本: <span className="font-medium">{currentVersion}</span>
+                </div>
                 <div className="space-y-3">
-                  <div className={`text-sm mb-3 ${
-                    darkMode ? 'text-gray-300' : 'text-gray-600'
-                  }`}>
-                    当前版本: <span className="font-medium">{currentVersion}</span>
-                  </div>
-                  
                   {updateStatus === 'idle' && (
                     <button
                       onClick={handleCheckForUpdates}
@@ -1358,8 +1312,12 @@ export default function MainContent({
   const validateParameters = (): string | null => {
     if (!formula) return '请选择公式'
     
-    // 检查所有必填参数是否已填写
-    for (const param of formula.parameters) {
+    // B.C.克诺罗兹法每步独立：只校验步骤1 所需参数（K、G、W、ρg），不要求 dp、β
+    const paramsToCheck = formula.id === 'kronodze_pressure'
+      ? formula.parameters.filter((p) => ['K', 'G', 'W', 'rho_g'].includes(p.name))
+      : formula.parameters
+
+    for (const param of paramsToCheck) {
       const value = parameters[param.name]
       
       // 如果参数没有默认值且未填写
@@ -1460,45 +1418,80 @@ export default function MainContent({
         },
         {
           responseType: 'blob',
-          timeout: API_TIMEOUT
+          timeout: API_TIMEOUT,
+          validateStatus: (status) => status >= 200 && status < 300
         }
       )
 
-      // 创建下载链接
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = url
-      // 文件名格式：长沙院浆体计算_公式名_日期
-      const date = new Date().toISOString().split('T')[0].replace(/-/g, '')
-      const formulaName = formula.name.replace(/\s+/g, '')
-      link.setAttribute('download', `长沙院浆体计算_${formulaName}_${date}.docx`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
+      // 检查响应类型
+      if (response.data instanceof Blob) {
+        // 检查是否是错误响应（JSON格式的blob）
+        const contentType = response.headers['content-type'] || ''
+        if (contentType.includes('application/json')) {
+          // 如果是JSON响应，说明是错误
+          const text = await response.data.text()
+          try {
+            const errorData = JSON.parse(text)
+            throw new Error(errorData.error || '导出失败')
+          } catch (e) {
+            if (e instanceof Error && e.message !== '导出失败') {
+              throw e
+            }
+            throw new Error('导出失败：服务器返回错误')
+          }
+        }
+        
+        // 创建下载链接
+        const url = window.URL.createObjectURL(response.data)
+        const link = document.createElement('a')
+        link.href = url
+        
+        // 从响应头获取文件名（包含序号）
+        const contentDisposition = response.headers['content-disposition']
+        let filename = `长沙院浆体计算_${formula.name.replace(/\s+/g, '')}_${new Date().toISOString().split('T')[0].replace(/-/g, '')}_001.docx`
+        
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+          if (filenameMatch && filenameMatch[1]) {
+            filename = filenameMatch[1].replace(/['"]/g, '')
+            // 处理UTF-8编码的文件名
+            if (filename.startsWith('UTF-8\'\'')) {
+              filename = decodeURIComponent(filename.replace(/^UTF-8''/, ''))
+            }
+          }
+        }
+        
+        link.setAttribute('download', filename)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        window.URL.revokeObjectURL(url)
+      } else {
+        throw new Error('服务器返回了无效的响应格式')
+      }
     } catch (error: any) {
       console.error('导出失败:', error)
       let errorMessage = '导出失败'
       
       if (error.code === 'ECONNABORTED') {
         errorMessage = '请求超时，请检查后端服务是否正常运行'
-      } else if (error.message && error.message.includes('Network Error')) {
+      } else if (error.message && (error.message.includes('Network Error') || error.message.includes('Failed to fetch'))) {
         errorMessage = '网络错误：无法连接到后端服务器。请确保后端服务已启动（运行 python backend/app.py）'
       } else if (error.response) {
         // 服务器返回了响应
         if (error.response.data instanceof Blob) {
           // 如果是blob响应，尝试读取错误信息
-          error.response.data.text().then((text: string) => {
+          try {
+            const text = await error.response.data.text()
             try {
               const errorData = JSON.parse(text)
-              alert(errorData.error || errorMessage)
+              errorMessage = errorData.error || errorMessage
             } catch {
-              alert(`导出失败: ${error.response.status} ${error.response.statusText}`)
+              errorMessage = `导出失败: ${error.response.status} ${error.response.statusText}`
             }
-          }).catch(() => {
-            alert(`导出失败: ${error.response.status} ${error.response.statusText}`)
-          })
-          return
+          } catch {
+            errorMessage = `导出失败: ${error.response.status} ${error.response.statusText}`
+          }
         } else {
           // 尝试解析JSON错误响应
           try {
@@ -1542,14 +1535,14 @@ export default function MainContent({
   }
 
   return (
-    <div className={`flex-[4] overflow-y-auto ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+    <div className={`flex-[4] min-h-0 overflow-y-auto ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
       <div className="max-w-[calc(100vw*4/5)] mx-auto p-6" style={{ maxWidth: 'min(calc(100vw*4/5), 1440px)' }}>
         {/* Header */}
         <div className="mb-5">
           <h1 className={`text-2xl font-bold mb-2 ${
             darkMode ? 'text-gray-100' : 'text-gray-900'
           }`}>
-            长沙院浆体管道临界流速计算工具
+            长沙院浆体管道计算工具
           </h1>
           <p className={`text-xs ${
             darkMode ? 'text-gray-400' : 'text-gray-500'
@@ -1565,23 +1558,164 @@ export default function MainContent({
           <h2 className={`text-xl font-semibold mb-3 ${
             darkMode ? 'text-gray-100' : 'text-gray-900'
           }`}>
-            {formula.name}:
+            {formula.name}：
           </h2>
           
-          {/* 数学公式显示 */}
-          <div className={`mb-4 p-3 rounded-lg overflow-x-auto ${
-            darkMode ? 'bg-gray-600' : 'bg-gray-50'
-          }`}>
-            <BlockMath math={convertFormulaToLatex(formula.formula)} />
-          </div>
-          
-          <p className={`text-xs leading-relaxed mb-4 ${
-            darkMode ? 'text-gray-300' : 'text-gray-500'
-          }`}>
-            {renderDescriptionWithMath(formula.description)}
-          </p>
+          {/* B.C.克诺罗兹法：简介 + 三步分块，每步为「标题→公式→该步参数输入→计算按钮→结果」 */}
+          {formula?.id === 'kronodze_pressure' ? (
+            <>
+              <p className={`text-xs leading-relaxed mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                本模型主要用于计算流体输送系统中压力管道的临界流速和摩阻损失，其计算结果可运用于管材和泵选型。该模型适用于：1、有压隧洞泥沙运输，管道内悬浮液处于第一、第二临界流速情况下；2、适用于固体密度小于3、颗粒粒径小于0.4mm的浆体。在重力流管道情况下，该模型的应用价值有限。当体积浓度＞30%时，该模型计算得出的数据与实际情况偏差较大。
+              </p>
 
-          {/* Input Parameters - Two Column Layout */}
+              {/* 1. 计算矿浆流量：公式 → 本步参数 → 计算 → 结果 */}
+              <div className={`rounded-xl border-2 p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-500' : 'bg-white border-gray-300'}`}>
+                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>1. 计算矿浆流量</div>
+                <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <BlockMath math="Q_k = K \cdot W \cdot \left(\frac{1}{\rho_g}+\frac{G}{W}\right)" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {formula.parameters.filter((p) => ['K', 'G', 'W', 'rho_g'].includes(p.name)).map((param) => (
+                    <div key={param.name}>
+                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                        {renderDescriptionWithMath(param.label || param.name)}
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={rawInputs[param.name] ?? (parameters[param.name] != null && !isNaN(parameters[param.name]!) ? String(parameters[param.name]) : '')}
+                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
+                          onBlur={() => handleParameterBlur(param.name)}
+                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
+                          placeholder={param.default !== undefined ? String(param.default) : '请输入数值'}
+                        />
+                        {param.unit != null && param.unit !== '' && (
+                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => handleCalculate(false)} disabled={loading} className={`mb-4 px-4 py-2 rounded-lg font-medium ${darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'} disabled:opacity-50`}>计算</button>
+                <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>计算结果：</div>
+                <div className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                  {result?.success && result.result?.intermediate?.step_A_Qk != null ? result.result.intermediate.step_A_Qk : result?.error || '—'}
+                </div>
+                <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>单位 t/h</div>
+              </div>
+
+              {/* 2. 计算临界管径：公式(按dp) → 本步参数 → 计算 → 结果 */}
+              <div className={`rounded-xl border-2 p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-500' : 'bg-white border-gray-300'}`}>
+                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>2. 计算临界管径</div>
+                {(() => {
+                  const dpRaw = parameters['dp'] ?? rawInputs['dp']
+                  const dpNum = typeof dpRaw === 'number' && !isNaN(dpRaw) ? dpRaw : (typeof dpRaw === 'string' ? parseFloat(dpRaw) : NaN)
+                  if (dpNum <= 0.07 && !isNaN(dpNum)) {
+                    return (
+                      <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>当 dp≤0.07 mm：</span>
+                        <BlockMath math="Q_k = 0.157\beta \cdot D_L \cdot (1 + 3.434 \cdot \sqrt[4]{C_d \cdot D_L^{0.15}})" />
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>由 Q_k 反解 D_L</div>
+                      </div>
+                    )
+                  }
+                  if (dpNum > 0.07 && dpNum <= 0.15) {
+                    return (
+                      <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>当 0.07&lt;dp≤0.15 mm：</span>
+                        <BlockMath math="Q_k = 0.2\beta \cdot D_L \cdot (1 + 2.48 \cdot \sqrt[3]{C_d \cdot \sqrt[4]{D_L}})" />
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>由 Q_k 反解 D_L</div>
+                      </div>
+                    )
+                  }
+                  return <div className={`mb-3 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>根据下方输入的 dp 自动选择（dp≤0.07 或 0.07～0.15 mm）</div>
+                })()}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {formula.parameters.filter((p) => ['dp', 'beta'].includes(p.name)).map((param) => (
+                    <div key={param.name}>
+                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                        {renderDescriptionWithMath(param.label || param.name)}
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={rawInputs[param.name] ?? (parameters[param.name] != null && !isNaN(parameters[param.name]!) ? String(parameters[param.name]) : '')}
+                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
+                          onBlur={() => handleParameterBlur(param.name)}
+                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
+                          placeholder={param.default !== undefined ? String(param.default) : '请输入数值'}
+                        />
+                        {param.unit != null && param.unit !== '' && (
+                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => handleCalculate(false)} disabled={loading} className={`mb-4 px-4 py-2 rounded-lg font-medium ${darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'} disabled:opacity-50`}>计算</button>
+                <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>计算结果：</div>
+                <div className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                  {result?.success && result.result?.intermediate?.step_B_DL_mm != null ? `${result.result.intermediate.step_B_DL_mm} mm` : result?.error || '—'}
+                </div>
+              </div>
+
+              {/* 3. 计算临界流速：公式 → 由步骤1、2结果计算，无额外参数 → 计算 → 结果 + 动画 */}
+              <div className={`rounded-xl border-2 p-6 ${darkMode ? 'bg-blue-900 bg-opacity-30 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
+                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>3. 计算临界流速</div>
+                <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <BlockMath math="V_L = 0.255\beta(1+2.48\sqrt[3]{C_d}\sqrt[4]{D_L})" />
+                </div>
+                <div className={`text-xs mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>由步骤 1、2 的结果及 β 计算，无需额外输入。点击「计算」得到临界流速。</div>
+                <button type="button" onClick={() => handleCalculate(false)} disabled={loading} className={`mb-4 px-4 py-2 rounded-lg font-medium ${darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'} disabled:opacity-50`}>计算</button>
+                <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>计算结果：</div>
+                <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                  {result?.success && result.result?.Vc !== undefined ? `${result.result.Vc} m/s` : result?.error || '—'}
+                </div>
+                {result?.success && result.result?.Vc !== undefined && (
+                  <button type="button" onClick={() => { if (lockedVc === null) { updateLockedVc(result.result!.Vc ?? null); setAutoCalculateRef(true); } else { updateLockedVc(null); setAutoCalculateRef(false); } }} className={`mt-2 text-xs px-2 py-1 rounded ${lockedVc !== null ? (darkMode ? 'bg-red-900 bg-opacity-50 text-red-300' : 'bg-red-100 text-red-700') : (darkMode ? 'bg-green-900 bg-opacity-50 text-green-300' : 'bg-green-100 text-green-700')}`}>
+                    {lockedVc !== null ? '🔒 已锁定' : '🔓 锁定'}
+                  </button>
+                )}
+                {lockedVc !== null && result?.success && result.result?.Vc !== undefined && (() => {
+                  const newVc = result.result.Vc
+                  const animationType = result.animation_type || 'still-flow'
+                  const velocityRatio = result.velocity_ratio ?? (newVc / lockedVc)
+                  let statusText: string, bgColor: string, borderColor: string
+                  if (animationType === 'settle-30') { statusText = '⚠️ 严重沉降'; bgColor = darkMode ? 'bg-red-900 bg-opacity-30' : 'bg-red-100'; borderColor = darkMode ? 'border-red-600' : 'border-red-300' }
+                  else if (animationType === 'settle-20') { statusText = '⚠️ 中度沉降'; bgColor = darkMode ? 'bg-orange-900 bg-opacity-30' : 'bg-orange-100'; borderColor = darkMode ? 'border-orange-600' : 'border-orange-300' }
+                  else if (animationType === 'settle-10-flow') { statusText = '⚠️ 轻度沉降'; bgColor = darkMode ? 'bg-yellow-900 bg-opacity-30' : 'bg-yellow-100'; borderColor = darkMode ? 'border-yellow-600' : 'border-yellow-300' }
+                  else if (animationType === 'still-flow') { statusText = '⚡ 临界状态'; bgColor = darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-100'; borderColor = darkMode ? 'border-blue-600' : 'border-blue-300' }
+                  else { statusText = '✅ 正常流动'; bgColor = darkMode ? 'bg-green-900 bg-opacity-30' : 'bg-green-100'; borderColor = darkMode ? 'border-green-600' : 'border-green-300' }
+                  return (
+                    <div className={`mt-2 pt-2 border-t ${darkMode ? 'border-blue-700' : 'border-blue-200'}`}>
+                      <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>锁定的临界流速: <span className="font-semibold">{lockedVc} m/s</span></div>
+                      <div className={`py-2 px-3 rounded text-xs ${bgColor} border ${borderColor} ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{statusText} — 当前 {newVc} m/s，锁定 {lockedVc} m/s（{(velocityRatio * 100).toFixed(1)}%）</div>
+                    </div>
+                  )
+                })()}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={`mb-4 p-3 rounded-lg overflow-x-auto ${
+                darkMode ? 'bg-gray-600' : 'bg-gray-50'
+              }`}>
+                <BlockMath math={convertFormulaToLatex(formula.formula)} />
+              </div>
+              <p className={`text-xs leading-relaxed mb-4 ${
+                darkMode ? 'text-gray-300' : 'text-gray-500'
+              }`}>
+                {renderDescriptionWithMath(formula.description)}
+              </p>
+            </>
+          )}
+
+          {/* Input Parameters - 非 B.C.克诺罗兹法 时显示统一参数区 */}
+          {formula?.id !== 'kronodze_pressure' && (
           <div className={`border-t pt-4 ${
             darkMode ? 'border-gray-600' : 'border-gray-200'
           }`}>
@@ -1596,26 +1730,7 @@ export default function MainContent({
                   <label className={`block text-sm font-medium mb-1 ${
                     darkMode ? 'text-gray-200' : 'text-gray-700'
                   }`}>
-                    {(() => {
-                      const labelText = (param.label || param.name) as string
-                      const parts = labelText.split(/(d85|d90)/g)
-                      // 如果不包含 d85/d90，就原样显示
-                      if (parts.length === 1) return labelText
-                      return (
-                        <span className="inline-flex flex-wrap items-baseline gap-x-1">
-                          {parts.map((part, idx) => {
-                            if (part === 'd85') return <InlineMath key={`${param.name}-d85-${idx}`} math={'d_{85}'} />
-                            if (part === 'd90') return <InlineMath key={`${param.name}-d90-${idx}`} math={'d_{90}'} />
-                            return <span key={`${param.name}-txt-${idx}`}>{part}</span>
-                          })}
-                        </span>
-                      )
-                    })()}
-                    {param.description && (
-                      <span className="ml-2 text-gray-400 text-xs">
-                        ({convertMathSymbolsToText(param.description)})
-                      </span>
-                    )}
+                    {renderDescriptionWithMath(param.label || param.name)}
                   </label>
                   <div className="flex items-center space-x-2">
                     <input
@@ -1623,7 +1738,6 @@ export default function MainContent({
                       inputMode="decimal"
                       autoComplete="off"
                       spellCheck={false}
-                      // 允许输入小数点，且可用键盘/滚轮按 6 位精度微调（由逻辑侧控制精度）
                       min={param.name === 'Cv' ? 0 : undefined}
                       max={param.name === 'Cv' ? 1 : undefined}
                       value={(() => {
@@ -1641,19 +1755,23 @@ export default function MainContent({
                       }`}
                       placeholder={param.default !== undefined ? String(param.default) : "请输入数值"}
                     />
-                    <span className={`text-sm w-20 ${
-                      darkMode ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
-                      {param.unit}
-                    </span>
+                    {param.unit != null && param.unit !== '' && (
+                      <span className={`text-sm shrink-0 ${
+                        darkMode ? 'text-gray-400' : 'text-gray-500'
+                      }`}>
+                        {param.unit}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           </div>
+          )}
         </div>
 
-        {/* Results Section - Below Input Parameters */}
+        {/* Results Section - 仅非 B.C.克诺罗兹法 时显示（克诺罗兹法无单独计算结果区） */}
+        {formula?.id !== 'kronodze_pressure' && (
         <div className={`rounded-lg shadow-sm border p-5 mb-5 ${
           darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
         }`}>
@@ -1670,14 +1788,18 @@ export default function MainContent({
                 <div className={`text-xs ${
                   darkMode ? 'text-gray-300' : 'text-gray-600'
                 }`}>
-                  临界流速计算结果:
+                  {formula?.id === 'friction_loss'
+                    ? '沿程摩阻损失:'
+                    : formula?.id === 'density_mixing'
+                    ? '浆体密度:'
+                    : '临界流速计算结果:'}
                 </div>
-                {result?.success && result.result?.Vc !== undefined && (
+                {result?.success && result.result?.Vc !== undefined && formula?.id !== 'kronodze_pressure' && (
                   <button
                     onClick={() => {
                       if (lockedVc === null) {
                         // 锁定当前临界流速
-                        updateLockedVc(result.result!.Vc)
+                        updateLockedVc(result.result!.Vc ?? null)
                         setAutoCalculateRef(true) // 启用自动计算
                       } else {
                         // 解锁
@@ -1703,9 +1825,9 @@ export default function MainContent({
               <div className={`text-xl font-bold ${
                 darkMode ? 'text-blue-400' : 'text-blue-600'
               }`}>
-                {result?.success
-                  ? `${result.result?.Vc} ${result.result?.unit || 'm/s'}`
-                  : result?.error || 'N/A m/s'}
+                {result?.success && (result.result?.Vc !== undefined || result.result?.i_k !== undefined || result.result?.rho_k !== undefined)
+                  ? `${result.result?.Vc ?? result.result?.i_k ?? result.result?.rho_k} ${result.result?.unit ?? ''}`
+                  : result?.error || '—'}
               </div>
               {lockedVc !== null && (
                 <div className={`mt-2 pt-2 border-t ${
@@ -2055,8 +2177,8 @@ export default function MainContent({
               )}
             </div>
 
-            {result?.success && result.result?.intermediate && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+            {result?.success && result.result?.intermediate && formula?.id !== 'kronodze_pressure' && (
+              <div className={`mt-4 p-4 rounded-lg ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
                 <div className={`text-sm font-medium mb-3 ${
                   darkMode ? 'text-gray-200' : 'text-gray-700'
                 }`}>
@@ -2092,6 +2214,7 @@ export default function MainContent({
             )}
           </div>
         </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex justify-end space-x-3">

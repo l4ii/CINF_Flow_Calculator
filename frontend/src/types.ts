@@ -15,14 +15,17 @@ export interface FormulaInfo {
 }
 
 export interface FlowState {
-  似均质流态: FormulaInfo[]
-  非均质流态: FormulaInfo[]
+  临界流速计算?: FormulaInfo[]
+  沿程摩阻损失?: FormulaInfo[]
+  密度混合公式?: FormulaInfo[]
 }
 
 export interface CalculationResult {
   success: boolean
   result?: {
-    Vc: number
+    Vc?: number
+    i_k?: number
+    rho_k?: number
     unit: string
     intermediate?: Record<string, number>
   }

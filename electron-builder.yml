@@ -1,9 +1,9 @@
 appId: com.changsha.pipeline.calc
-productName: 浆体管道临界流速计算工具
+productName: 长沙院浆体管道计算工具
 copyright: Copyright © 2024 长沙有色冶金设计研究院有限公司
 
 directories:
-  buildResources: build
+  buildResources: electron/build
   output: release
 
 # 更新服务器配置
@@ -21,7 +21,7 @@ publish:
   # url: http://192.168.1.100:8080/updates
 
 files:
-  - dist/**
+  - frontend/dist/**
   - electron/**
   - backend/**
   - requirements.txt
@@ -43,16 +43,11 @@ win:
     - target: nsis
       arch:
         - x64
-    - target: portable
-      arch:
-        - x64
-  icon: build/icon.ico
+  icon: icon.ico
   artifactName: ${productName}-${version}-${arch}.${ext}
   requestedExecutionLevel: asInvoker
-  sign: false
-  signingHashAlgorithms: null
-  certificateFile: null
-  certificatePassword: null
+  sign: null
+  verifyUpdateCodeSignature: false
 
 nsis:
   oneClick: false
@@ -60,11 +55,19 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: ${productName}
-  installerIcon: build/icon.ico
-  uninstallerIcon: build/icon.ico
-  installerHeaderIcon: build/icon.ico
-  license: LICENSE.txt
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  installerHeaderIcon: icon.ico
+  license: LICENSE.nsis.txt
   menuCategory: false
+  displayLanguageSelector: false
+  include: electron/build/installer.nsh
+  warningsAsErrors: false
+  runAfterFinish: false
+  # 不请求管理员权限；installer.nsh 中通过 customInstallMode 强制仅当前用户并跳过选择页，避免 UAC 导致安装程序重启、许可证页出现两次
+  allowElevation: false
+  perMachine: false
+  selectPerMachineByDefault: false
 
 mac:
   target:
@@ -72,13 +75,13 @@ mac:
       arch:
         - x64
         - arm64
-  icon: build/icon.icns
+  # icon: icon.icns  # 暂时注释，等准备好 icon.icns 放入 electron/build 后再启用
   category: public.app-category.utilities
   artifactName: ${productName}-${version}-${arch}.${ext}
 
 dmg:
   title: ${productName} ${version}
-  icon: build/icon.icns
+  # icon: icon.icns  # 暂时注释，等准备好 icon.icns 放入 electron/build 后再启用
   contents:
     - x: 130
       y: 220
@@ -91,7 +94,7 @@ linux:
   target:
     - AppImage
     - deb
-  icon: build/icon.png
+  icon: icon.png
   category: Utility
   artifactName: ${productName}-${version}-${arch}.${ext}
 
@@ -104,9 +107,20 @@ deb:
     - python3-pip
 
 extraResources:
+  # 安装包图标等（打包后运行时窗口图标从 resources/build 读取）
+  - from: electron/build
+    to: build
+  # 包含后端文件（优先使用打包的exe，如果没有则使用源代码）
   - from: backend
     to: backend
     filter:
-      - "**/*"
+      - "**/*.py"
+      - "**/*.exe"
+      - "**/dist/**"
+      - "!**/__pycache__/**"
+      - "!**/*.pyc"
+      - "!**/build/**"
+      - "!**/*.spec"
+      - "!**/build_backend.py"
   - from: requirements.txt
     to: requirements.txt

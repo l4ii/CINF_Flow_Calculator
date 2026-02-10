@@ -1,37 +1,66 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron')
 const path = require('path')
-const { spawn } = require('child_process')
+const { spawn, execSync } = require('child_process')
 const fs = require('fs')
+const os = require('os')
 const { autoUpdater } = require('electron-updater')
+
+// 减轻 Windows 下缓存目录权限导致的 ERROR: Unable to move the cache / Gpu Cache Creation failed
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
+  app.commandLine.appendSwitch('disable-application-cache')
+  const cacheDir = path.join(app.getPath('userData'), 'Cache')
+  try {
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
+    app.commandLine.appendSwitch('disk-cache-dir', cacheDir)
+  } catch (e) {
+    // 忽略，使用默认缓存路径
+  }
+}
 
 let mainWindow
 let backendProcess
 
 // 判断是否为开发环境
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+// 仅根据是否打包判断：打包后的 exe 始终为生产模式，避免“打开软件就进 dev 模式”
+const isDev = !app.isPackaged
 
 // 获取资源路径（开发环境和生产环境不同）
 function getResourcePath(...paths) {
   if (isDev) {
     return path.join(__dirname, '..', ...paths)
   } else {
-    // 生产环境：Windows在resources目录，macOS在app.asar外
-    if (process.platform === 'darwin') {
-      return path.join(process.resourcesPath, ...paths)
-    } else {
-      return path.join(process.resourcesPath, ...paths)
-    }
+    return path.join(process.resourcesPath, ...paths)
   }
 }
 
-// 查找Python可执行文件
-function findPython() {
+// 查找打包的 Python 后端可执行文件或系统 Python
+function findBackendExecutable() {
+  // 优先查找打包的后端可执行文件（生产环境）
+  if (!isDev) {
+    // 检查多个可能的位置（按优先级排序）
+    const possibleExePaths = [
+      getResourcePath('backend', 'dist', 'backend.exe'),  // dist目录（PyInstaller默认输出位置）
+      getResourcePath('backend', 'backend.exe'),  // 直接位置
+    ]
+    
+    for (const exePath of possibleExePaths) {
+      if (fs.existsSync(exePath)) {
+        console.log('找到打包的后端可执行文件:', exePath)
+        return exePath
+      }
+    }
+    console.log('未找到打包的后端可执行文件，将尝试使用系统Python')
+  }
+  
+  // 开发环境或未找到打包文件时，使用系统 Python
   const pythonCommands = ['python3', 'python']
   
   for (const cmd of pythonCommands) {
     try {
-      const result = require('child_process').execSync(`${cmd} --version`, { encoding: 'utf-8' })
+      const result = execSync(`${cmd} --version`, { encoding: 'utf-8' })
       if (result) {
+        console.log('使用系统Python:', cmd)
         return cmd
       }
     } catch (e) {
@@ -48,11 +77,12 @@ function findPython() {
       'C:\\Python38\\python.exe',
       'C:\\Program Files\\Python311\\python.exe',
       'C:\\Program Files\\Python310\\python.exe',
-      'C:\\Users\\' + require('os').userInfo().username + '\\AppData\\Local\\Programs\\Python\\Python311\\python.exe',
+      `C:\\Users\\${os.userInfo().username}\\AppData\\Local\\Programs\\Python\\Python311\\python.exe`,
     ]
     
     for (const pythonPath of commonPaths) {
       if (fs.existsSync(pythonPath)) {
+        console.log('找到Python:', pythonPath)
         return pythonPath
       }
     }
@@ -61,32 +91,75 @@ function findPython() {
   return null
 }
 
+// Windows：结束占用 5000 端口的进程，避免旧后端占端口导致新后端起不来、前端一直连到旧版
+function killProcessOnPort5000() {
+  if (process.platform !== 'win32') return
+  try {
+    const out = execSync('netstat -ano', { encoding: 'utf-8', windowsHide: true })
+    const lines = out.split(/\r?\n/)
+    const pids = new Set()
+    for (const line of lines) {
+      if (!line.includes(':5000') || !line.includes('LISTENING')) continue
+      const parts = line.trim().split(/\s+/)
+      const pid = parts[parts.length - 1]
+      if (pid && /^\d+$/.test(pid) && pid !== '0') pids.add(pid)
+    }
+    for (const pid of pids) {
+      try {
+        // /T: kill process tree, avoid child still listening
+        execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true })
+        console.log('[后端] 已结束占用 5000 端口的进程 PID:', pid)
+      } catch (e) { /* 可能已退出 */ }
+    }
+  } catch (e) {
+    console.warn('[后端] 检查/结束 5000 端口进程时出错:', e.message)
+  }
+}
+
 // 启动后端服务器
 function startBackend() {
   return new Promise((resolve, reject) => {
-    const pythonCmd = findPython()
+    // 先释放 5000 端口，确保当前代码启动的后端能绑定成功（否则会连到旧后端）
+    killProcessOnPort5000()
+    // 给系统一点时间释放端口，再启动后端，减少“端口仍被占用”的误判
+    const delayBeforeSpawn = process.platform === 'win32' ? 800 : 400
+
+    function doSpawn() {
+    const backendCmd = findBackendExecutable()
     
-    if (!pythonCmd) {
-      reject(new Error('未找到Python环境。请确保已安装Python 3.x并添加到系统PATH。'))
+    if (!backendCmd) {
+      reject(new Error('未找到Python环境或打包的后端可执行文件。请确保已安装Python 3.x并添加到系统PATH，或重新打包应用。'))
       return
     }
     
-    const backendPath = getResourcePath('backend', 'app.py')
+    // 与 start.bat 一致：start.bat 在项目根目录执行 python backend/app.py，工作目录为项目根
+    const appRoot = getResourcePath()
     const backendDir = getResourcePath('backend')
-    
-    // 检查后端文件是否存在
-    if (!fs.existsSync(backendPath)) {
-      reject(new Error(`后端文件不存在: ${backendPath}`))
-      return
+    let backendProcessArgs = []
+    const useShell = false
+
+    // 如果是打包的可执行文件，直接运行（exe 在 backend 目录下，cwd 用 backend）
+    if (backendCmd.endsWith('.exe') || (!backendCmd.includes('python') && !backendCmd.includes('python3'))) {
+      console.log(`启动打包的后端可执行文件: ${backendCmd}`)
+      backendProcessArgs = []
+    } else {
+      // 使用系统 Python 运行 app.py，与 start.bat 一致：cwd 为项目根，参数为 backend/app.py
+      const backendPath = getResourcePath('backend', 'app.py')
+      if (!fs.existsSync(backendPath)) {
+        reject(new Error(`后端文件不存在: ${backendPath}`))
+        return
+      }
+      console.log(`使用系统 Python 启动后端: ${backendCmd} ${backendPath}`)
+      backendProcessArgs = [backendPath]
     }
-    
-    console.log(`启动后端服务器: ${pythonCmd} ${backendPath}`)
-    console.log(`工作目录: ${backendDir}`)
-    
-    backendProcess = spawn(pythonCmd, [backendPath], {
-      cwd: backendDir,
+
+    const spawnCwd = backendProcessArgs.length === 0 ? backendDir : appRoot
+    console.log(`工作目录: ${spawnCwd}`)
+
+    backendProcess = spawn(backendCmd, backendProcessArgs, {
+      cwd: spawnCwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
+      shell: useShell,
     })
     
     let backendOutput = ''
@@ -131,41 +204,17 @@ function startBackend() {
       }
     })
     
-    // 超时检测
-    setTimeout(() => {
-      if (backendProcess && !backendProcess.killed) {
-        // 检查后端是否真的在运行
-        const http = require('http')
-        const checkRequest = http.get('http://127.0.0.1:5000/api/formulas', (res) => {
-          if (res.statusCode === 200) {
-            resolve()
-          }
-        })
-        checkRequest.on('error', () => {
-          // 后端可能还在启动中，再等一会
-          setTimeout(() => {
-            const retryRequest = http.get('http://127.0.0.1:5000/api/formulas', (res) => {
-              if (res.statusCode === 200) {
-                resolve()
-              } else {
-                reject(new Error('后端启动超时'))
-              }
-            })
-            retryRequest.on('error', () => reject(new Error('后端启动超时')))
-            retryRequest.setTimeout(5000, () => reject(new Error('后端启动超时')))
-          }, 2000)
-        })
-        checkRequest.setTimeout(5000, () => {
-          // 可能还在启动，继续等待
-        })
-      }
-    }, 3000)
+    // 不做接口检测，启动后稍等即打开窗口（前端自行请求 5000，未就绪时会重试或报错）
+    const openDelay = isDev ? 1200 : 2500
+    setTimeout(() => resolve(), openDelay)
+    } // end doSpawn
+    setTimeout(doSpawn, delayBeforeSpawn)
   })
 }
 
 // 创建主窗口
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const windowOptions = {
     width: 1600,
     height: 1000,
     minWidth: 1200,
@@ -173,22 +222,37 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: isDev 
-        ? path.join(__dirname, 'preload.js')
-        : path.join(__dirname, 'preload.js'), // 生产环境路径会自动处理
+      preload: path.join(__dirname, 'preload.js'),
     },
-    icon: getResourcePath('build', 'icon.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false, // 先不显示，等加载完成后再显示
-  })
+  }
+  
+  // 设置窗口图标：需在 electron/build 下放置 icon.ico（Windows）或 icon.png（macOS）
+  const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+  const candidates = isDev
+    ? [path.join(__dirname, 'build', iconName)]
+    : [getResourcePath('build', iconName), path.join(process.resourcesPath, 'app.asar.unpacked', 'build', iconName)]
+  let iconPath = null
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) {
+      iconPath = p
+      break
+    }
+  }
+  if (iconPath) {
+    windowOptions.icon = iconPath
+  }
+  
+  mainWindow = new BrowserWindow(windowOptions)
 
-  // 开发环境加载本地服务器，生产环境加载打包后的文件
+  // 开发环境加载本地服务器，生产环境加载打包后的文件（不自动打开 DevTools）
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    mainWindow.webContents.openDevTools()
+    // 需要调试时可在控制台或菜单中手动打开 DevTools
   } else {
-    // 生产环境：dist 目录在应用根目录
-    const indexPath = path.join(__dirname, '../dist/index.html')
+    // 生产环境：前端构建输出在 frontend/dist
+    const indexPath = path.join(__dirname, '../frontend/dist/index.html')
     mainWindow.loadFile(indexPath)
   }
 
@@ -228,50 +292,50 @@ if (!isDev) {
   
   // 更新检查事件（仅在生产环境）
   autoUpdater.on('checking-for-update', () => {
-  console.log('正在检查更新...')
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-checking')
-  }
-})
+    console.log('正在检查更新...')
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-checking')
+    }
+  })
 
-autoUpdater.on('update-available', (info) => {
-  console.log('发现新版本:', info.version)
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-available', {
-      version: info.version,
-      releaseDate: info.releaseDate,
-      releaseNotes: info.releaseNotes || '新版本可用'
-    })
-  }
-})
+  autoUpdater.on('update-available', (info) => {
+    console.log('发现新版本:', info.version)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-available', {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes || '新版本可用'
+      })
+    }
+  })
 
-autoUpdater.on('update-not-available', (info) => {
-  console.log('当前已是最新版本:', info.version)
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-not-available', {
-      version: info.version
-    })
-  }
-})
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('当前已是最新版本:', info.version)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-not-available', {
+        version: info.version
+      })
+    }
+  })
 
-autoUpdater.on('error', (err) => {
-  console.error('更新检查错误:', err)
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-error', {
-      message: err.message || '更新检查失败'
-    })
-  }
-})
+  autoUpdater.on('error', (err) => {
+    console.error('更新检查错误:', err)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-error', {
+        message: err.message || '更新检查失败'
+      })
+    }
+  })
 
-autoUpdater.on('download-progress', (progressObj) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-download-progress', {
-      percent: Math.round(progressObj.percent),
-      transferred: progressObj.transferred,
-      total: progressObj.total
-    })
-  }
-})
+  autoUpdater.on('download-progress', (progressObj) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-download-progress', {
+        percent: Math.round(progressObj.percent),
+        transferred: progressObj.transferred,
+        total: progressObj.total
+      })
+    }
+  })
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log('更新下载完成:', info.version)
@@ -291,8 +355,8 @@ ipcMain.handle('check-for-updates', async () => {
   try {
     await autoUpdater.checkForUpdates()
     return { success: true }
-  } catch (error: any) {
-    return { error: error.message }
+  } catch (error) {
+    return { error: (error && error.message) || String(error) }
   }
 })
 
@@ -303,8 +367,8 @@ ipcMain.handle('download-update', async () => {
   try {
     await autoUpdater.downloadUpdate()
     return { success: true }
-  } catch (error: any) {
-    return { error: error.message }
+  } catch (error) {
+    return { error: (error && error.message) || String(error) }
   }
 })
 
@@ -343,9 +407,11 @@ app.whenReady().then(async () => {
     }
   } catch (error) {
     console.error('启动失败:', error)
+    const msg = error && error.message
+    const suggestPython = msg && !msg.includes('5000') && !msg.includes('端口')
     dialog.showErrorBox(
       '启动失败',
-      `应用启动失败：${error.message}\n\n请检查Python环境是否正确配置。`
+      `应用启动失败：${msg || error}\n\n${suggestPython ? '请检查 Python 环境是否正确配置；若使用 start.bat 能正常打开，可优先用 start.bat 启动。' : '可尝试用 start.bat 启动（先关闭本窗口），或检查 5000 端口是否被占用。'}`
     )
     app.quit()
   }
@@ -357,12 +423,30 @@ app.whenReady().then(async () => {
   })
 })
 
+// 彻底结束后端进程（含子进程），避免关闭软件后进程残留
+function killBackendAndQuit() {
+  if (!backendProcess) return
+  const pid = backendProcess.pid
+  if (pid == null) {
+    backendProcess = null
+    return
+  }
+  try {
+    if (process.platform === 'win32') {
+      // Windows: 用 taskkill /T /F 结束该进程及其子进程树，避免 Python/Flask 子进程残留导致 Electron 不退出
+      execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'ignore', windowsHide: true })
+    } else {
+      backendProcess.kill('SIGKILL')
+    }
+  } catch (e) {
+    try { backendProcess.kill('SIGKILL') } catch (_) {}
+  }
+  backendProcess = null
+}
+
 // 所有窗口关闭时
 app.on('window-all-closed', () => {
-  if (backendProcess) {
-    backendProcess.kill()
-    backendProcess = null
-  }
+  killBackendAndQuit()
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -370,10 +454,7 @@ app.on('window-all-closed', () => {
 
 // 应用退出前
 app.on('before-quit', () => {
-  if (backendProcess) {
-    backendProcess.kill()
-    backendProcess = null
-  }
+  killBackendAndQuit()
 })
 
 // 处理未捕获的异常

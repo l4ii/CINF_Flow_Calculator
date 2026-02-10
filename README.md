@@ -51,18 +51,33 @@ npm run dev
 
 ### 打包应用
 
+**简单打包流程**：
+
 ```bash
-# Windows
-npm run build:win
+# 1. 构建前端
+npm run build
+
+# 2. 打包桌面应用（Windows）
+npm run dist:win
 
 # macOS
-npm run build:mac
+npm run dist:mac
 
 # Linux
-npm run build:linux
+npm run dist:linux
 ```
 
 打包后的安装程序位于 `release` 目录。
+
+**可选：打包Python后端（推荐）**
+
+如果需要将Python后端打包成独立可执行文件（用户无需安装Python），可以先运行：
+
+```bash
+npm run build:python
+```
+
+然后再执行 `npm run dist:win`。如果不打包Python后端，应用会使用系统Python运行（需要用户安装Python）。
 
 ## 📁 项目结构
 

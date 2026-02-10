@@ -24,18 +24,22 @@ export default function Sidebar({
   currentView,
   aboutDepartment
 }: SidebarProps) {
-  const allFormulas = useMemo(() => {
-    return [...(formulas.似均质流态 || []), ...(formulas.非均质流态 || [])]
-  }, [formulas])
+  const groupOrder: (keyof FlowState)[] = ['临界流速计算', '沿程摩阻损失', '密度混合公式']
 
   const translations = useMemo(() => ({
     zh: {
-      selectFormula: '选择计算公式',
+      appTitle: 'CINF浆体计算',
+      appSubtitle: '浆体管道计算工具',
+      criticalVelocity: '临界流速计算',
+      frictionLoss: '沿程摩阻损失',
+      densityMixing: '密度混合公式',
       aboutUs: '了解我们',
       settings: '设置',
-      cinf: '长沙有色冶金设计研究院',
+      cinf: '长沙有色冶金设计研究院有限公司',
       municipal: '长沙院市政事业部',
       research: '长沙院科研创新中心',
+      footerBy: '由',
+      footerDev: '市政事业部、科研创新中心联合开发',
       lightMode: '浅色显示',
       darkMode: '暗色模式',
       language: '语言调节',
@@ -44,12 +48,18 @@ export default function Sidebar({
       noFormulas: '暂无公式（请检查后端连接）'
     },
     en: {
-      selectFormula: 'Select Formula',
+      appTitle: 'CINF Slurry Calc',
+      appSubtitle: 'Slurry Pipeline Calculation Tool',
+      criticalVelocity: 'Critical Velocity',
+      frictionLoss: 'Friction Loss',
+      densityMixing: 'Density Mixing',
       aboutUs: 'About Us',
       settings: 'Settings',
-      cinf: 'Changsha Nonferrous Metallurgical Design & Research Institute',
+      cinf: 'Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.',
       municipal: 'Municipal Division',
       research: 'Research Innovation Center',
+      footerBy: 'By',
+      footerDev: 'Municipal Division & Research Innovation Center',
       lightMode: 'Light Mode',
       darkMode: 'Dark Mode',
       language: 'Language',
@@ -58,6 +68,15 @@ export default function Sidebar({
       noFormulas: 'No formulas available (check backend connection)'
     }
   }), [language])
+
+  const formulaNameEn: Record<string, string> = {
+    liu_dezhong: 'Liu Dezong Formula',
+    wasp: 'E.J. Wasp Formula',
+    fei_xiangjun: 'Fei Xiangjun Formula',
+    kronodze_pressure: 'B.C. Konoroz Method',
+    friction_loss: 'Friction Loss',
+    density_mixing: 'Density Mixing',
+  }
 
   const t = translations[language]
 
@@ -81,12 +100,12 @@ export default function Sidebar({
             <div className={`text-lg font-bold ${
               darkMode ? 'text-gray-100' : 'text-gray-900'
             }`}>
-              CINF浆体计算
+              {t.appTitle}
             </div>
             <div className={`text-xs ${
               darkMode ? 'text-gray-400' : 'text-gray-500'
             }`}>
-              浆体管道计算工具
+              {t.appSubtitle}
             </div>
           </div>
         </div>
@@ -94,48 +113,59 @@ export default function Sidebar({
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto p-3">
-        <h2 className={`text-base font-semibold mb-3 uppercase tracking-wide ${
-          darkMode ? 'text-gray-300' : 'text-gray-700'
-        }`}>
-          {t.selectFormula}
-        </h2>
+        {groupOrder.map((groupKey) => {
+          const list = formulas[groupKey] || []
+          if (list.length === 0) return null
+          const title =
+            groupKey === '临界流速计算'
+              ? t.criticalVelocity
+              : groupKey === '沿程摩阻损失'
+              ? t.frictionLoss
+              : t.densityMixing
+          return (
+            <div key={groupKey} className="mb-4">
+              <h2 className={`text-base font-semibold mb-2 uppercase tracking-wide ${
+                darkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}>
+                {title}
+              </h2>
+              <div className="space-y-1 pl-2">
+                {list.map((formula) => (
+                  <button
+                    key={formula.id}
+                    onClick={() => onFormulaSelect(formula)}
+                    className={`w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors ${
+                      selectedFormula?.id === formula.id
+                        ? darkMode
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-blue-600 text-white'
+                        : darkMode
+                        ? 'text-gray-300 hover:bg-gray-800'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {language === 'en' ? (formulaNameEn[formula.id] ?? formula.name) : formula.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
 
-        {allFormulas.length === 0 ? (
-          <div className={`text-sm px-2 py-2 ${
-            darkMode ? 'text-gray-500' : 'text-gray-400'
-          }`}>
+        {groupOrder.every((k) => !(formulas[k]?.length)) ? (
+          <div className={`text-sm px-2 py-2 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
             {t.noFormulas}
           </div>
-        ) : (
-          <div className="space-y-1 pl-2">
-            {allFormulas.map((formula) => (
-              <button
-                key={formula.id}
-                onClick={() => onFormulaSelect(formula)}
-                className={`w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors ${
-                  selectedFormula?.id === formula.id
-                    ? darkMode
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-blue-600 text-white'
-                    : darkMode
-                    ? 'text-gray-300 hover:bg-gray-800'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                {formula.name}
-              </button>
-            ))}
-          </div>
-        )}
+        ) : null}
 
         {/* 了解我们 */}
-        <div className="mt-6">
-          <div className={`w-full text-left px-2 py-2 rounded-lg text-sm font-medium ${
+        <div className="mt-6 mb-4">
+          <h2 className={`text-base font-semibold mb-2 uppercase tracking-wide ${
             darkMode ? 'text-gray-300' : 'text-gray-700'
           }`}>
-            <span>{t.aboutUs}</span>
-          </div>
-          <div className="mt-2 pl-4 space-y-1">
+            {t.aboutUs}
+          </h2>
+          <div className="pl-2 space-y-1">
             <button
               onClick={() => onShowAbout('cinf')}
               className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors ${
@@ -182,10 +212,10 @@ export default function Sidebar({
         </div>
 
         {/* 设置 */}
-        <div className="mt-4">
+        <div className="mb-4">
           <button
             onClick={onShowSettings}
-            className={`w-full text-left px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`w-full text-left px-2 py-1.5 rounded-lg text-base font-semibold uppercase tracking-wide transition-colors ${
               currentView === 'settings'
                 ? darkMode
                   ? 'bg-blue-600 text-white'
@@ -207,7 +237,7 @@ export default function Sidebar({
         <div className={`text-sm leading-relaxed ${
           darkMode ? 'text-gray-400' : 'text-gray-600'
         }`}>
-          <div className="mb-1">由</div>
+          <div className="mb-1">{t.footerBy}</div>
           <a
             href="http://www.cinf.com.cn/"
             target="_blank"
@@ -216,10 +246,10 @@ export default function Sidebar({
               darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'
             }`}
           >
-            长沙有色冶金设计研究院有限公司
+            {t.cinf}
           </a>
           <div className="mt-1">
-            市政事业部、科研创新中心联合开发
+            {t.footerDev}
           </div>
         </div>
       </div>

@@ -6,8 +6,9 @@ import { API_BASE_URL, API_TIMEOUT } from './config/api'
 
 function App() {
   const [formulas, setFormulas] = useState<FlowState>({
-    似均质流态: [],
-    非均质流态: []
+    临界流速计算: [],
+    沿程摩阻损失: [],
+    密度混合公式: []
   })
   const [selectedFormula, setSelectedFormula] = useState<FormulaInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,18 +69,31 @@ function App() {
         throw new Error(`后端服务器响应错误: ${response.status} ${response.statusText}`)
       }
       
-      const data = await response.json()
+      const raw = await response.json()
       
-      // 检查数据是否有效
-      if (!data || (!data['似均质流态'] && !data['非均质流态'])) {
+      // 兼容新旧格式：新格式为 临界流速计算/沿程摩阻损失/密度混合公式；旧格式为 似均质流态/非均质流态
+      const data: FlowState = {}
+      if (raw['临界流速计算'] || raw['沿程摩阻损失'] || raw['密度混合公式']) {
+        data.临界流速计算 = raw['临界流速计算'] ?? []
+        data.沿程摩阻损失 = raw['沿程摩阻损失'] ?? []
+        data.密度混合公式 = raw['密度混合公式'] ?? []
+      } else if (raw['似均质流态'] || raw['非均质流态']) {
+        data.临界流速计算 = [...(raw['似均质流态'] || []), ...(raw['非均质流态'] || [])]
+        data.沿程摩阻损失 = []
+        data.密度混合公式 = []
+      } else {
         throw new Error('后端返回的数据格式不正确')
       }
       
       setFormulas(data)
       
-      // 默认选择第一个公式
-      if (data['似均质流态'] && data['似均质流态'].length > 0) {
-        setSelectedFormula(data['似均质流态'][0])
+      // 默认选择第一个公式（优先临界流速计算）
+      if (data.临界流速计算?.length) {
+        setSelectedFormula(data.临界流速计算[0])
+      } else if (data.沿程摩阻损失?.length) {
+        setSelectedFormula(data.沿程摩阻损失[0])
+      } else if (data.密度混合公式?.length) {
+        setSelectedFormula(data.密度混合公式[0])
       }
     } catch (error: any) {
       console.error('获取公式列表失败:', error)
@@ -148,7 +162,7 @@ function App() {
   }
 
   return (
-    <div className={`flex h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div className={`flex h-screen overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
       <Sidebar 
         formulas={formulas}
         selectedFormula={selectedFormula}
