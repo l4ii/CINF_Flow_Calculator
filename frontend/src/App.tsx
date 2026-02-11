@@ -8,7 +8,7 @@ function App() {
   const [formulas, setFormulas] = useState<FlowState>({
     临界流速计算: [],
     沿程摩阻损失: [],
-    密度混合公式: []
+    浆体加速流及消能: []
   })
   const [selectedFormula, setSelectedFormula] = useState<FormulaInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -70,17 +70,21 @@ function App() {
       }
       
       const raw = await response.json()
-      
-      // 兼容新旧格式：新格式为 临界流速计算/沿程摩阻损失/密度混合公式；旧格式为 似均质流态/非均质流态
+      // 兼容新旧格式：apiVersion 3 有 浆体加速流及消能；apiVersion 2 密度混合公式独立；旧格式为 似均质流态/非均质流态
       const data: FlowState = {}
-      if (raw['临界流速计算'] || raw['沿程摩阻损失'] || raw['密度混合公式']) {
+      const hasSlurryAccel = raw.apiVersion >= 3 || (raw['浆体加速流及消能'] !== undefined && Array.isArray(raw['浆体加速流及消能']))
+      if (hasSlurryAccel) {
         data.临界流速计算 = raw['临界流速计算'] ?? []
         data.沿程摩阻损失 = raw['沿程摩阻损失'] ?? []
-        data.密度混合公式 = raw['密度混合公式'] ?? []
+        data.浆体加速流及消能 = Array.isArray(raw['浆体加速流及消能']) ? raw['浆体加速流及消能'] : []
+      } else if (raw['临界流速计算'] || raw['沿程摩阻损失'] || raw['密度混合公式']) {
+        data.临界流速计算 = raw['临界流速计算'] ?? []
+        data.沿程摩阻损失 = [...(raw['沿程摩阻损失'] || []), ...(raw['密度混合公式'] || [])]
+        data.浆体加速流及消能 = []
       } else if (raw['似均质流态'] || raw['非均质流态']) {
         data.临界流速计算 = [...(raw['似均质流态'] || []), ...(raw['非均质流态'] || [])]
         data.沿程摩阻损失 = []
-        data.密度混合公式 = []
+        data.浆体加速流及消能 = []
       } else {
         throw new Error('后端返回的数据格式不正确')
       }
@@ -92,8 +96,8 @@ function App() {
         setSelectedFormula(data.临界流速计算[0])
       } else if (data.沿程摩阻损失?.length) {
         setSelectedFormula(data.沿程摩阻损失[0])
-      } else if (data.密度混合公式?.length) {
-        setSelectedFormula(data.密度混合公式[0])
+      } else if (data.浆体加速流及消能?.length) {
+        setSelectedFormula(data.浆体加速流及消能[0])
       }
     } catch (error: any) {
       console.error('获取公式列表失败:', error)
@@ -146,9 +150,8 @@ function App() {
           <div className="text-gray-700 text-sm mb-4 whitespace-pre-line">{error}</div>
           <div className="text-gray-600 text-xs mb-4">
             <div className="font-semibold mb-2">解决方法：</div>
-            <div>1. 确保后端服务已启动</div>
-            <div>2. 在终端运行: <code className="bg-gray-100 px-1 rounded">python backend/app.py</code></div>
-            <div>3. 检查后端是否运行在: <code className="bg-gray-100 px-1 rounded">{API_BASE_URL}</code></div>
+            <div>1. 若为安装包安装：请完全关闭本软件后重新打开；若仍失败，请向发布者索取最新安装包并重新安装。</div>
+            <div>2. 若为开发运行：在项目目录运行 <code className="bg-gray-100 px-1 rounded">python backend/app.py</code> 启动后端。</div>
           </div>
           <button
             onClick={fetchFormulas}

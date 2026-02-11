@@ -88,6 +88,17 @@ def get_formulas():
         ],
         "沿程摩阻损失": [
             {
+                "id": "darcy_friction",
+                "name": "达西摩阻系数公式",
+                "formula": "λ = 64/Re（层流）或 Colebrook-White（湍流）",
+                "description": "达西摩阻系数 $\\lambda$ 反映管道阻力特性。层流时 $\\lambda = 64/Re$；湍流时可采用 Colebrook-White 公式或 Swamee-Jain 公式计算。本公式待完善实现。",
+                "parameters": [
+                    {"name": "Re", "label": "Re：雷诺数，无量纲", "unit": "", "description": "雷诺数", },
+                    {"name": "epsilon", "label": "ε：管道当量粗糙度，单位为 m", "unit": "m", "description": "管道壁面粗糙度", "default": 0.0002},
+                    {"name": "D", "label": "D：管道内径，单位为 m", "unit": "m", "description": "管道内径", }
+                ]
+            },
+            {
                 "id": "friction_loss",
                 "name": "沿程摩阻损失",
                 "formula": "i_k = λ·(V²·ρ_k)/(2gD·ρ_s)",
@@ -100,9 +111,7 @@ def get_formulas():
                     {"name": "rho_s", "label": "$\\rho_s$：固体颗粒密度，单位为 t/m³", "unit": "t/m³", "description": "固体颗粒密度", },
                     {"name": "g", "label": "g：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81}
                 ]
-            }
-        ],
-        "密度混合公式": [
+            },
             {
                 "id": "density_mixing",
                 "name": "密度混合公式",
@@ -114,9 +123,27 @@ def get_formulas():
                     {"name": "rho_s", "label": "$\\rho_s$：固体颗粒密度，单位为 t/m³", "unit": "t/m³", "description": "固体颗粒密度", }
                 ]
             }
+        ],
+        "浆体加速流及消能": [
+            {
+                "id": "slurry_accel_energy",
+                "name": "浆体加速流及消能",
+                "formula": "(Z₁ + P₁/(ρkg)) - (Z₂ + P₂/(ρkg)) > iL",
+                "description": "浆体加速流及消能计算工具用于分析浆体在管道中流动时的能量平衡状态。基于水头平衡原理，比较浆体在流动过程中总机械能的差值（左侧）与沿程摩阻损失（右侧）的大小。若左侧 > 右侧，则满足加速流及消能条件；否则不满足。适用于管道输送、泵站设计、流体动力学分析等领域，用于评估浆体输送系统的运行状态和效率。",
+                "parameters": [
+                    {"name": "Z1", "label": "Z₁：起点位置水头，单位为 m", "unit": "m", "description": "浆体流动起点相对于基准面的垂直高度", },
+                    {"name": "Z2", "label": "Z₂：终点位置水头，单位为 m", "unit": "m", "description": "浆体流动终点相对于基准面的垂直高度", },
+                    {"name": "H1", "label": "H₁：起点压能浆体水头 P₁/(ρkg)，单位为 m", "unit": "m", "description": "起点压力能转换的水头高度", },
+                    {"name": "H2", "label": "H₂：终点压能浆体水头 P₂/(ρkg)，单位为 m", "unit": "m", "description": "终点压力能转换的水头高度", },
+                    {"name": "i", "label": "i：两点间沿程摩阻损失，单位为 m浆柱/m", "unit": "m浆柱/m", "description": "单位长度管道内的摩阻损失", },
+                    {"name": "L", "label": "L：管道长度，单位为 m", "unit": "m", "description": "起点至终点的管道总长度", }
+                ]
+            }
         ]
     }
-    return jsonify(formulas)
+    # 供前端识别：apiVersion 3 为 临界流速计算/沿程摩阻损失/浆体加速流及消能
+    out = {"apiVersion": 3, **formulas}
+    return jsonify(out)
 
 @app.route('/api/calculate', methods=['POST'])
 def calculate():

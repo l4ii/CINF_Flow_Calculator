@@ -38,12 +38,10 @@ function getResourcePath(...paths) {
 function findBackendExecutable() {
   // 优先查找打包的后端可执行文件（生产环境）
   if (!isDev) {
-    // 检查多个可能的位置（按优先级排序）
     const possibleExePaths = [
-      getResourcePath('backend', 'dist', 'backend.exe'),  // dist目录（PyInstaller默认输出位置）
-      getResourcePath('backend', 'backend.exe'),  // 直接位置
+      getResourcePath('backend', 'dist', 'backend.exe'),
+      getResourcePath('backend', 'backend.exe'),
     ]
-    
     for (const exePath of possibleExePaths) {
       if (fs.existsSync(exePath)) {
         console.log('找到打包的后端可执行文件:', exePath)
@@ -52,10 +50,9 @@ function findBackendExecutable() {
     }
     console.log('未找到打包的后端可执行文件，将尝试使用系统Python')
   }
-  
-  // 开发环境或未找到打包文件时，使用系统 Python
+
+  // 先尝试当前进程 PATH 中的 python（开发环境或终端里装的通常能拿到）
   const pythonCommands = ['python3', 'python']
-  
   for (const cmd of pythonCommands) {
     try {
       const result = execSync(`${cmd} --version`, { encoding: 'utf-8' })
@@ -67,27 +64,53 @@ function findBackendExecutable() {
       // 继续尝试下一个
     }
   }
-  
-  // Windows特定路径
+
+  // Windows：写死的常见安装路径 + 从用户环境 PATH 里找（解决从快捷方式启动时 PATH 不全的问题）
   if (process.platform === 'win32') {
+    const u = os.userInfo().username
+    const localAppData = process.env.LOCALAPPDATA || `C:\\Users\\${u}\\AppData\\Local`
+    const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files'
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'
     const commonPaths = [
-      'C:\\Python311\\python.exe',
-      'C:\\Python310\\python.exe',
-      'C:\\Python39\\python.exe',
-      'C:\\Python38\\python.exe',
-      'C:\\Program Files\\Python311\\python.exe',
-      'C:\\Program Files\\Python310\\python.exe',
-      `C:\\Users\\${os.userInfo().username}\\AppData\\Local\\Programs\\Python\\Python311\\python.exe`,
+      'C:\\Python313\\python.exe', 'C:\\Python312\\python.exe', 'C:\\Python311\\python.exe',
+      'C:\\Python310\\python.exe', 'C:\\Python39\\python.exe', 'C:\\Python38\\python.exe',
+      `${programFiles}\\Python313\\python.exe`, `${programFiles}\\Python312\\python.exe`,
+      `${programFiles}\\Python311\\python.exe`, `${programFiles}\\Python310\\python.exe`,
+      `${localAppData}\\Programs\\Python\\Python313\\python.exe`,
+      `${localAppData}\\Programs\\Python\\Python312\\python.exe`,
+      `${localAppData}\\Programs\\Python\\Python311\\python.exe`,
+      `${localAppData}\\Programs\\Python\\Python310\\python.exe`,
+      `C:\\Users\\${u}\\AppData\\Local\\Programs\\Python\\Python311\\python.exe`,
+      `C:\\Users\\${u}\\AppData\\Local\\Programs\\Python\\Python312\\python.exe`,
+      `C:\\Users\\${u}\\AppData\\Local\\Programs\\Python\\Python310\\python.exe`,
     ]
-    
     for (const pythonPath of commonPaths) {
       if (fs.existsSync(pythonPath)) {
         console.log('找到Python:', pythonPath)
         return pythonPath
       }
     }
+    // 打包且从快捷方式启动时，process.env.PATH 常不包含用户 PATH，从注册表读用户 Path 再在目录里找 python.exe
+    if (!isDev) {
+      try {
+        const pathStr = execSync(
+          'powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\'Path\',\'User\')"',
+          { encoding: 'utf-8', windowsHide: true, timeout: 5000 }
+        )
+        const dirs = (pathStr || '').trim().split(';').filter(Boolean)
+        for (const dir of dirs) {
+          const exe = path.join(dir.trim(), 'python.exe')
+          if (fs.existsSync(exe)) {
+            console.log('从用户 PATH 找到 Python:', exe)
+            return exe
+          }
+        }
+      } catch (e) {
+        console.warn('读取用户 PATH 查找 Python 时出错:', e.message)
+      }
+    }
   }
-  
+
   return null
 }
 
@@ -128,7 +151,7 @@ function startBackend() {
     const backendCmd = findBackendExecutable()
     
     if (!backendCmd) {
-      reject(new Error('未找到Python环境或打包的后端可执行文件。请确保已安装Python 3.x并添加到系统PATH，或重新打包应用。'))
+      reject(new Error('未找到 Python 或打包的后端。从快捷方式启动时系统可能未加载您的 PATH。\n\n建议：\n1) 用 start.bat 启动（与安装包同目录）；\n2) 或先打包后端再安装：在项目目录运行 npm run dist:win:full 后重新安装。'))
       return
     }
     
@@ -251,9 +274,25 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173')
     // 需要调试时可在控制台或菜单中手动打开 DevTools
   } else {
-    // 生产环境：前端构建输出在 frontend/dist
-    const indexPath = path.join(__dirname, '../frontend/dist/index.html')
-    mainWindow.loadFile(indexPath)
+    // 生产环境：前端在 extraResources 的 frontend-dist（resources/frontend-dist），安装即覆盖，避免旧版缓存
+    const indexPath = path.join(process.resourcesPath, 'frontend-dist', 'index.html')
+    if (!fs.existsSync(indexPath)) {
+      dialog.showErrorBox('启动失败', `未找到前端页面：\n${indexPath}\n\n请重新安装或使用 start.bat 启动。`)
+      app.quit()
+      return
+    }
+    // 清空会话缓存，避免 userData 里旧缓存导致一直看到旧页面
+    mainWindow.webContents.session.clearCache().then(() => {
+      const buildIdPath = path.join(process.resourcesPath, 'frontend-dist', 'build.json')
+      let buildId = ''
+      try {
+        if (fs.existsSync(buildIdPath)) {
+          buildId = JSON.parse(fs.readFileSync(buildIdPath, 'utf8')).buildId || ''
+        }
+      } catch (_) {}
+      const loadOpts = buildId ? { query: { v: buildId } } : {}
+      mainWindow.loadFile(indexPath, loadOpts)
+    })
   }
 
   // 页面加载完成后显示窗口

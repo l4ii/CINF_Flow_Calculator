@@ -33,6 +33,10 @@ class CalculationEngine:
             return self._calculate_friction_loss(parameters, g)
         elif formula_id == "density_mixing":
             return self._calculate_density_mixing(parameters, g)
+        elif formula_id == "darcy_friction":
+            return self._calculate_darcy_friction(parameters)
+        elif formula_id == "slurry_accel_energy":
+            return self._calculate_slurry_accel_energy(parameters)
         else:
             raise ValueError(f"未知的公式ID: {formula_id}")
     
@@ -386,5 +390,68 @@ class CalculationEngine:
             "unit": "t/m³",
             "intermediate": {
                 "denom": self._safe_round(denom, 6),
+            }
+        }
+
+    def _calculate_darcy_friction(self, params):
+        """达西摩阻系数：层流 λ=64/Re；湍流采用 Swamee-Jain 近似"""
+        Re = params.get('Re')
+        epsilon = params.get('epsilon', 0.0002)  # 当量粗糙度 m
+        D = params.get('D')
+        if Re is None or Re <= 0:
+            raise ValueError("达西摩阻系数公式需要参数：Re（雷诺数）且 Re > 0")
+        if Re < 2300:
+            # 层流：λ = 64/Re
+            lam = 64.0 / Re
+            return {
+                "lambda_coef": self._safe_round(lam, 6),
+                "unit": "",
+                "intermediate": {
+                    "Re": self._safe_round(Re, 4),
+                    "flow_regime": "层流"
+                }
+            }
+        # 湍流：Swamee-Jain 近似 λ = 0.25 / [log10(ε/(3.7D) + 5.74/Re^0.9)]^2
+        if D is None or D <= 0:
+            raise ValueError("湍流时需提供管道内径 D")
+        eps_D = epsilon / D if epsilon is not None else 0.0001
+        eps_D = max(eps_D, 1e-10)
+        term = eps_D / 3.7 + 5.74 / (Re ** 0.9)
+        if term <= 0:
+            raise ValueError("达西摩阻系数计算项无效")
+        lam = 0.25 / (math.log10(term) ** 2)
+        return {
+            "lambda_coef": self._safe_round(lam, 6),
+            "unit": "",
+            "intermediate": {
+                "Re": self._safe_round(Re, 4),
+                "eps_D": self._safe_round(eps_D, 6),
+                "flow_regime": "湍流"
+            }
+        }
+
+    def _calculate_slurry_accel_energy(self, params):
+        """浆体加速流及消能：(Z₁+P₁/(ρkg))-(Z₂+P₂/(ρkg)) > iL；判断不等式是否成立"""
+        Z1 = params.get('Z1')
+        Z2 = params.get('Z2')
+        H1 = params.get('H1')  # P1/(ρkg)
+        H2 = params.get('H2')  # P2/(ρkg)
+        i = params.get('i')
+        L = params.get('L')
+        if None in [Z1, Z2, H1, H2, i, L]:
+            raise ValueError("浆体加速流及消能需要参数：Z₁、Z₂、H₁、H₂、i、L")
+        if L < 0:
+            raise ValueError("管道长度 L 不能为负")
+        # 左侧：总水头差
+        head_diff = (Z1 + H1) - (Z2 + H2)
+        # 右侧：沿程摩阻损失
+        friction_loss_total = i * L
+        condition_met = head_diff > friction_loss_total
+        return {
+            "condition_met": condition_met,
+            "unit": "",
+            "intermediate": {
+                "head_diff": self._safe_round(head_diff, 6),
+                "friction_loss_total": self._safe_round(friction_loss_total, 6),
             }
         }

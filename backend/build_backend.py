@@ -79,11 +79,10 @@ def main():
         print("ERROR: 无法确定 site-packages 目录")
         sys.exit(1)
 
-    # 在所有 site-packages 中临时隐藏 pathlib backport，避免 PyInstaller 报错
+    # 在所有 site-packages 中临时隐藏 pathlib backport，避免 PyInstaller 打包时混入旧版与标准库冲突
+    # 注意：不能使用 --exclude-module=pathlib，否则打包后的 exe 会因 zipfile 等依赖 pathlib 而报错 "No module named 'pathlib'"
     renamed = []
-    pathlib_needs_exclude = False
     
-    # 先检查是否存在 pathlib backport（特别是系统级的）
     for site_packages in site_dirs:
         pathlib_files = []
         pathlib_files.extend(glob.glob(os.path.join(site_packages, 'pathlib.py')))
@@ -91,20 +90,13 @@ def main():
         pathlib_files.extend(glob.glob(os.path.join(site_packages, 'pathlib-*.dist-info')))
         
         if pathlib_files:
-            # 尝试重命名
             result = hide_pathlib_backport(site_packages)
             renamed.extend(result)
-            
-            # 如果 pathlib 文件仍然存在（重命名失败），且是系统级目录，需要排除
-            remaining = []
-            remaining.extend(glob.glob(os.path.join(site_packages, 'pathlib.py')))
-            remaining.extend(glob.glob(os.path.join(site_packages, 'pathlib')))
-            remaining.extend(glob.glob(os.path.join(site_packages, 'pathlib-*.dist-info')))
-            
+            # 若 pathlib 仍存在（重命名失败）且为系统目录，提示用户
+            remaining = (glob.glob(os.path.join(site_packages, 'pathlib.py')) +
+                        glob.glob(os.path.join(site_packages, 'pathlib')))
             if remaining and ('ProgramData' in site_packages or 'Program Files' in site_packages):
-                pathlib_needs_exclude = True
-                print(f"\n警告: 检测到系统级 pathlib backport ({site_packages})，但无法重命名（需要管理员权限）。")
-                print("将使用 PyInstaller 的 --exclude-module 参数来排除 pathlib。")
+                print(f"\n警告: 系统级 pathlib backport ({site_packages}) 无法重命名，打包可能失败。建议以管理员身份运行或使用非 Anaconda 的 Python。")
     
     if renamed:
         print("已临时隐藏 site-packages 中的 pathlib 包，打包完成后会自动恢复。")
@@ -137,11 +129,8 @@ def main():
         '--collect-all=flask_cors',
     ]
     
-    # 如果无法重命名 pathlib（权限问题），使用 --exclude-module 排除它
-    # Python 3.4+ 内置了 pathlib，不需要 backport
-    if pathlib_needs_exclude:
-        args.append('--exclude-module=pathlib')
-        print("已添加 --exclude-module=pathlib 参数")
+    # 不排除 pathlib：Python 3.4+ 标准库的 pathlib 必须随包打包，否则 exe 启动报 "No module named 'pathlib'"
+    # 通过 hide_pathlib_backport 已隐藏 site-packages 中的 backport，PyInstaller 会使用标准库 pathlib
     
     if sys.platform == 'win32':
         args.append('--icon=NONE')

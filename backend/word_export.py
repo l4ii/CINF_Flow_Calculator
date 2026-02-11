@@ -64,8 +64,8 @@ class WordExporter:
             # 添加中间结果
             self._add_intermediate_results(doc, result)
             
-            # 添加最终结果
-            self._add_result_section(doc, result)
+            # 添加最终结果（需 formula_id 区分 Vc/i_k/rho_k）
+            self._add_result_section(doc, result, formula_id)
             
             # 添加计算过程
             self._add_calculation_process(doc, formula_id, formula_info, parameters, result)
@@ -447,12 +447,29 @@ class WordExporter:
             'coefficient_9_5': '经验系数 9.5',
             'coefficient_3_113': '经验系数 3.113',
             'coefficient_2_26': '经验系数 2.26',
-            'g': '重力加速度 g'
+            'g': '重力加速度 g',
+            # 沿程摩阻损失（4.3.1-1）
+            'numerator': '流速平方与浆体密度项 V²·ρ_k',
+            'denominator': '重力与管径项 2gD·ρ_s',
+            # 密度混合公式（4.3.1-2）
+            'denom': '浓度与密度加权倒数项 C_w/ρ_g+(1-C_w)/ρ_s',
+            # B.C.克诺罗兹法
+            'step_A_Qk': '步骤A 矿浆流量 Qk',
+            'step_B_DL_mm': '步骤B 临界管径 DL (mm)',
+            'Cd': '重量砂水比 Cd',
+            'step_C_V_L': '步骤C 临界流速 V_L',
+            # 达西摩阻系数公式
+            'Re': '雷诺数 Re',
+            'flow_regime': '流态',
+            'eps_D': '相对粗糙度 ε/D',
+            # 浆体加速流及消能
+            'head_diff': '左侧总水头差 (Z₁+H₁)-(Z₂+H₂)',
+            'friction_loss_total': '右侧摩阻损失 iL',
         }
         return labels.get(key, key)
     
-    def _add_result_section(self, doc, result):
-        """添加最终结果部分"""
+    def _add_result_section(self, doc, result, formula_id=None):
+        """添加最终结果部分。根据 formula_id 显示 Vc（临界流速）、i_k（沿程摩阻损失）或 rho_k（浆体密度）"""
         doc.add_paragraph()
         p = doc.add_paragraph()
         run = p.add_run('五、最终计算结果')
@@ -473,15 +490,31 @@ class WordExporter:
                     run.bold = True
                     self._set_font(run)
         
-        # 临界流速
-        vc_value = result.get('Vc', 'N/A')
-        if isinstance(vc_value, (int, float)):
-            vc_display = f"{vc_value:.4f}".rstrip('0').rstrip('.')
+        # 根据公式类型显示对应结果
+        if formula_id == 'friction_loss':
+            item_label = '沿程摩阻损失 i_k'
+            value = result.get('i_k', 'N/A')
+        elif formula_id == 'density_mixing':
+            item_label = '浆体密度 ρ_k'
+            value = result.get('rho_k', 'N/A')
+        elif formula_id == 'darcy_friction':
+            item_label = '达西摩阻系数 λ'
+            value = result.get('lambda_coef', 'N/A')
+        elif formula_id == 'slurry_accel_energy':
+            item_label = '浆体加速流及消能条件'
+            value = '满足' if result.get('condition_met') else '不满足'
         else:
-            vc_display = str(vc_value)
+            item_label = '临界流速 Vc'
+            value = result.get('Vc', 'N/A')
         
-        result_table.cell(1, 0).text = '临界流速 Vc'
-        result_table.cell(1, 1).text = f"{vc_display} {result.get('unit', 'm/s')}"
+        if isinstance(value, (int, float)):
+            value_display = f"{value:.4f}".rstrip('0').rstrip('.')
+        else:
+            value_display = str(value)
+        
+        result_table.cell(1, 0).text = item_label
+        unit_suffix = result.get('unit', '')
+        result_table.cell(1, 1).text = f"{value_display} {unit_suffix}".strip() if unit_suffix else value_display
         # 设置该行所有单元格的字体
         for cell in result_table.rows[1].cells:
             for paragraph in cell.paragraphs:
@@ -519,6 +552,10 @@ class WordExporter:
             self._add_friction_loss_process(doc, parameters, result)
         elif formula_id == "density_mixing":
             self._add_density_mixing_process(doc, parameters, result)
+        elif formula_id == "darcy_friction":
+            self._add_darcy_friction_process(doc, parameters, result)
+        elif formula_id == "slurry_accel_energy":
+            self._add_slurry_accel_energy_process(doc, parameters, result)
     
     def _add_liu_dezhong_process(self, doc, parameters, result):
         """添加刘德忠公式计算过程"""
@@ -641,6 +678,43 @@ class WordExporter:
             p = doc.add_paragraph(text)
             for run in p.runs:
                 self._set_font(run)
+
+    def _add_darcy_friction_process(self, doc, parameters, result):
+        """添加达西摩阻系数公式计算过程"""
+        intermediate = result.get('intermediate', {})
+        Re = parameters.get('Re', 'N/A')
+        lam = result.get('lambda_coef', 'N/A')
+        flow_regime = intermediate.get('flow_regime', 'N/A')
+        process_texts = [
+            f"1. 雷诺数 Re = {Re}，流态：{flow_regime}",
+            f"2. 层流时 λ = 64/Re；湍流时采用 Swamee-Jain 近似",
+            f"3. 达西摩阻系数 λ = {lam}"
+        ]
+        for text in process_texts:
+            p = doc.add_paragraph(text)
+            for run in p.runs:
+                self._set_font(run)
+
+    def _add_slurry_accel_energy_process(self, doc, parameters, result):
+        """添加浆体加速流及消能计算过程"""
+        intermediate = result.get('intermediate', {})
+        Z1, Z2 = parameters.get('Z1', 'N/A'), parameters.get('Z2', 'N/A')
+        H1, H2 = parameters.get('H1', 'N/A'), parameters.get('H2', 'N/A')
+        i, L = parameters.get('i', 'N/A'), parameters.get('L', 'N/A')
+        head_diff = intermediate.get('head_diff', 'N/A')
+        friction_loss_total = intermediate.get('friction_loss_total', 'N/A')
+        condition_met = result.get('condition_met', False)
+        conclusion = '满足' if condition_met else '不满足'
+        process_texts = [
+            "公式(6): (Z₁ + P₁/(ρkg)) - (Z₂ + P₂/(ρkg)) > iL",
+            f"1. 左侧总水头差 = (Z₁+H₁)-(Z₂+H₂) = ({Z1}+{H1})-({Z2}+{H2}) = {head_diff} m",
+            f"2. 右侧摩阻损失 = i×L = {i}×{L} = {friction_loss_total} m",
+            f"3. 判断: {head_diff} {'>' if condition_met else '≤'} {friction_loss_total}，浆体加速流及消能条件{conclusion}"
+        ]
+        for text in process_texts:
+            p = doc.add_paragraph(text)
+            for run in p.runs:
+                self._set_font(run)
     
     def _add_software_promotion(self, doc):
         """添加软件推广信息"""
@@ -655,9 +729,9 @@ class WordExporter:
         doc.add_paragraph()
         promotion_paragraphs = [
             '本计算书由"长沙院浆体管道临界流速计算工具"生成。',
-            '该软件提供了多种流态下的临界流速计算方法，包括：',
-            '• 似均质流态：刘德忠公式、E.J.瓦斯普公式、费祥俊公式',
-            '• 非均质流态：B.C.克诺罗兹法、B.C.克诺罗兹法（重力流）',
+            '该软件提供了多种计算方法，包括：',
+            '• 临界流速计算：刘德忠公式、E.J.瓦斯普公式、费祥俊公式、B.C.克诺罗兹法',
+            '• 沿程摩阻损失、密度混合公式',
             '',
             '软件特点：',
             '✓ 界面现代化，操作简便',

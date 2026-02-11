@@ -17,7 +17,7 @@ export interface FormulaInfo {
 export interface FlowState {
   临界流速计算?: FormulaInfo[]
   沿程摩阻损失?: FormulaInfo[]
-  密度混合公式?: FormulaInfo[]
+  浆体加速流及消能?: FormulaInfo[]
 }
 
 export interface CalculationResult {
@@ -26,6 +26,8 @@ export interface CalculationResult {
     Vc?: number
     i_k?: number
     rho_k?: number
+    lambda_coef?: number
+    condition_met?: boolean
     unit: string
     intermediate?: Record<string, number>
   }

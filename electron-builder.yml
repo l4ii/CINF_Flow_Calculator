@@ -1,3 +1,4 @@
+# 必须在项目根目录执行 electron-builder（npm run dist:win），这样 extraResources 的 from: frontend/dist 才会解析为根目录下的 frontend/dist
 appId: com.changsha.pipeline.calc
 productName: 长沙院浆体管道计算工具
 copyright: Copyright © 2024 长沙有色冶金设计研究院有限公司
@@ -20,8 +21,8 @@ publish:
   # 或者使用本地/内网服务器
   # url: http://192.168.1.100:8080/updates
 
+# 前端不放进 asar，改由 extraResources 放到 resources/frontend-dist，安装时必被覆盖，避免旧缓存/旧 asar 导致看到旧版
 files:
-  - frontend/dist/**
   - electron/**
   - backend/**
   - requirements.txt
@@ -107,6 +108,9 @@ deb:
     - python3-pip
 
 extraResources:
+  # 前端构建产物放到 resources/frontend-dist，主进程从这里加载，安装即覆盖
+  - from: frontend/dist
+    to: frontend-dist
   # 安装包图标等（打包后运行时窗口图标从 resources/build 读取）
   - from: electron/build
     to: build

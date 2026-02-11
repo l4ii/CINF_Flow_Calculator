@@ -1,0 +1,79 @@
+# Win7/8 兼容版打包配置：输出到 release-win7，安装包名带 -Win7兼容
+# 需配合 Electron 22 使用（npm run dist:win:legacy）
+appId: com.changsha.pipeline.calc
+productName: 长沙院浆体管道计算工具
+copyright: Copyright © 2024 长沙有色冶金设计研究院有限公司
+
+directories:
+  buildResources: electron/build
+  output: release-win7
+
+files:
+  - electron/**
+  - backend/**
+  - requirements.txt
+  - package.json
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!.editorconfig"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
+  - "!**/{appveyor.yml,.travis.yml,circle.yml}"
+  - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: icon.ico
+  artifactName: ${productName}-${version}-${arch}-Win7兼容.${ext}
+  requestedExecutionLevel: asInvoker
+  sign: null
+  verifyUpdateCodeSignature: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ${productName}
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  installerHeaderIcon: icon.ico
+  license: LICENSE.nsis.txt
+  menuCategory: false
+  displayLanguageSelector: false
+  include: electron/build/installer.nsh
+  warningsAsErrors: false
+  runAfterFinish: false
+  allowElevation: false
+  perMachine: false
+  selectPerMachineByDefault: false
+
+publish:
+  provider: generic
+  url: https://your-update-server.com/updates
+
+extraResources:
+  - from: frontend/dist
+    to: frontend-dist
+  - from: electron/build
+    to: build
+  - from: backend
+    to: backend
+    filter:
+      - "**/*.py"
+      - "**/*.exe"
+      - "**/dist/**"
+      - "!**/__pycache__/**"
+      - "!**/*.pyc"
+      - "!**/build/**"
+      - "!**/*.spec"
+      - "!**/build_backend.py"
+  - from: requirements.txt
+    to: requirements.txt

@@ -3,7 +3,9 @@ const path = require('path')
 const { execSync } = require('child_process')
 
 const root = path.join(__dirname, '..')
-const onlyRelease = process.argv[2] === 'release'
+const arg = process.argv[2]
+const onlyRelease = arg === 'release' || arg === 'release-win7'
+const releaseDir = arg === 'release-win7' ? 'release-win7' : 'release'
 
 function removeDir(dir) {
   if (!fs.existsSync(dir)) return
@@ -25,12 +27,12 @@ function forceRemoveWin(dir) {
   while (Date.now() < end) {}
 }
 
-const toClean = onlyRelease ? ['release'] : ['release', 'frontend/dist']
+const toClean = onlyRelease ? [releaseDir] : ['release', 'release-win7', 'frontend/dist']
 toClean.forEach((name) => {
   const dir = path.join(root, name)
   if (!fs.existsSync(dir)) return
   console.log('清理:', dir)
-  if (process.platform === 'win32' && name === 'release') forceRemoveWin(name)
+  if (process.platform === 'win32' && (name === 'release' || name === 'release-win7')) forceRemoveWin(name)
   else removeDir(dir)
 })
 console.log('清理完成')

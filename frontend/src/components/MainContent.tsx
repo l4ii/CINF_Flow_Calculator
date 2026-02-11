@@ -48,7 +48,10 @@ export default function MainContent({
   // 锁定临界流速功能
   const [autoCalculateRef, setAutoCalculateRef] = useState<boolean>(false) // 是否自动计算（锁定后参数改变时）
   const [selectedCase, setSelectedCase] = useState<number | null>(null) // 选中的案例分析
-  
+  const [selectedResearchCenter, setSelectedResearchCenter] = useState<string>('recycling') // 科研创新中心当前选中的子中心
+  const [zoomPlatformImageUrl, setZoomPlatformImageUrl] = useState<string | null>(null) // 科研平台图片放大查看
+  const [platformImageLoaded, setPlatformImageLoaded] = useState(false) // 当前中心展示图是否已加载完成
+
   // 更新检查相关状态
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'>('idle')
   const [updateInfo, setUpdateInfo] = useState<{ version?: string; releaseNotes?: string } | null>(null)
@@ -150,6 +153,15 @@ export default function MainContent({
       
       // 密度混合公式：ρ_k = 1/(Cw/ρg+(1-Cw)/ρs)，混合项为浓度与密度加权倒数
       'denom': '浓度与密度加权倒数项',
+      
+      // 达西摩阻系数公式
+      'Re': '雷诺数',
+      'flow_regime': '流态',
+      'eps_D': '相对粗糙度 ε/D',
+      
+      // 浆体加速流及消能
+      'head_diff': '左侧总水头差',
+      'friction_loss_total': '右侧摩阻损失 iL',
     }
     
     const label = labelMap[key] || key
@@ -249,6 +261,20 @@ export default function MainContent({
       setCurrentVersion('1.0.0')
     }
   }, [])
+
+  // 了解我们-科研创新中心：预加载 info 图片，减少切换中心时的等待
+  useEffect(() => {
+    const urls = ['./info1.jpg', './info2.jpg', './info3.jpg', './info4.jpg', './info5.jpg']
+    urls.forEach((src) => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
+
+  // 切换科研中心时重置图片加载状态，以便显示加载中
+  useEffect(() => {
+    if (aboutDepartment === 'research') setPlatformImageLoaded(false)
+  }, [aboutDepartment, selectedResearchCenter])
 
   // 设置更新事件监听器
   useEffect(() => {
@@ -506,9 +532,9 @@ export default function MainContent({
       ],
       research: [
         {
-          title: '新型浆体管道输送技术研究',
-          description: '科研创新中心在浆体管道输送领域进行了深入研究，开发了多项创新技术，提升了行业技术水平。',
-          highlights: ['专利数量：15项', '技术突破：5项', '行业影响：广泛认可']
+          title: '科研创新中心科技创新成效',
+          description: '科技创新多点突破，赋能发展成效彰显。一是重大科技项目取得新突破。新签科研项目33项，涵盖欧盟“地平线欧洲”计划、马来西亚、安哥拉等国际科研合作项目，以及自然资源部部省合作项目、广西科技计划项目、湖南省科技成果转化示范项目、甘肃省创新联合攻关项目等。合同额2209万元，合同收费3204万元，科研项目数量和质量实现双提升。二是重大科技成果再上新台阶。获省部级科技进步特等奖1项、一等奖6项、二等奖5项、三等奖1项；获全国优秀工程勘察设计奖一等奖1项、二等奖2项、三等奖1项；“固废高值化生态化梯级集成利用技术”等4项成果入选国家和省级绿色先进适用技术目录，填补了近十年来国家级工程勘察设计一等奖空白；新增立项国家、行业和团体标准14部，创历年新高；获评长沙市“科技创新突出贡献企业”。三是闭环创新链贯通落地取得新成效。积极落实公司党委提出的“科研-设计-应用”闭环创新链项目实施，取得阶段性成果。新疆美盛矿业非爆机械连续采矿方法研究项目、贵州铝业大竹园铝土矿采矿方法研究项目、湖北大冶大红山铜矿废弃露天坑生态修复科研项目、西部鑫兴稀贵金属钼氧压技术创新项目等，实现了科研项目从设计和现场中来，研发成果通过设计转化到应用中去，高效服务公司主业，为公司主业发展赋能提速。四是科研管理提质增效开创新局面。高效完成2025年55项新立项科研项目开题和2026年42项新增科研项目立项；组织重点在研项目专项攻坚，解决14项政府重大科研课题进度和质量管理难题；完成18项科研项目验收，涵盖国家重点研发计划项目、广西重大科技专项、湖南省发改委两业融合专项、湖南省知识产权战略推进专项、中铝集团重大专项、中铝国际重点科研项目等。',
+          highlights: ['重大科研项目：33项', '省部级及国家级奖励多项', '科研-设计-应用闭环贯通']
         },
         {
           title: '智能化管道监控系统',
@@ -531,6 +557,154 @@ export default function MainContent({
 
     const cases = caseStudies[aboutDepartment as keyof typeof caseStudies] || []
     const deptName = departmentNames[aboutDepartment as keyof typeof departmentNames] || ''
+
+    // 特殊：科研创新中心页面，展示 5 个中心 + 平台展示图（可放大、可下载）
+    if (aboutDepartment === 'research') {
+      const researchCenters: Record<string, { name: string; image: string | null }> = {
+        recycling: { name: '湖南省再生金属资源循环利用工程技术研究中心', image: './info1.jpg' },
+        leadZinc: { name: '湖南省铅锌清洁冶炼工程技术研究中心', image: './info2.jpg' },
+        deepMining: { name: '深井矿山安全高效开采技术湖南省工程研究中心', image: './info3.jpg' },
+        safetyMonitor: { name: '湖南省矿山安全智能化监控技术与装备工程技术研究中心', image: './info4.jpg' },
+        smartSmelting: { name: '湖南省有色冶金智能制造工程技术研究中心', image: './info5.jpg' },
+      }
+
+      const centerOrder = ['recycling', 'leadZinc', 'deepMining', 'safetyMonitor', 'smartSmelting']
+      const currentKey = centerOrder.includes(selectedResearchCenter) ? selectedResearchCenter : centerOrder[0]
+      const currentCenter = researchCenters[currentKey]
+
+      return (
+        <div className={`flex-[4] overflow-y-auto ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+          <div
+            className="max-w-[calc(100vw*4/5)] mx-auto p-6"
+            style={{ maxWidth: 'min(calc(100vw*4/5), 1440px)' }}
+          >
+            {/* Header：保持软件名称与介绍在顶部 */}
+            <div className="mb-5">
+              <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>长沙院浆体管道计算工具</h1>
+              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                基于行业标准公式计算浆体管道临界流速的专业工具
+              </p>
+            </div>
+
+            {/* 科研创新中心：介绍 + 平台选择 */}
+            <div className={`rounded-xl shadow-sm border p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <h2 className={`text-xl font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>科研创新中心</h2>
+              <p className={`text-sm leading-relaxed mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                科研创新中心统筹公司科技创新与成果转化，依托再生金属、铅锌冶炼、深井开采、安全监控、智能制造等方向，建设并运行五个省级工程技术研究中心/工程研究中心，为行业提供关键技术支撑。
+              </p>
+
+              <h3 className={`text-sm font-semibold mb-3 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>中心与平台</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {centerOrder.map((key) => {
+                  const center = researchCenters[key]
+                  const active = key === currentKey
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSelectedResearchCenter(key)}
+                      className={`text-left rounded-lg border px-4 py-3 transition-colors ${
+                        active
+                          ? darkMode
+                            ? 'bg-blue-600 border-blue-500 text-white'
+                            : 'bg-blue-600 border-blue-500 text-white'
+                          : darkMode
+                          ? 'bg-gray-800 border-gray-600 text-gray-200 hover:border-blue-400'
+                          : 'bg-gray-50 border-gray-200 text-gray-800 hover:border-blue-400'
+                      }`}
+                    >
+                      <div className="text-sm font-semibold leading-snug">{center.name}</div>
+                      <div className={`text-xs mt-1 ${active ? 'text-white/80' : darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        点击查看详情
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 当前中心详情：仅标题 + 平台展示图（图片内已含简介与研究方向） */}
+            <div
+              className={`rounded-xl shadow-sm border p-6 mb-6 ${
+                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+              }`}
+            >
+              <h2 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                {currentCenter.name}
+              </h2>
+
+              {/* 平台展示图：frame 随图片尺寸契合，可放大、可下载；预加载 + 加载状态减轻延迟感 */}
+              {currentCenter.image ? (
+                <div className={`inline-block rounded-lg border overflow-hidden max-w-full ${darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-gray-300 bg-white'}`}>
+                  <div className="relative min-h-[200px]">
+                    {!platformImageLoaded && (
+                      <div className={`absolute inset-0 flex items-center justify-center ${darkMode ? 'text-gray-400 bg-gray-800/60' : 'text-gray-500 bg-gray-100'}`}>
+                        <span className="text-sm">加载中...</span>
+                      </div>
+                    )}
+                    <img
+                      src={currentCenter.image}
+                      alt={currentCenter.name}
+                      className={`block max-w-full h-auto cursor-pointer transition-opacity duration-200 ${platformImageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                      style={{ maxHeight: 'none' }}
+                      onLoad={() => setPlatformImageLoaded(true)}
+                      onError={() => setPlatformImageLoaded(true)}
+                      onClick={() => setZoomPlatformImageUrl(currentCenter.image)}
+                    />
+                    <div className="absolute bottom-2 right-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setZoomPlatformImageUrl(currentCenter.image)}
+                        className="px-3 py-1.5 rounded bg-black/60 text-white text-xs hover:bg-black/80"
+                      >
+                        放大
+                      </button>
+                      <a
+                        href={currentCenter.image}
+                        download={currentKey === 'recycling' ? '再生中心-info1.jpg' : currentKey === 'leadZinc' ? '铅锌中心-info2.jpg' : currentKey === 'deepMining' ? '深井矿山-info3.jpg' : currentKey === 'safetyMonitor' ? '安全监测-info4.jpg' : currentKey === 'smartSmelting' ? '有色冶金智能制造-info5.jpg' : '平台展示.jpg'}
+                        className="px-3 py-1.5 rounded bg-black/60 text-white text-xs hover:bg-black/80 inline-block"
+                      >
+                        下载
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className={`rounded-lg border-2 border-dashed p-8 text-center ${darkMode ? 'border-gray-600 bg-gray-800/40 text-gray-400' : 'border-gray-300 bg-gray-50 text-gray-500'}`}>
+                  暂无图片，后续可补充本平台展示图
+                </div>
+              )}
+            </div>
+
+            {/* 图片放大弹层 */}
+            {zoomPlatformImageUrl && (
+              <div
+                className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4"
+                onClick={() => setZoomPlatformImageUrl(null)}
+                role="dialog"
+                aria-modal="true"
+                aria-label="放大查看图片"
+              >
+                <button
+                  type="button"
+                  className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white hover:bg-white/30 flex items-center justify-center text-xl"
+                  onClick={() => setZoomPlatformImageUrl(null)}
+                  aria-label="关闭"
+                >
+                  ×
+                </button>
+                <img
+                  src={zoomPlatformImageUrl}
+                  alt="放大查看"
+                  className="max-w-full max-h-[90vh] w-auto h-auto object-contain cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    }
 
     // 如果是长沙有色冶金设计研究院，显示公司介绍和联系信息
     if (aboutDepartment === 'cinf') {
@@ -559,8 +733,8 @@ export default function MainContent({
               <div className="flex flex-row gap-6 p-6 pb-4">
                 <div className="flex-shrink-0 w-64 sm:w-72">
                   <img 
-                    src="/pic1.png" 
-                    alt="长沙有色冶金设计研究院" 
+                    src="./pic1.png" 
+                    alt="长沙有色冶金设计研究院有限公司" 
                     className="w-full h-48 sm:h-56 object-cover rounded-lg"
                   />
                 </div>
@@ -1020,289 +1194,202 @@ export default function MainContent({
 
   // 渲染设置页面
   const renderSettingsPage = () => {
+    const cardCls = `rounded-xl border p-5 ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-white border-gray-200'}`
+    const sectionTitleCls = `text-sm font-semibold mb-4 flex items-center gap-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`
+    const accentBorder = darkMode ? 'border-l-blue-500' : 'border-l-blue-600'
+
     return (
       <div className={`flex-[4] overflow-y-auto ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
         <div className="max-w-[calc(100vw*4/5)] mx-auto p-6" style={{ maxWidth: 'min(calc(100vw*4/5), 1440px)' }}>
-          {/* Header */}
-          <div className="mb-5">
-            <h1 className={`text-2xl font-bold mb-2 ${
-              darkMode ? 'text-gray-100' : 'text-gray-900'
-            }`}>
+          {/* 顶部：标题 + 关于本软件 横幅 */}
+          <div className="mb-8">
+            <h1 className={`text-2xl sm:text-3xl font-bold mb-1 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
               设置
             </h1>
-            <p className={`text-xs ${
-              darkMode ? 'text-gray-400' : 'text-gray-500'
-            }`}>
-              显示、语言与应用更新
+            <p className={`text-sm mb-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              管理显示与语言、检查更新、查看声明与反馈方式
             </p>
+            <div className={`rounded-xl border-l-4 ${accentBorder} ${darkMode ? 'bg-gray-700/60 border-gray-600' : 'bg-white border-gray-200'} px-5 py-4`}>
+              <div className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                长沙院浆体管道计算工具
+              </div>
+              <div className={`text-sm mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                版本 {currentVersion || '—'} · 长沙有色冶金设计研究院有限公司
+              </div>
+            </div>
           </div>
 
-          {/* 设置卡片容器 */}
-          <div className="space-y-5">
-            {/* 显示模式设置 */}
-            <div className={`rounded-lg shadow-sm border p-5 ${
-              darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
-            }`}>
-              <h2 className={`text-base font-semibold mb-4 ${
-                darkMode ? 'text-gray-200' : 'text-gray-900'
-              }`}>
-                显示模式
-              </h2>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => onDarkModeChange && onDarkModeChange(false)}
-                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    !darkModeValue
-                      ? 'bg-blue-600 text-white'
-                      : darkMode
-                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="font-medium">浅色显示</div>
-                  <div className={`text-xs mt-1 ${
-                    !darkModeValue ? 'opacity-90' : 'opacity-60'
-                  }`}>
-                    默认模式，适合日间使用
-                  </div>
-                </button>
-                <button
-                  onClick={() => onDarkModeChange && onDarkModeChange(true)}
-                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    darkModeValue
-                      ? 'bg-blue-600 text-white'
-                      : darkMode
-                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="font-medium">暗色模式</div>
-                  <div className={`text-xs mt-1 ${
-                    darkModeValue ? 'opacity-90' : 'opacity-60'
-                  }`}>
-                    护眼模式，适合夜间使用
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* 语言设置 */}
-            <div className={`rounded-lg shadow-sm border p-5 ${
-              darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
-            }`}>
-              <h2 className={`text-base font-semibold mb-4 ${
-                darkMode ? 'text-gray-200' : 'text-gray-900'
-              }`}>
-                语言调节
-              </h2>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => onLanguageChange && onLanguageChange('zh')}
-                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    language === 'zh'
-                      ? 'bg-blue-600 text-white'
-                      : darkMode
-                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="font-medium">中文</div>
-                  <div className={`text-xs mt-1 ${
-                    language === 'zh' ? 'opacity-90' : 'opacity-60'
-                  }`}>
-                    简体中文
-                  </div>
-                </button>
-                <button
-                  onClick={() => onLanguageChange && onLanguageChange('en')}
-                  className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    language === 'en'
-                      ? 'bg-blue-600 text-white'
-                      : darkMode
-                      ? 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="font-medium">English</div>
-                  <div className={`text-xs mt-1 ${
-                    language === 'en' ? 'opacity-90' : 'opacity-60'
-                  }`}>
-                    English
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* 关于软件的建议 */}
-            <div className={`rounded-lg shadow-sm border p-5 ${
-              darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
-            }`}>
-              <h2 className={`text-base font-semibold mb-4 ${
-                darkMode ? 'text-gray-200' : 'text-gray-900'
-              }`}>
-                关于软件的建议
-              </h2>
-              <p className={`text-sm mb-4 ${
-                darkMode ? 'text-gray-400' : 'text-gray-600'
-              }`}>
-                如有功能建议、问题反馈或合作意向，欢迎联系开发团队。
-              </p>
-              <a
-                href={`mailto:xuqianglai@outlook.com?subject=${encodeURIComponent('【长沙院浆体管道计算工具】软件建议与反馈')}&body=${encodeURIComponent(
-                  '软件名称：长沙院浆体管道计算工具\n\n' +
-                  '建议/反馈类型：□ 功能建议  □ 问题反馈  □ 其他\n\n' +
-                  '内容说明：\n\n\n\n'
-                )}`}
-                className={`inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  darkMode
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                联系开发团队
-              </a>
-            </div>
-
-            {/* 应用更新 */}
-            {typeof window !== 'undefined' && (window as any).electronAPI?.update && (
-              <div className={`rounded-lg shadow-sm border p-5 ${
-                darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
-              }`}>
-                <h2 className={`text-base font-semibold mb-4 ${
-                  darkMode ? 'text-gray-200' : 'text-gray-900'
-                }`}>
-                  应用更新
-                </h2>
-                <div className={`text-sm mb-4 ${
-                  darkMode ? 'text-gray-300' : 'text-gray-600'
-                }`}>
-                  当前版本: <span className="font-medium">{currentVersion}</span>
+          {/* 一、外观与偏好：两列 */}
+          <section className="mb-8">
+            <h2 className={`${sectionTitleCls} border-l-4 ${accentBorder} pl-3`}>
+              外观与偏好
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className={cardCls}>
+                <h3 className={`text-base font-semibold mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  显示模式
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onDarkModeChange && onDarkModeChange(false)}
+                    className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      !darkModeValue ? 'bg-blue-600 text-white shadow' : darkMode ? 'bg-gray-600/80 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span className="font-medium">浅色</span>
+                    <span className={`block text-xs mt-0.5 ${!darkModeValue ? 'opacity-90' : 'opacity-70'}`}>日间</span>
+                  </button>
+                  <button
+                    onClick={() => onDarkModeChange && onDarkModeChange(true)}
+                    className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      darkModeValue ? 'bg-blue-600 text-white shadow' : darkMode ? 'bg-gray-600/80 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span className="font-medium">暗色</span>
+                    <span className={`block text-xs mt-0.5 ${darkModeValue ? 'opacity-90' : 'opacity-70'}`}>护眼</span>
+                  </button>
                 </div>
-                <div className="space-y-3">
-                  {updateStatus === 'idle' && (
-                    <button
-                      onClick={handleCheckForUpdates}
-                      className={`w-full px-4 py-2 rounded-lg transition-colors ${
-                        darkMode
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                          : 'bg-blue-600 hover:bg-blue-700 text-white'
-                      }`}
-                    >
-                      检查更新
-                    </button>
-                  )}
+              </div>
+              <div className={cardCls}>
+                <h3 className={`text-base font-semibold mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  界面语言
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onLanguageChange && onLanguageChange('zh')}
+                    className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      language === 'zh' ? 'bg-blue-600 text-white shadow' : darkMode ? 'bg-gray-600/80 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    中文
+                  </button>
+                  <button
+                    onClick={() => onLanguageChange && onLanguageChange('en')}
+                    className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      language === 'en' ? 'bg-blue-600 text-white shadow' : darkMode ? 'bg-gray-600/80 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    English
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
 
-                  {updateStatus === 'checking' && (
-                    <div className={`text-center py-2 ${
-                      darkMode ? 'text-gray-300' : 'text-gray-600'
-                    }`}>
-                      <div className="inline-block animate-spin mr-2">⟳</div>
-                      正在检查更新...
-                    </div>
-                  )}
-
-                  {updateStatus === 'available' && updateInfo && (
-                    <div className="space-y-3">
-                      <div className={`p-3 rounded-lg ${
-                        darkMode ? 'bg-green-900/30 border border-green-700' : 'bg-green-50 border border-green-200'
-                      }`}>
-                        <div className={`font-medium mb-1 ${
-                          darkMode ? 'text-green-300' : 'text-green-800'
-                        }`}>
-                          发现新版本: {updateInfo.version}
-                        </div>
-                        {updateInfo.releaseNotes && (
-                          <div className={`text-xs mt-2 ${
-                            darkMode ? 'text-green-400' : 'text-green-700'
-                          }`}>
-                            {updateInfo.releaseNotes}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={handleDownloadUpdate}
-                        className={`w-full px-4 py-2 rounded-lg transition-colors ${
-                          darkMode
-                            ? 'bg-green-600 hover:bg-green-700 text-white'
-                            : 'bg-green-600 hover:bg-green-700 text-white'
-                        }`}
-                      >
-                        下载更新
+          {/* 二、反馈与更新：两列（或建议单列 + 更新单列） */}
+          <section className="mb-8">
+            <h2 className={`${sectionTitleCls} border-l-4 ${accentBorder} pl-3`}>
+              反馈与更新
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className={cardCls}>
+                <h3 className={`text-base font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  建议与反馈
+                </h3>
+                <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  功能建议、问题反馈或合作意向，欢迎联系开发团队。
+                </p>
+                <a
+                  href={`mailto:xuqianglai@outlook.com?subject=${encodeURIComponent('【长沙院浆体管道计算工具】软件建议与反馈')}&body=${encodeURIComponent(
+                    '软件名称：长沙院浆体管道计算工具\n\n建议/反馈类型：□ 功能建议  □ 问题反馈  □ 其他\n\n内容说明：\n\n\n\n'
+                  )}`}
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                >
+                  联系开发团队
+                </a>
+              </div>
+              {typeof window !== 'undefined' && (window as any).electronAPI?.update ? (
+                <div className={cardCls}>
+                  <h3 className={`text-base font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                    应用更新
+                  </h3>
+                  <div className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    当前版本 <span className="font-semibold text-blue-600">{currentVersion || '—'}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {updateStatus === 'idle' && (
+                      <button onClick={handleCheckForUpdates} className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                        检查更新
                       </button>
-                    </div>
-                  )}
-
-                  {updateStatus === 'downloading' && (
-                    <div className="space-y-3">
-                      <div className={`text-sm mb-2 ${
-                        darkMode ? 'text-gray-300' : 'text-gray-600'
-                      }`}>
-                        正在下载更新: {updateProgress}%
+                    )}
+                    {updateStatus === 'checking' && (
+                      <div className={`text-center py-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        <span className="inline-block animate-spin mr-2">⟳</span> 正在检查更新...
                       </div>
-                      <div className={`w-full h-2 rounded-full overflow-hidden ${
-                        darkMode ? 'bg-gray-700' : 'bg-gray-200'
-                      }`}>
-                        <div
-                          className={`h-full transition-all duration-300 ${
-                            darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                          }`}
-                          style={{ width: `${updateProgress}%` }}
-                        />
+                    )}
+                    {updateStatus === 'available' && updateInfo && (
+                      <div className="space-y-3">
+                        <div className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-green-900/30 border border-green-700 text-green-300' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+                          <div className="font-medium">发现新版本 {updateInfo.version}</div>
+                          {updateInfo.releaseNotes && <div className={`mt-1 text-xs ${darkMode ? 'text-green-400' : 'text-green-700'}`}>{updateInfo.releaseNotes}</div>}
+                        </div>
+                        <button onClick={handleDownloadUpdate} className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors">下载更新</button>
                       </div>
-                    </div>
-                  )}
-
-                  {updateStatus === 'downloaded' && (
-                    <div className="space-y-3">
-                      <div className={`p-3 rounded-lg ${
-                        darkMode ? 'bg-green-900/30 border border-green-700' : 'bg-green-50 border border-green-200'
-                      }`}>
-                        <div className={`font-medium ${
-                          darkMode ? 'text-green-300' : 'text-green-800'
-                        }`}>
-                          更新下载完成，重启应用以安装更新
+                    )}
+                    {updateStatus === 'downloading' && (
+                      <div className="space-y-2">
+                        <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>正在下载 {updateProgress}%</div>
+                        <div className={`w-full h-2 rounded-full overflow-hidden ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`}>
+                          <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${updateProgress}%` }} />
                         </div>
                       </div>
-                      <button
-                        onClick={handleInstallUpdate}
-                        className={`w-full px-4 py-2 rounded-lg transition-colors ${
-                          darkMode
-                            ? 'bg-green-600 hover:bg-green-700 text-white'
-                            : 'bg-green-600 hover:bg-green-700 text-white'
-                        }`}
-                      >
-                        立即重启并安装
-                      </button>
-                    </div>
-                  )}
-
-                  {updateStatus === 'error' && (
-                    <div className="space-y-3">
-                      <div className={`p-3 rounded-lg ${
-                        darkMode ? 'bg-red-900/30 border border-red-700' : 'bg-red-50 border border-red-200'
-                      }`}>
-                        <div className={`text-sm ${
-                          darkMode ? 'text-red-300' : 'text-red-800'
-                        }`}>
+                    )}
+                    {updateStatus === 'downloaded' && (
+                      <div className="space-y-3">
+                        <div className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-green-900/30 border border-green-700 text-green-300' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+                          更新已下载，重启后安装
+                        </div>
+                        <button onClick={handleInstallUpdate} className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors">立即重启并安装</button>
+                      </div>
+                    )}
+                    {updateStatus === 'error' && (
+                      <div className="space-y-3">
+                        <div className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-red-900/30 border border-red-700 text-red-300' : 'bg-red-50 border border-red-200 text-red-800'}`}>
                           {updateError || '更新检查失败'}
                         </div>
+                        <button onClick={handleCheckForUpdates} className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">重试</button>
                       </div>
-                      <button
-                        onClick={handleCheckForUpdates}
-                        className={`w-full px-4 py-2 rounded-lg transition-colors ${
-                          darkMode
-                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white'
-                        }`}
-                      >
-                        重试
-                      </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className={cardCls}>
+                  <h3 className={`text-base font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                    应用版本
+                  </h3>
+                  <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    当前版本 <span className="font-semibold">{currentVersion || '—'}</span>（浏览器环境下无自动更新）
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 三、法律与声明：两列 */}
+          <section>
+            <h2 className={`${sectionTitleCls} border-l-4 ${accentBorder} pl-3`}>
+              法律与声明
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className={cardCls}>
+                <h3 className={`text-base font-semibold mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  免责声明
+                </h3>
+                <div className={`text-sm leading-relaxed space-y-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  <p>本软件所提供的计算公式及计算结果仅供工程设计参考，不构成任何设计依据或保证。实际工程须结合现行规范、现场条件及专业判断综合决策。</p>
+                  <p>使用本软件及其结果所产生的任何直接或间接后果，开发与提供方不承担责任。如有疑问，请以现行国家标准、行业规范及有资质单位出具的正式设计文件为准。</p>
                 </div>
               </div>
-            )}
-          </div>
+              <div className={cardCls}>
+                <h3 className={`text-base font-semibold mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  数据与隐私
+                </h3>
+                <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  本软件在本地完成计算，不收集、不上传您的输入数据或计算结果。导出 Word 等操作均在您本机完成，不会将内容发送至外部服务器。
+                </p>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     )
@@ -1792,6 +1879,10 @@ export default function MainContent({
                     ? '沿程摩阻损失:'
                     : formula?.id === 'density_mixing'
                     ? '浆体密度:'
+                    : formula?.id === 'darcy_friction'
+                    ? '达西摩阻系数 λ:'
+                    : formula?.id === 'slurry_accel_energy'
+                    ? '条件判断:'
                     : '临界流速计算结果:'}
                 </div>
                 {result?.success && result.result?.Vc !== undefined && formula?.id !== 'kronodze_pressure' && (
@@ -1825,10 +1916,27 @@ export default function MainContent({
               <div className={`text-xl font-bold ${
                 darkMode ? 'text-blue-400' : 'text-blue-600'
               }`}>
-                {result?.success && (result.result?.Vc !== undefined || result.result?.i_k !== undefined || result.result?.rho_k !== undefined)
-                  ? `${result.result?.Vc ?? result.result?.i_k ?? result.result?.rho_k} ${result.result?.unit ?? ''}`
+                {result?.success && result.result?.condition_met !== undefined
+                  ? (result.result.condition_met
+                    ? '✅ 浆体加速流及消能条件满足'
+                    : '❌ 浆体加速流及消能条件不满足')
+                  : result?.success && (result.result?.Vc !== undefined || result.result?.i_k !== undefined || result.result?.rho_k !== undefined || result.result?.lambda_coef !== undefined)
+                  ? `${result.result?.Vc ?? result.result?.i_k ?? result.result?.rho_k ?? result.result?.lambda_coef} ${result.result?.unit ?? ''}`
                   : result?.error || '—'}
               </div>
+              {result?.success && result.result?.condition_met !== undefined && result.result?.intermediate && (
+                <div className={`mt-2 text-sm ${
+                  darkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}>
+                  左侧总水头差 (Z₁+H₁)-(Z₂+H₂) = {result.result.intermediate.head_diff} m
+                  <br />
+                  右侧摩阻损失 iL = {result.result.intermediate.friction_loss_total} m
+                  <br />
+                  <span className={result.result.condition_met ? 'text-green-600' : 'text-amber-600'}>
+                    {(result.result.intermediate.head_diff ?? 0) > (result.result.intermediate.friction_loss_total ?? 0) ? '前者 > 后者' : '前者 ≤ 后者'}
+                  </span>
+                </div>
+              )}
               {lockedVc !== null && (
                 <div className={`mt-2 pt-2 border-t ${
                   darkMode ? 'border-blue-700' : 'border-blue-200'
