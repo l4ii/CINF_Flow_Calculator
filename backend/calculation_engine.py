@@ -1,0 +1,570 @@
+import math
+
+class CalculationEngine:
+    
+    def _safe_round(self, value, decimals=12):
+        """安全地四舍五入（默认保留较多小数位，便于工程计算复核），处理复数和无效值"""
+        if isinstance(value, complex):
+            # 如果是复数，检查虚部是否接近0
+            if abs(value.imag) < 1e-10:
+                return round(value.real, decimals)
+            else:
+                raise ValueError(f"计算结果为复数: {value}，请检查输入参数是否合理")
+        if math.isnan(value) or math.isinf(value):
+            raise ValueError(f"计算结果无效: {value}，请检查输入参数")
+        return round(value, decimals)
+    """计算引擎，实现各种临界流速计算公式"""
+    
+    def calculate(self, formula_id, parameters):
+        """根据公式ID和参数计算临界流速Vc"""
+        
+        # 确保g有默认值
+        g = parameters.get('g', 9.81)
+        
+        if formula_id == "liu_dezhong":
+            return self._calculate_liu_dezhong(parameters, g)
+        elif formula_id == "wasp":
+            return self._calculate_wasp(parameters, g)
+        elif formula_id == "fei_xiangjun":
+            return self._calculate_fei_xiangjun(parameters, g)
+        elif formula_id == "kronodze_pressure":
+            return self._calculate_kronodze_pressure(parameters, g)
+        elif formula_id == "friction_loss":
+            return self._calculate_friction_loss(parameters, g)
+        elif formula_id == "density_mixing":
+            return self._calculate_density_mixing(parameters, g)
+        elif formula_id == "darcy_friction":
+            return self._calculate_darcy_friction(parameters)
+        elif formula_id == "slurry_accel_energy":
+            return self._calculate_slurry_accel_energy(parameters)
+        elif formula_id in ("slurry_dissipation", "slurry_energy_dissipation"):
+            return self._calculate_slurry_dissipation(parameters)
+        elif formula_id == "slurry_friction_loss":
+            return self._calculate_slurry_friction_loss(parameters, g)
+        else:
+            raise ValueError(f"未知的公式ID: {formula_id}")
+    
+    def _calculate_liu_dezhong(self, params, g):
+        """刘德忠公式: Vc = 9.5 * [g*D*(Δρ/ρ)*ω]^(1/3) * Cv^(1/6) * (ω_s/ω)^(1/6)"""
+        D = params.get('D')
+        rho_g = params.get('rho_g')  # 固体颗粒密度
+        rho_k = params.get('rho_k')  # 载体液体密度
+        omega = params.get('omega')
+        Cv = params.get('Cv')  # 体积浓度
+        omega_s = params.get('omega_s')  # 沉降速度
+        
+        # 获取重力加速度和经验系数（优先使用前端传入的值，否则使用默认值）
+        g = params.get('g', g)  # 重力加速度，优先使用前端传入的值，否则使用传入的默认值
+        coefficient = params.get('coefficient_9_5', 9.5)  # 经验系数，默认9.5
+        
+        if None in [D, rho_g, rho_k, omega, Cv, omega_s]:
+            raise ValueError("刘德忠公式需要所有参数：D, rho_g, rho_k, omega, Cv, omega_s")
+        
+        if omega == 0:
+            raise ValueError("omega不能为0")
+        
+        if rho_k == 0:
+            raise ValueError("载体液体密度rho_k不能为0")
+        
+        if rho_g < rho_k:
+            raise ValueError("固体颗粒密度rho_g必须大于载体液体密度rho_k")
+        
+        if Cv < 0 or Cv > 1:
+            raise ValueError("体积浓度Cv必须在0-1之间")
+        
+        if omega_s < 0:
+            raise ValueError("沉降速度omega_s不能为负数")
+        
+        # 计算相对密度差
+        delta_rho_ratio = (rho_g - rho_k) / rho_k
+        
+        # 计算核心项[g*D*(Δρ/ρ)*ω]^(1/3)
+        core_value = g * D * delta_rho_ratio * omega
+        if core_value < 0:
+            raise ValueError(f"核心项计算结果为负数: {core_value}，请检查输入参数（D、g、omega必须为正数，且rho_g > rho_k）")
+        core_term = core_value ** (1/3)
+        
+        # 计算浓度修正项Cv^(1/6)
+        concentration_term = Cv ** (1/6)
+        
+        # 计算沉降速度比修正项(ω_s/ω)^(1/6)
+        velocity_ratio_term = (omega_s / omega) ** (1/6)
+        
+        # 综合计算Vc = coefficient * core * conc * ratio
+        Vc = coefficient * core_term * concentration_term * velocity_ratio_term
+        
+        return {
+            "Vc": self._safe_round(Vc, 12),
+            "unit": "m/s",
+            "intermediate": {
+                "delta_rho_ratio": self._safe_round(delta_rho_ratio, 12),
+                "core_term": self._safe_round(core_term, 12),
+                "concentration_term": self._safe_round(concentration_term, 12),
+                "velocity_ratio_term": self._safe_round(velocity_ratio_term, 12),
+                "coefficient": self._safe_round(coefficient, 12),
+                "g": self._safe_round(g, 12)
+            }
+        }
+    
+    def _calculate_wasp(self, params, g):
+        """E.J.瓦斯普公式: Vc = 3.113 * Cv^0.1858 * [2*g*D*(Δρ/ρ)]^(1/2) * (d85/D)^(1/6)"""
+        D = params.get('D')
+        rho_g = params.get('rho_g')  # 固体颗粒密度
+        rho_k = params.get('rho_k')  # 载体液体密度
+        Cv = params.get('Cv')  # 体积浓度
+        d85 = params.get('d85')  # d85粒径
+        
+        # 获取重力加速度和经验系数（优先使用前端传入的值，否则使用默认值）
+        g = params.get('g', g)  # 重力加速度，优先使用前端传入的值，否则使用传入的默认值
+        coefficient = params.get('coefficient_3_113', 3.113)  # 经验系数，默认3.113
+        
+        if None in [D, rho_g, rho_k, Cv, d85]:
+            raise ValueError("E.J.瓦斯普公式需要所有参数：D, rho_g, rho_k, Cv, d85")
+        
+        if D == 0:
+            raise ValueError("D不能为0")
+        
+        if rho_k == 0:
+            raise ValueError("载体液体密度rho_k不能为0")
+        
+        if rho_g < rho_k:
+            raise ValueError("固体颗粒密度rho_g必须大于载体液体密度rho_k")
+        
+        if Cv < 0 or Cv > 1:
+            raise ValueError("体积浓度Cv必须在0-1之间")
+        
+        if d85 < 0:
+            raise ValueError("d85粒径不能为负数")
+        
+        # 计算相对密度差
+        delta_rho_ratio = (rho_g - rho_k) / rho_k
+        
+        # 计算核心项[2*g*D*(Δρ/ρ)]^(1/2) - 注意：根据标准公式，括号内不包含ω
+        bracket_value = 2 * g * D * delta_rho_ratio
+        if bracket_value < 0:
+            raise ValueError(f"核心项计算结果为负数: {bracket_value}，请检查输入参数（D、g必须为正数，且rho_g > rho_k）")
+        bracket_term = bracket_value ** 0.5
+        
+        # 计算浓度修正项Cv^0.1858
+        concentration_term = Cv ** 0.1858
+        
+        # 计算粒径比修正项(d85/D)^(1/6)
+        size_ratio_term = (d85 / D) ** (1/6)
+        
+        # 综合计算Vc = coefficient * conc * bracket * size
+        # 注意：omega参数虽然被接收，但根据标准E.J. Wasp公式，不参与计算
+        Vc = coefficient * concentration_term * bracket_term * size_ratio_term
+        
+        return {
+            "Vc": self._safe_round(Vc, 12),
+            "unit": "m/s",
+            "intermediate": {
+                "delta_rho_ratio": self._safe_round(delta_rho_ratio, 12),
+                "bracket_term": self._safe_round(bracket_term, 12),
+                "concentration_term": self._safe_round(concentration_term, 12),
+                "size_ratio_term": self._safe_round(size_ratio_term, 12),
+                "coefficient": self._safe_round(coefficient, 12),
+                "g": self._safe_round(g, 12)
+            }
+        }
+    
+    def _calculate_fei_xiangjun(self, params, g):
+        """费祥俊公式: Vc = (2.26/√λ) * [gD*(Δρ/ρ)*ω]^(1/2) * Cv^0.25 * (d90/D)^(1/3)"""
+        D = params.get('D')
+        rho_g = params.get('rho_g')  # 固体颗粒密度
+        rho_k = params.get('rho_k')  # 载体液体密度
+        Cv = params.get('Cv')  # 体积浓度
+        omega = params.get('omega')
+        d90 = params.get('d90')  # d90粒径
+        lambda_coef = params.get('lambda_coef')  # λ系数
+        
+        # 获取重力加速度和经验系数（优先使用前端传入的值，否则使用默认值）
+        g = params.get('g', g)  # 重力加速度，优先使用前端传入的值，否则使用传入的默认值
+        coefficient_2_26 = params.get('coefficient_2_26', 2.26)  # 经验系数，默认2.26
+        
+        if None in [D, rho_g, rho_k, Cv, omega, d90, lambda_coef]:
+            raise ValueError("费祥俊公式需要所有参数：D, rho_g, rho_k, Cv, omega, d90, lambda_coef")
+        
+        if D == 0:
+            raise ValueError("D不能为0")
+        
+        if lambda_coef <= 0:
+            raise ValueError("lambda_coef必须大于0")
+        
+        if rho_k == 0:
+            raise ValueError("载体液体密度rho_k不能为0")
+        
+        if rho_g < rho_k:
+            raise ValueError("固体颗粒密度rho_g必须大于载体液体密度rho_k")
+        
+        if Cv < 0 or Cv > 1:
+            raise ValueError("体积浓度Cv必须在0-1之间")
+        
+        if omega < 0:
+            raise ValueError("速度参数omega不能为负数")
+        
+        if d90 < 0:
+            raise ValueError("d90粒径不能为负数")
+        
+        # 1.计算相对密度差
+        delta_rho_ratio = (rho_g - rho_k) / rho_k
+        
+        # 2.计算中括号内部分 [gD*(Δρ/ρ)*ω]，然后开方（1/2次方）
+        bracket_value = g * D * delta_rho_ratio * omega
+        if bracket_value < 0:
+            raise ValueError(f"核心项计算结果为负数: {bracket_value}，请检查输入参数（D、g、omega必须为正数，且rho_g > rho_k）")
+        bracket_term = bracket_value ** 0.5
+        
+        # 3.计算浓度修正项
+        conc_term = Cv ** 0.25
+        
+        # 4.计算粒径比修正项
+        size_term = (d90 / D) ** (1/3)
+        
+        # 5.计算核心系数coefficient_2_26/√λ
+        leading_coef = coefficient_2_26 / (lambda_coef ** 0.5)
+        
+        # 6.综合计算
+        Vc = leading_coef * bracket_term * conc_term * size_term
+        
+        return {
+            "Vc": self._safe_round(Vc, 12),
+            "unit": "m/s",
+            "intermediate": {
+                "delta_rho_ratio": self._safe_round(delta_rho_ratio, 12),
+                "bracket_term": self._safe_round(bracket_term, 12),
+                "conc_term": self._safe_round(conc_term, 12),
+                "size_term": self._safe_round(size_term, 12),
+                "leading_coef": self._safe_round(leading_coef, 12),
+                "coefficient_2_26": self._safe_round(coefficient_2_26, 12),
+                "lambda_coef": self._safe_round(lambda_coef, 12),
+                "g": self._safe_round(g, 12)
+            }
+        }
+    
+    def _calculate_kronodze_pressure(self, params, g):
+        """B.C.克诺罗兹法三步计算，每步可独立计算：
+        A) 矿浆流量 Qk = K*W*(1/ρg + G/W)，仅需 K、G、W、ρg，不需 dp
+        B) 临界管径 DL：需 dp、β 及步骤 A 的 Qk；当 dp≤0.07 与 0.07<dp≤0.15 两套公式
+        C) 临界流速 V_L：由 A、B 结果及 β 计算
+        """
+        K = params.get('K', 1.1)  # 波动系数
+        G = params.get('G')       # 矿浆中水重
+        W = params.get('W')       # 干尾矿重量
+        rho_g = params.get('rho_g')  # 尾矿相对密度
+        dp_raw = params.get('dp')    # 尾矿加权平均粒径，mm（步骤2 才需要）
+        beta = params.get('beta', 1.0)  # 固体物料相对密度修正系数
+
+        # 步骤 A 仅需 G、W、ρg（K 有默认值）
+        if G is None or W is None or rho_g is None:
+            raise ValueError("步骤1 需要参数：G（矿浆中水重）、W（干尾矿重量）、ρg（尾矿相对密度）")
+        if W == 0:
+            raise ValueError("干尾矿重量 W 不能为0")
+        if G == 0:
+            raise ValueError("矿浆中水重 G 不能为0")
+        if rho_g <= 0:
+            raise ValueError("尾矿相对密度 ρg 必须大于0")
+
+        # ---------- Step A: 矿浆流量 Qk = K*W*(1/ρg + G/W) ----------
+        Qk = K * W * (1.0 / rho_g + G / W)
+        if Qk <= 0:
+            raise ValueError("矿浆流量 Qk 计算结果应大于0，请检查 G、W、ρg")
+        Cd = (W / G) * 100.0  # 重量砂水比（砂重/水重×100）
+
+        # 若未填写 dp 或 dp 无效，只返回步骤 A 结果（第一步独立计算）
+        dp = None
+        if dp_raw is not None:
+            try:
+                dp = float(dp_raw)
+            except (TypeError, ValueError):
+                pass
+        if dp is None or not (0 < dp <= 0.15):
+            return {
+                "Vc": None,
+                "unit": "m/s",
+                "intermediate": {
+                    "step_A_Qk": self._safe_round(Qk, 12),
+                    "Cd": self._safe_round(Cd, 12),
+                }
+            }
+
+        # ---------- Step B: 临界管径 DL（由 Qk 反解，数值求解）----------
+        if dp <= 0.07:
+            def eq_dl_small(dl):
+                if dl <= 0:
+                    return -Qk
+                inner = Cd * (dl ** 0.15)
+                if inner <= 0:
+                    return -Qk
+                return 0.157 * beta * dl * (1.0 + 3.434 * (inner ** 0.25)) - Qk
+            DL = self._solve_dl_bisection(eq_dl_small, 1e-6, 5000.0, max_iter=200)
+        elif dp <= 0.15:
+            def eq_dl_medium(dl):
+                if dl <= 0:
+                    return -Qk
+                inner = Cd * (dl ** 0.25)
+                if inner <= 0:
+                    return -Qk
+                return 0.2 * beta * dl * (1.0 + 2.48 * (inner ** (1.0/3.0))) - Qk
+            DL = self._solve_dl_bisection(eq_dl_medium, 1e-6, 5000.0, max_iter=200)
+        else:
+            raise ValueError("尾矿加权平均粒径 dp 应 ≤0.15mm，当前为 %.3f mm" % dp)
+
+        if DL is None or DL <= 0:
+            raise ValueError("无法求解临界管径 DL，请检查输入参数是否合理")
+
+        # ---------- Step C: 临界流速 V_L = 0.255*β*(1 + 2.48*³√(Cd)*⁴√(DL)) ----------
+        if Cd <= 0:
+            raise ValueError("重量砂水比 Cd 应大于0")
+        term_cd = Cd ** (1.0/3.0)       # 浓度修正项 ³√(Cd)
+        term_dl = (DL ** 0.25)          # 管径修正项 ⁴√(D_L)
+        bracket_term = 1.0 + 2.48 * term_cd * term_dl
+        Vc = 0.255 * beta * bracket_term
+
+        return {
+            "Vc": self._safe_round(Vc, 12),
+            "unit": "m/s",
+            "intermediate": {
+                "term_cd": self._safe_round(term_cd, 12),
+                "term_dl": self._safe_round(term_dl, 12),
+                "bracket_term": self._safe_round(bracket_term, 12),
+                "step_A_Qk": self._safe_round(Qk, 12),
+                "step_B_DL_mm": self._safe_round(DL, 12),
+                "Cd": self._safe_round(Cd, 12),
+                "step_C_V_L": self._safe_round(Vc, 12),
+            }
+        }
+
+    def _solve_dl_bisection(self, func, lo, hi, tol=1e-6, max_iter=200):
+        """在 [lo, hi] 上对 func(DL)=0 做二分法求 DL"""
+        f_lo = func(lo)
+        f_hi = func(hi)
+        if f_lo * f_hi > 0:
+            return None
+        for _ in range(max_iter):
+            mid = (lo + hi) * 0.5
+            f_mid = func(mid)
+            if abs(f_mid) < tol or (hi - lo) < tol:
+                return mid
+            if f_lo * f_mid < 0:
+                hi = mid
+                f_hi = f_mid
+            else:
+                lo = mid
+                f_lo = f_mid
+        return (lo + hi) * 0.5
+    
+    def _calculate_friction_loss(self, params, g):
+        """4.3.1-1 似均质流态浆体管道沿程摩阻损失: i_k = λ·(V²·ρ_k)/(2gD·ρ_s)，单位 mH₂O/m"""
+        lambda_coef = params.get('lambda_coef')
+        V = params.get('V')
+        rho_k = params.get('rho_k')
+        D = params.get('D')
+        rho_s = params.get('rho_s')
+        g_val = params.get('g', g)
+        if None in [lambda_coef, V, rho_k, D, rho_s]:
+            raise ValueError("沿程摩阻损失需要参数：λ、V、ρ_k、D、ρ_s")
+        if D == 0 or rho_s == 0 or g_val == 0:
+            raise ValueError("D、ρ_s、g 不能为0")
+        # i_k = λ * (V^2 * ρ_k) / (2*g*D*ρ_s)
+        i_k = lambda_coef * (V ** 2 * rho_k) / (2 * g_val * D * rho_s)
+        if i_k < 0:
+            raise ValueError("沿程摩阻损失计算结果为负，请检查输入")
+        return {
+            "i_k": self._safe_round(i_k, 12),
+            "unit": "mH₂O/m",
+            "intermediate": {
+                "numerator": self._safe_round(V ** 2 * rho_k, 12),
+                "denominator": self._safe_round(2 * g_val * D * rho_s, 12),
+            }
+        }
+
+    def _calculate_slurry_friction_loss(self, params, g):
+        """浆体摩阻损失（达西-魏斯巴赫公式）：仅计算 i_k，ρ_k 和 λ 由前置模块或用户直接输入"""
+        rho_k_val = params.get("rho_k")
+        if rho_k_val is None or not (isinstance(rho_k_val, (int, float)) and rho_k_val > 0 and not math.isnan(rho_k_val)):
+            raise ValueError("浆体摩阻损失需要 ρ_k。请先在「密度混合公式」中计算，或直接输入 ρ_k。")
+        r2 = self._calculate_friction_loss(params, g)
+        return {
+            "rho_k": float(rho_k_val),
+            "i_k": r2["i_k"],
+            "unit": r2["unit"],
+            "intermediate": {
+                "step_B_i_k": r2["i_k"],
+                **r2.get("intermediate", {}),
+            }
+        }
+
+    def _calculate_density_mixing(self, params, g):
+        """4.3.1-2 浆体密度混合公式: ρ_k = 1/(C_w/ρ_g + (1-C_w)/ρ_s)，单位 t/m³"""
+        C_w = params.get('C_w')
+        rho_g = params.get('rho_g')  # 载体流体密度（如水）
+        rho_s = params.get('rho_s')  # 固体颗粒密度
+        if None in [C_w, rho_g, rho_s]:
+            raise ValueError("密度混合公式需要参数：C_w、ρ_g、ρ_s")
+        if rho_g == 0 or rho_s == 0:
+            raise ValueError("ρ_g、ρ_s 不能为0")
+        if C_w < 0 or C_w > 1:
+            raise ValueError("质量浓度 C_w 应在 0～1 之间")
+        # ρ_k = 1 / (C_w/ρ_g + (1-C_w)/ρ_s)
+        denom = C_w / rho_g + (1.0 - C_w) / rho_s
+        if denom <= 0:
+            raise ValueError("密度混合公式分母应大于0")
+        rho_k = 1.0 / denom
+        return {
+            "rho_k": self._safe_round(rho_k, 12),
+            "unit": "t/m³",
+            "intermediate": {
+                "denom": self._safe_round(denom, 12),
+            }
+        }
+
+    def _calculate_darcy_friction(self, params):
+        """达西摩阻系数：三步 A 混合物密度 ρ₁，B 雷诺数 ReB，C 达西摩阻系数 λ。支持用户直接输入 ρ₁ 或 ReB 跳过前序步骤。"""
+        # Step A: ρ₁ = ρg·C1v + (1-C1v)·ρs
+        rho_1_val = params.get('rho_1')
+        if rho_1_val is not None and isinstance(rho_1_val, (int, float)) and rho_1_val > 0 and not math.isnan(rho_1_val):
+            rho_1 = float(rho_1_val)
+        else:
+            rho_g = params.get('rho_g')
+            rho_s = params.get('rho_s')
+            C1v = params.get('C1v')
+            if None in [rho_g, rho_s, C1v]:
+                raise ValueError("请提供 ρ₁，或填写 ρ_g、ρ_s、C1v")
+            if rho_g <= 0 or rho_s <= 0:
+                raise ValueError("ρ_g、ρ_s 必须大于 0")
+            if C1v < 0 or C1v > 1:
+                raise ValueError("液相体积浓度 C1v 应在 0～1 之间")
+            rho_1 = rho_g * C1v + (1.0 - C1v) * rho_s
+        step_A_rho_1 = rho_1
+
+        # Step B: ReB = (V·Dn·ρ₁)/η₁
+        Re_B_val = params.get('Re_B')
+        if Re_B_val is not None and isinstance(Re_B_val, (int, float)) and Re_B_val > 0 and not math.isnan(Re_B_val):
+            Re_B = float(Re_B_val)
+        else:
+            V = params.get('V')
+            D_n = params.get('D_n')
+            eta_1 = params.get('eta_1')
+            if None in [V, D_n, eta_1]:
+                raise ValueError("请提供 ReB，或填写 V、D_n、η₁")
+            if D_n <= 0 or eta_1 <= 0:
+                raise ValueError("D_n、η₁ 必须大于 0")
+            Re_B = (V * D_n * rho_1) / eta_1
+        step_B_Re_B = Re_B
+
+        # Step C: λ
+        epsilon = params.get('epsilon', 0.0002)
+        D_n = params.get('D_n')
+        if D_n is None or D_n <= 0:
+            raise ValueError("步骤 C 需要管道内径 D_n")
+        if Re_B < 2000:
+            lam = 64.0 / Re_B
+            flow_regime = "层流"
+        else:
+            # 显式 Colebrook-White: λ = 1.33036 / (ln(ε/(3.7·Dn) + 5.7385/ReB^0.9))²
+            eps_term = (epsilon / (3.7 * D_n)) if epsilon else 1e-10
+            re_term = 5.7385 / (Re_B ** 0.9)
+            inner = eps_term + re_term
+            if inner <= 0:
+                raise ValueError("达西摩阻系数计算项无效")
+            lam = 1.33036 / (math.log(inner) ** 2)
+            flow_regime = "湍流"
+
+        return {
+            "lambda_coef": self._safe_round(lam, 12),
+            "rho_1": self._safe_round(step_A_rho_1, 12),
+            "Re_B": self._safe_round(step_B_Re_B, 12),
+            "unit": "",
+            "intermediate": {
+                "step_A_rho_1": step_A_rho_1,
+                "step_B_Re_B": step_B_Re_B,
+                "flow_regime": flow_regime
+            }
+        }
+
+    def _calculate_slurry_accel_energy(self, params):
+        """浆体加速流及消能：(Z₁+P₁/(ρkg))-(Z₂+P₂/(ρkg)) > iL；判断不等式是否成立"""
+        Z1 = params.get('Z1')
+        Z2 = params.get('Z2')
+        H1 = params.get('H1')  # P1/(ρkg)
+        H2 = params.get('H2')  # P2/(ρkg)
+        i = params.get('i')
+        L = params.get('L')
+        if None in [Z1, Z2, H1, H2, i, L]:
+            raise ValueError("浆体加速流需要参数：Z₁、Z₂、H₁、H₂、i、L")
+        if L < 0:
+            raise ValueError("管道长度 L 不能为负")
+        # 左侧：总水头差
+        head_diff = (Z1 + H1) - (Z2 + H2)
+        # 右侧：沿程摩阻损失
+        friction_loss_total = i * L
+        condition_met = head_diff > friction_loss_total
+        return {
+            "condition_met": condition_met,
+            "unit": "",
+            "intermediate": {
+                "head_diff": self._safe_round(head_diff, 12),
+                "friction_loss_total": self._safe_round(friction_loss_total, 12),
+            }
+        }
+
+    def _calculate_slurry_dissipation(self, params):
+        """浆体消能两步计算：
+        1) K_QL = (6.3755×10^-9 * λ_d * L_s) / d^5
+        2) Δh = K_QL * Q^2
+        支持跳过步骤1直接输入 K_QL。
+        """
+        lambda_d = params.get('lambda_d')
+        L_s = params.get('L_s')
+        d = params.get('d')
+        Q = params.get('Q')
+        K_QL_input = params.get('K_QL')
+
+        K_QL = None
+        kql_numerator = None
+        kql_denominator_d5 = None
+        use_direct_kql = isinstance(K_QL_input, (int, float)) and not math.isnan(K_QL_input)
+        if use_direct_kql:
+            if K_QL_input <= 0:
+                raise ValueError("K_QL 必须大于 0")
+            K_QL = float(K_QL_input)
+        else:
+            if None in [lambda_d, L_s, d]:
+                raise ValueError("请先完成步骤1（填写 λ_d、L_s、d），或直接输入 K_QL")
+            if d <= 0:
+                raise ValueError("消能管内径 d 必须大于 0")
+            if L_s < 0:
+                raise ValueError("沿程缩径增阻管道长度 L_s 不能为负")
+            if lambda_d <= 0:
+                raise ValueError("沿程缩径增阻管道达西摩系数 λ_d 必须大于 0")
+            kql_numerator = 6.3755e-9 * lambda_d * L_s
+            kql_denominator_d5 = d ** 5
+            K_QL = kql_numerator / kql_denominator_d5
+
+        intermediate = {
+            "step_1_kql": self._safe_round(K_QL, 14),
+            "kql_from_direct_input": use_direct_kql,
+        }
+        if kql_numerator is not None and kql_denominator_d5 is not None:
+            intermediate["kql_numerator"] = self._safe_round(kql_numerator, 14)
+            intermediate["kql_denominator_d5"] = self._safe_round(kql_denominator_d5, 14)
+
+        out = {
+            "K_QL": self._safe_round(K_QL, 14),
+            "unit": "m",
+            "intermediate": intermediate,
+        }
+
+        # Step 2 允许在拥有 K_QL 后单独执行
+        if Q is not None:
+            if Q <= 0:
+                raise ValueError("浆体流量 Q 必须大于 0")
+            Q_squared = Q ** 2
+            delta_h = K_QL * Q_squared
+            # round(x,6) 为「小数点后 6 位」，10^-6 量级会误成 1e-6，故提高小数位
+            out["delta_h"] = self._safe_round(delta_h, 14)
+            out["intermediate"]["Q_squared"] = self._safe_round(Q_squared, 14)
+            out["intermediate"]["step_2_delta_h"] = self._safe_round(delta_h, 14)
+
+        return out

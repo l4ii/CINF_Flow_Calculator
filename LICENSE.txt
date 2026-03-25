@@ -1,0 +1,45 @@
+长沙院浆体管道计算工具 软件许可协议
+
+软件名称：长沙院浆体管道计算工具
+版本号：1.0.0
+著作权人：(C) 2026 长沙有色冶金设计研究院有限公司
+
+一、软件说明
+
+本软件为浆体管道水力计算专业工具，提供多种行业标准公式计算临界流速、导出 Word 计算报告等功能。所有计算均在本机完成，不采集、不上传用户数据。
+
+二、许可范围
+
+本软件采用 MIT 许可协议。获得本软件副本的任何人，在满足下述条件的前提下，可自由使用、复制、修改、合并、发布、分发、再许可及/或出售本软件及其副本。
+
+三、使用条件
+
+(1) 本许可声明及版权声明须包含在软件的所有副本或实质部分中。
+(2) 本软件按「原样」提供，不提供任何明示或默示的保证。
+(3) 在任何情况下，著作权人及版权持有人均不对因使用本软件而产生的任何索赔、损害或其他责任负责。
+
+四、法律声明
+
+使用、复制、修改、分发本软件即表示您已阅读、理解并同意受本协议约束。如有疑问，请以现行国家标准、行业规范及有资质单位出具的正式设计文件为准。
+
+---
+
+CINF Slurry Pipeline Calculation Tool - Software License Agreement (English)
+
+Software: CINF Slurry Pipeline Calculation Tool
+Version: 1.0.0
+Copyright: (C) 2026 Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.
+
+I. Software Description
+This software is a professional tool for slurry pipeline hydraulic calculation. All calculations are performed locally; no user data is collected or transmitted.
+
+II. License Scope
+This software is distributed under the MIT License.
+
+III. Conditions
+(1) This license and copyright notice must be included in all copies.
+(2) The Software is provided "as is", without warranty of any kind.
+(3) The copyright holder shall not be liable for any claims or damages.
+
+IV. Legal Notice
+By using this software, you agree to be bound by this agreement.

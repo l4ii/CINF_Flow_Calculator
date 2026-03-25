@@ -1,0 +1,42 @@
+{
+  "name": "flow-calculation-tool",
+  "version": "1.0.0",
+  "description": "长沙院浆体管道计算工具",
+  "main": "electron/main.js",
+  "scripts": {
+    "postinstall": "node scripts/apply-electron-builder-nsis-patches.js",
+    "setup": "npm install && npm install --prefix frontend",
+    "start": "electron .",
+    "dev": "npm run dev --prefix frontend",
+    "build": "node scripts/build-frontend.js",
+    "build:frontend": "node scripts/build-frontend.js",
+    "build:python": "node scripts/build-python.js",
+    "clean": "node scripts/clean.js",
+    "dist": "node scripts/build-frontend.js && npx electron-builder",
+    "dist:win": "npm install && python scripts/convert-license-to-gbk.py && node scripts/clean.js && node scripts/build-frontend.js && node scripts/verify-frontend-dist.js && node scripts/clean.js release && node scripts/apply-electron-builder-nsis-patches.js && npx electron-builder --win",
+    "dist:win:full": "npm run build:python && npm run dist:win",
+    "dist:win:legacy": "npm install && python scripts/convert-license-to-gbk.py && node scripts/clean.js legacy && node scripts/build-frontend.js && node scripts/verify-frontend-dist.js && node scripts/build-win7.js",
+    "dist:win:both": "npm run dist:win:full && npm run dist:win:legacy",
+    "dist:mac": "node scripts/build-frontend.js && node scripts/verify-frontend-dist.js && node scripts/clean.js release && npx electron-builder --mac",
+    "dist:linux": "node scripts/build-frontend.js && node scripts/verify-frontend-dist.js && node scripts/clean.js release && npx electron-builder --linux",
+    "disk:win": "npm run dist:win",
+    "disk:mac": "npm run dist:mac",
+    "disk:linux": "npm run dist:linux",
+    "pack": "node scripts/build-frontend.js && node scripts/verify-frontend-dist.js && npx electron-builder --dir",
+    "start:backend": "python backend/app.py"
+  },
+  "keywords": [
+    "electron",
+    "react",
+    "calculation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "electron-updater": "^6.7.3"
+  },
+  "devDependencies": {
+    "electron": "22.3.27",
+    "electron-builder": "^24.9.1"
+  }
+}
