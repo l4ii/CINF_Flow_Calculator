@@ -16,7 +16,13 @@ export interface FormulaInfo {
 
 export interface FlowState {
   临界流速计算?: FormulaInfo[]
-  沿程摩阻损失?: FormulaInfo[]
+  /** @deprecated 旧版 API，前端会迁移到 清水摩阻损失 / 浆体摩阻损失 */
+  摩阻损失?: FormulaInfo[]
+  清水摩阻损失?: FormulaInfo[]
+  浆体摩阻损失?: FormulaInfo[]
+  /** @deprecated 旧版键名，请使用 压力与扬程 */
+  总扬程?: FormulaInfo[]
+  压力与扬程?: FormulaInfo[]
   浆体加速流?: FormulaInfo[]
   浆体消能?: FormulaInfo[]
 }
@@ -32,9 +38,17 @@ export interface CalculationResult {
     rho_1?: number
     Re_B?: number
     lambda_coef?: number
+    H_total?: number
+    /** 清水摩阻损失：单位长度水头损失 kPa/m */
+    i?: number
     condition_met?: boolean
+    /** 孔板消能步骤 1 */
+    beta?: number
+    /** 孔板消能步骤 2 */
+    K_Qk?: number
     unit: string
     intermediate?: Record<string, number | string | boolean>
+    hl_curve?: Array<{ L: number; H: number }>
   }
   error?: string
   animation_type?: 'settle-30' | 'settle-20' | 'settle-10-flow' | 'still-flow' | 'medium-flow' | 'fast-flow'

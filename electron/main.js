@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, nativeImage, Menu } = require('electron')
 const path = require('path')
+const http = require('http')
 const { spawn, execSync } = require('child_process')
 const fs = require('fs')
 const os = require('os')
@@ -214,27 +215,50 @@ function createSplashWindow() {
   }
 }
 
+/** Win7 内核为 6.1.x；Win10/11 为 10.0.x。旧系统上 PyInstaller 用新版 Python 打的 exe 可能无法加载。 */
+function isWindows7KernelOrOlder() {
+  if (process.platform !== 'win32') return false
+  const parts = (os.release() || '').split('.')
+  const major = parseInt(parts[0], 10) || 0
+  const minor = parseInt(parts[1], 10) || 0
+  if (major < 6) return true
+  if (major === 6 && minor <= 1) return true
+  return false
+}
+
 // 查找打包的 Python 后端可执行文件或系统 Python
 function findBackendExecutable() {
-  // 优先查找打包的后端可执行文件或内置 Python（生产环境）
+  // 生产环境：优先策略随系统内核变化（见下方注释）
   if (!isDev) {
+    const bundledPython = getResourcePath('backend', 'python38', 'python.exe')
     const possibleExePaths = [
       getResourcePath('backend', 'dist', 'backend.exe'),
       getResourcePath('backend', 'backend.exe'),
     ]
+
+    // ★ Win10+：优先 backend.exe（dist:win:full 产物，自带 Flask 等依赖）。
+    //   若仍优先 python38，嵌入式 Python 往往未 pip 安装依赖，运行 app.py 会立即失败。
+    // ★ Win7（内核 ≤6.1）：优先 python38，避免新版 Python 打的 exe 缺 api-ms-win-core-path-l1-1-0.dll 等。
+    const tryWin7Order = isWindows7KernelOrOlder()
+
+    if (tryWin7Order && fs.existsSync(bundledPython)) {
+      console.log('Win7/旧内核：优先使用内置 Python 3.8:', bundledPython)
+      return bundledPython
+    }
+
     for (const exePath of possibleExePaths) {
       if (fs.existsSync(exePath)) {
         console.log('找到打包的后端可执行文件:', exePath)
         return exePath
       }
     }
-    // 内置 Python 3.8（Win7 兼容包会包含，用于运行 .py 后端）
-    const bundledPython = getResourcePath('backend', 'python38', 'python.exe')
-    if (fs.existsSync(bundledPython)) {
-      console.log('找到内置 Python 3.8:', bundledPython)
+
+    if (!tryWin7Order && fs.existsSync(bundledPython)) {
+      console.log('未找到 backend.exe，回退内置 Python 3.8:', bundledPython)
       return bundledPython
     }
-    console.log('未找到打包的后端可执行文件或内置 Python，将尝试使用系统Python')
+
+    console.log('未找到内置 Python 或打包的后端可执行文件，将尝试使用系统Python')
   }
 
   // 先尝试当前进程 PATH 中的 python（开发环境或终端里装的通常能拿到）
@@ -325,6 +349,44 @@ function killProcessOnPort5000() {
   }
 }
 
+/** Werkzeug/Flask 启动信息多在 stderr；PyInstaller --noconsole 时子进程可能几乎无输出，不能只靠日志判断就绪 */
+function looksLikeBackendListenLog(chunk) {
+  const s = String(chunk)
+  return s.includes('Running on') || s.includes('127.0.0.1:5000')
+}
+
+/**
+ * 轮询 http://127.0.0.1:5000/api/formulas，确认后端真正可响应（Win7 + 机械盘 + onefile 解压往往远超 4s）
+ */
+function waitForBackendHttpReady(maxMs, intervalMs) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now()
+    const tryOnce = () => {
+      if (Date.now() - t0 > maxMs) {
+        reject(
+          new Error(
+            `后端在 ${Math.round(maxMs / 1000)} 秒内未就绪（127.0.0.1:5000 无响应）。若使用 Win7 或较慢硬盘，请稍候再启动；也可检查防火墙/杀毒是否拦截 Python 或本程序。`
+          )
+        )
+        return
+      }
+      const req = http.get('http://127.0.0.1:5000/api/formulas', { timeout: 3000 }, (res) => {
+        res.resume()
+        if (res.statusCode === 200) resolve()
+        else setTimeout(tryOnce, intervalMs)
+      })
+      req.on('error', () => setTimeout(tryOnce, intervalMs))
+      req.on('timeout', () => {
+        try {
+          req.destroy()
+        } catch (_) {}
+        setTimeout(tryOnce, intervalMs)
+      })
+    }
+    tryOnce()
+  })
+}
+
 // 启动后端服务器
 function startBackend() {
   return new Promise((resolve, reject) => {
@@ -332,6 +394,13 @@ function startBackend() {
     killProcessOnPort5000()
     // 给系统一点时间释放端口，再启动后端，减少“端口仍被占用”的误判
     const delayBeforeSpawn = process.platform === 'win32' ? 800 : 400
+
+    const pollMaxMs = isDev
+      ? 20000
+      : isWindows7KernelOrOlder()
+        ? 120000
+        : 60000
+    const pollIntervalMs = isWindows7KernelOrOlder() ? 600 : 400
 
     function doSpawn() {
     const backendCmd = findBackendExecutable()
@@ -366,6 +435,19 @@ function startBackend() {
     const spawnCwd = backendProcessArgs.length === 0 ? backendDir : appRoot
     console.log(`工作目录: ${spawnCwd}`)
 
+    let settled = false
+    function settleOk(tag) {
+      if (settled) return
+      settled = true
+      console.log('[后端] 就绪', tag ? `(${tag})` : '')
+      resolve()
+    }
+    function settleFail(err) {
+      if (settled) return
+      settled = true
+      reject(err)
+    }
+
     backendProcess = spawn(backendCmd, backendProcessArgs, {
       cwd: spawnCwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -379,22 +461,19 @@ function startBackend() {
       const output = data.toString()
       backendOutput += output
       console.log(`[后端] ${output}`)
-      
-      // 检测后端是否成功启动
-      if (output.includes('Running on') || output.includes('127.0.0.1:5000')) {
-        resolve()
-      }
+      if (looksLikeBackendListenLog(output)) settleOk('stdout')
     })
     
     backendProcess.stderr.on('data', (data) => {
       const error = data.toString()
       backendError += error
-      console.error(`[后端错误] ${error}`)
+      console.error(`[后端 stderr] ${error}`)
+      if (looksLikeBackendListenLog(error)) settleOk('stderr')
     })
     
     backendProcess.on('error', (err) => {
       console.error('后端启动失败:', err)
-      reject(err)
+      settleFail(err)
     })
     
     backendProcess.on('exit', (code) => {
@@ -402,21 +481,27 @@ function startBackend() {
         console.error(`后端进程异常退出，代码: ${code}`)
         console.error('后端输出:', backendOutput)
         console.error('后端错误:', backendError)
-        
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          return
+        if (!settled) {
+          settleFail(
+            new Error(
+              `后端进程已退出（代码 ${code}）。输出：${(backendError || backendOutput || '').slice(0, 500)}`
+            )
+          )
         }
-        
-        dialog.showErrorBox(
-          '后端服务错误',
-          `后端服务启动失败。\n\n错误信息: ${backendError || '未知错误'}\n\n请检查：\n1. Python环境是否正确安装\n2. Python依赖是否已安装 (pip install -r requirements.txt)\n3. 5000端口是否被占用`
-        )
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          dialog.showErrorBox(
+            '后端服务错误',
+            `后端服务启动失败。\n\n错误信息: ${backendError || '未知错误'}\n\n请检查：\n1. Python环境是否正确安装\n2. Python依赖是否已安装 (pip install -r requirements.txt)\n3. 5000端口是否被占用`
+          )
+        }
       }
     })
-    
-    // 不做接口检测，启动后稍等即打开窗口（前端会重试连接；Win7 上后端可能更慢，生产环境多等一会）
-    const openDelay = isDev ? 1200 : 4000
-    setTimeout(() => resolve(), openDelay)
+
+    waitForBackendHttpReady(pollMaxMs, pollIntervalMs)
+      .then(() => settleOk('http'))
+      .catch((e) => {
+        if (!settled) settleFail(e)
+      })
     } // end doSpawn
     setTimeout(doSpawn, delayBeforeSpawn)
   })
@@ -664,9 +749,8 @@ app.whenReady().then(async () => {
     // 启动后端服务器
     await startBackend()
     console.log('后端服务器启动成功')
-    
-    // 等待一下确保后端完全就绪
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    // startBackend 已通过 HTTP 轮询确认可访问，此处仅短延迟便于端口完全稳定
+    await new Promise((resolve) => setTimeout(resolve, 300))
     
     // 创建窗口和应用菜单
     createWindow()

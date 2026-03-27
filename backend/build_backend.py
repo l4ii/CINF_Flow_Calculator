@@ -125,6 +125,7 @@ def main():
         '--hidden-import=numpy',
         '--hidden-import=calculation_engine',
         '--hidden-import=word_export',
+        '--hidden-import=export_markdown',
         '--collect-all=flask',
         '--collect-all=flask_cors',
     ]

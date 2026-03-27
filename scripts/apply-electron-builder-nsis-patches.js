@@ -4,12 +4,14 @@
  * 2) MUI2 安装页默认折叠详情，需点“显示详细信息”（按钮 ID 1027）
  *
  * 本脚本在安装前对 node_modules 内模板做幂等补丁，使安装/卸载页默认展开详情并打印文件级日志。
+ * 3) 在「选择安装目录」之前插入 customPageBeforeChangeDir，使序列号页在许可之后、选路径之前（见 installer.nsh）
  */
 const fs = require('fs')
 const path = require('path')
 
 const MARK_INSTALL = '; [FlowCal] MUI_PAGE_INSTFILES show details'
 const MARK_UNINSTALL = '; [FlowCal] MUI_UNPAGE_INSTFILES show details'
+const MARK_BEFORE_DIR = '; [FlowCal] customPageBeforeChangeDir (serial before directory)'
 const MARK_SECTION = '; [FlowCal] SetDetailsPrint both'
 
 const assistedPath = path.join(
@@ -37,31 +39,30 @@ function patchAssistedInstaller() {
     return
   }
   let s = fs.readFileSync(assistedPath, 'utf8')
-  if (s.includes(MARK_INSTALL)) {
-    console.log('[apply-nsis-patches] assistedInstaller.nsh 已打过补丁')
-    return
-  }
+  let changed = false
 
-  const blockInstall =
-    '\n  ' +
-    MARK_INSTALL +
-    '\n  !define MUI_PAGE_CUSTOMFUNCTION_SHOW FlowCalMuiInstFilesShow\n' +
-    '  Function FlowCalMuiInstFilesShow\n' +
-    '    FindWindow $R9 "#32770" "" $HWNDPARENT\n' +
-    '    GetDlgItem $R8 $R9 1027\n' +
-    '    IntCmp $R8 0 FlowCalSkipInstClick\n' +
-    '    SendMessage $R8 0xF5 0 0\n' +
-    '    FlowCalSkipInstClick:\n' +
-    '  FunctionEnd\n' +
-    '\n  !insertmacro MUI_PAGE_INSTFILES'
+  if (!s.includes(MARK_INSTALL)) {
+    const blockInstall =
+      '\n  ' +
+      MARK_INSTALL +
+      '\n  !define MUI_PAGE_CUSTOMFUNCTION_SHOW FlowCalMuiInstFilesShow\n' +
+      '  Function FlowCalMuiInstFilesShow\n' +
+      '    FindWindow $R9 "#32770" "" $HWNDPARENT\n' +
+      '    GetDlgItem $R8 $R9 1027\n' +
+      '    IntCmp $R8 0 FlowCalSkipInstClick\n' +
+      '    SendMessage $R8 0xF5 0 0\n' +
+      '    FlowCalSkipInstClick:\n' +
+      '  FunctionEnd\n' +
+      '\n  !insertmacro MUI_PAGE_INSTFILES'
 
-  const needleInstall = '\n  !insertmacro MUI_PAGE_INSTFILES'
-  if (!s.includes(needleInstall)) {
-    console.error('[apply-nsis-patches] 无法定位 MUI_PAGE_INSTFILES，请检查 app-builder-lib 版本')
-    process.exit(1)
+    const needleInstall = '\n  !insertmacro MUI_PAGE_INSTFILES'
+    if (!s.includes(needleInstall)) {
+      console.error('[apply-nsis-patches] 无法定位 MUI_PAGE_INSTFILES，请检查 app-builder-lib 版本')
+      process.exit(1)
+    }
+    s = s.replace(needleInstall, blockInstall)
+    changed = true
   }
-  // 只替换第一处（安装向导分支里的 InstFiles）
-  s = s.replace(needleInstall, blockInstall)
 
   if (!s.includes(MARK_UNINSTALL)) {
     const blockUn =
@@ -82,10 +83,45 @@ function patchAssistedInstaller() {
       process.exit(1)
     }
     s = s.replace(needleUn, blockUn)
+    changed = true
   }
 
-  fs.writeFileSync(assistedPath, s, 'utf8')
-  console.log('[apply-nsis-patches] 已更新 assistedInstaller.nsh')
+  if (!s.includes(MARK_BEFORE_DIR)) {
+    const needleBeforeDir =
+      '  !ifndef INSTALL_MODE_PER_ALL_USERS\n' +
+      '    !insertmacro PAGE_INSTALL_MODE\n' +
+      '  !endif\n' +
+      '\n' +
+      '  !ifdef allowToChangeInstallationDirectory'
+    const blockBeforeDir =
+      '  !ifndef INSTALL_MODE_PER_ALL_USERS\n' +
+      '    !insertmacro PAGE_INSTALL_MODE\n' +
+      '  !endif\n' +
+      '\n' +
+      '  ' +
+      MARK_BEFORE_DIR +
+      '\n' +
+      '  !ifmacrodef customPageBeforeChangeDir\n' +
+      '    !insertmacro customPageBeforeChangeDir\n' +
+      '  !endif\n' +
+      '\n' +
+      '  !ifdef allowToChangeInstallationDirectory'
+    if (!s.includes(needleBeforeDir)) {
+      console.error(
+        '[apply-nsis-patches] 无法定位 PAGE_INSTALL_MODE / allowToChangeInstallationDirectory，请检查 app-builder-lib 版本'
+      )
+      process.exit(1)
+    }
+    s = s.replace(needleBeforeDir, blockBeforeDir)
+    changed = true
+  }
+
+  if (changed) {
+    fs.writeFileSync(assistedPath, s, 'utf8')
+    console.log('[apply-nsis-patches] 已更新 assistedInstaller.nsh')
+  } else {
+    console.log('[apply-nsis-patches] assistedInstaller.nsh 无需更新（已含全部补丁）')
+  }
 }
 
 function patchInstallSection() {

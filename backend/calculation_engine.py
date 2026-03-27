@@ -41,6 +41,18 @@ class CalculationEngine:
             return self._calculate_slurry_dissipation(parameters)
         elif formula_id == "slurry_friction_loss":
             return self._calculate_slurry_friction_loss(parameters, g)
+        elif formula_id == "clear_water_friction_loss":
+            return self._calculate_clear_water_friction_loss(parameters, g)
+        elif formula_id == "slurry_total_head":
+            return self._calculate_total_head(parameters, "slurry")
+        elif formula_id == "clear_water_total_head":
+            return self._calculate_clear_water_total_head(parameters)
+        elif formula_id in ("centrifugal_pump_total_head", "positive_displacement_pump_outlet_pressure"):
+            raise ValueError("该模块公式尚在建设中，将在后续版本中补充。")
+        elif formula_id == "slurry_dissipation_orifice":
+            return self._calculate_slurry_dissipation_orifice(parameters)
+        elif formula_id == "slurry_friction_workflow":
+            raise ValueError("浆体摩阻损失为分步计算，请在界面内分别执行步骤 1～3 的计算按钮。")
         else:
             raise ValueError(f"未知的公式ID: {formula_id}")
     
@@ -509,6 +521,69 @@ class CalculationEngine:
             }
         }
 
+    def _calculate_slurry_dissipation_orifice(self, params):
+        """孔板消能分步计算（与前端 step 联动）：
+        1) β = d/D（d 孔板开孔直径 m，D 管道内径 m）
+        2) K_Qk = 6.3755×10^-9 · (1-β²)(1.142-β²) / d^4，单位 h²/m⁵
+        3) Δh = K_Qk · Q²，Q 为 m³/h，Δh 为 m
+        """
+        step_raw = params.get("step")
+        if step_raw is None:
+            raise ValueError("孔板消能为分步计算：请在参数中传入 step=1、2 或 3。")
+        step = int(step_raw)
+
+        if step == 1:
+            d = float(params["d"])
+            D = float(params["D"])
+            if d <= 0 or D <= 0:
+                raise ValueError("孔板开孔直径 d 与管道内径 D 必须大于 0。")
+            if d > D:
+                raise ValueError("孔板开孔直径 d 不应大于管道内径 D。")
+            beta = d / D
+            return {
+                "beta": self._safe_round(beta, 14),
+                "unit": "—",
+                "intermediate": {"orifice_step": 1},
+            }
+
+        if step == 2:
+            d = float(params["d"])
+            beta = float(params["beta"])
+            if d <= 0:
+                raise ValueError("孔板开孔直径 d 必须大于 0。")
+            if beta <= 0 or beta > 1:
+                raise ValueError("孔径比 β 应在 (0, 1]。")
+            b2 = beta * beta
+            numer = (1.0 - b2) * (1.142 - b2)
+            K_Qk = 6.3755e-9 * numer / (d ** 4)
+            return {
+                "K_Qk": self._safe_round(K_Qk, 14),
+                "unit": "h²/m⁵",
+                "intermediate": {
+                    "orifice_step": 2,
+                    "orifice_numer": self._safe_round(numer, 14),
+                },
+            }
+
+        if step == 3:
+            K_Qk = float(params["K_Qk"])
+            Q = float(params["Q"])
+            if K_Qk < 0:
+                raise ValueError("孔板流量消能系数 K_Qk 不能为负。")
+            if Q < 0:
+                raise ValueError("浆体流量 Q（m³/h）不能为负。")
+            delta_h = K_Qk * (Q ** 2)
+            return {
+                "delta_h": self._safe_round(delta_h, 14),
+                "unit": "m",
+                "intermediate": {
+                    "orifice_step": 3,
+                    "Q_squared": self._safe_round(Q * Q, 14),
+                },
+            }
+
+        raise ValueError("step 必须为 1、2 或 3。")
+
     def _calculate_slurry_dissipation(self, params):
         """浆体消能两步计算：
         1) K_QL = (6.3755×10^-9 * λ_d * L_s) / d^5
@@ -568,3 +643,144 @@ class CalculationEngine:
             out["intermediate"]["step_2_delta_h"] = self._safe_round(delta_h, 14)
 
         return out
+
+    def _calculate_clear_water_friction_loss(self, params, g):
+        """清水沿程摩阻：海澄–威廉形式；书写为 105·C_h^(-1.85)·…，计算用 K_hw（默认 105），单位 kPa/m"""
+        Ch = params.get("C_h")
+        dj = params.get("d_j")
+        qg = params.get("q_g")
+        if Ch is None or dj is None or qg is None:
+            raise ValueError("需要参数：C_h、d_j、q_g")
+        Ch = float(Ch)
+        dj = float(dj)
+        qg = float(qg)
+        K_hw_raw = params.get("K_hw", 105)
+        if K_hw_raw is None:
+            K_hw = 105.0
+        else:
+            K_hw = float(K_hw_raw)
+        if Ch <= 0:
+            raise ValueError("海澄-威廉系数 C_h 必须大于 0")
+        if K_hw <= 0:
+            raise ValueError("式前系数 K_hw 必须大于 0")
+        if dj <= 0:
+            raise ValueError("管道计算内径 d_j 必须大于 0")
+        if qg <= 0:
+            raise ValueError("给水设计流量 q_g 必须大于 0")
+
+        ch_pow = Ch ** (-1.85)
+        dj_pow = dj ** (-4.87)
+        qg_pow = qg ** 1.85
+        i_kpa_m = K_hw * ch_pow * dj_pow * qg_pow
+
+        return {
+            "i": self._safe_round(i_kpa_m, 12),
+            "unit": "kPa/m",
+            "intermediate": {
+                "clear_hw_ch_pow": self._safe_round(ch_pow, 14),
+                "clear_hw_dj_pow": self._safe_round(dj_pow, 14),
+                "clear_hw_qg_pow": self._safe_round(qg_pow, 14),
+            },
+        }
+
+    def _calculate_total_head(self, params, fluid_type):
+        """总扬程计算。
+        浆体: P_k = ρ_k·g·H + ρ_s·g·i_k·L + P_j + P_n + P_z  (kPa)；ρ_k、ρ_s 单位为 t/m³。
+        清水: 请使用 clear_water_total_head。
+        同时生成 P_k-L 曲线数据点。
+        """
+        if fluid_type == 'water':
+            raise ValueError("请使用 clear_water_total_head 接口")
+
+        rho_k = params.get('rho_k')
+        g = params.get('g', 9.81)
+        H = params.get('H')
+        rho_s = params.get('rho_s')
+        i_k = params.get('i_k')
+        L = params.get('L')
+        P_j = params.get('P_j', 0)
+        P_n = params.get('P_n', 0)
+        P_z = params.get('P_z', 0)
+
+        if None in [rho_k, H, rho_s, i_k, L]:
+            raise ValueError("浆体总扬程需要参数：ρ_k、H、ρ_s、i_k、L")
+        if rho_k <= 0:
+            raise ValueError("浆体密度 ρ_k 必须大于 0")
+        if rho_s <= 0:
+            raise ValueError("固体颗粒密度 ρ_s 必须大于 0")
+        if L <= 0:
+            raise ValueError("管道总长度 L 必须大于 0")
+
+        # ρ_k、ρ_s 单位为 t/m³，P(kPa) = ρ(t/m³) × g × H（与 kg/m³ 时除以 1000 等价）
+        gravity_pressure = rho_k * g * H
+        friction_pressure = rho_s * g * i_k * L
+        P_k = gravity_pressure + friction_pressure + P_j + P_n + P_z
+
+        num_points = min(max(int(L / 10), 20), 200)
+        step = L / num_points
+        hl_curve = []
+        for idx in range(num_points + 1):
+            l_pt = idx * step
+            fric_pt = rho_s * g * i_k * l_pt
+            pj_pt = P_j * (l_pt / L) if L > 0 else 0
+            pk_pt = gravity_pressure + fric_pt + pj_pt + P_n + P_z
+            hl_curve.append({"L": self._safe_round(l_pt, 2), "H": self._safe_round(pk_pt, 4)})
+
+        return {
+            "H_total": self._safe_round(P_k, 6),
+            "unit": "kPa",
+            "intermediate": {
+                "gravity_pressure": self._safe_round(gravity_pressure, 6),
+                "friction_pressure": self._safe_round(friction_pressure, 6),
+                "P_j": P_j,
+                "P_n": P_n,
+                "P_z": P_z,
+            },
+            "hl_curve": hl_curve
+        }
+
+    def _calculate_clear_water_total_head(self, params):
+        """清水总扬程: P_w = rho_w*g*(H + i_w*L) + P_j + P_n + P_z  (kPa)
+        与浆体公式结构相同，但 rho_k=rho_s=rho_w；ρ_w 单位为 t/m³（默认 1，即 1000 kg/m³）"""
+        rho_w = params.get('rho_w', 1)
+        g = params.get('g', 9.81)
+        H = params.get('H')
+        i_w = params.get('i_w')
+        L = params.get('L')
+        P_j = params.get('P_j', 0)
+        P_n = params.get('P_n', 0)
+        P_z = params.get('P_z', 0)
+
+        if None in [H, i_w, L]:
+            raise ValueError("清水总扬程需要参数：H、i_w、L")
+        if rho_w <= 0:
+            raise ValueError("清水密度 rho_w 必须大于 0")
+        if L <= 0:
+            raise ValueError("管道总长度 L 必须大于 0")
+
+        gravity_pressure = rho_w * g * H
+        friction_pressure = rho_w * g * i_w * L
+        P_w = gravity_pressure + friction_pressure + P_j + P_n + P_z
+
+        num_points = min(max(int(L / 10), 20), 200)
+        step = L / num_points
+        hl_curve = []
+        for idx in range(num_points + 1):
+            l_pt = idx * step
+            fric_pt = rho_w * g * i_w * l_pt
+            pj_pt = P_j * (l_pt / L) if L > 0 else 0
+            pw_pt = gravity_pressure + fric_pt + pj_pt + P_n + P_z
+            hl_curve.append({"L": self._safe_round(l_pt, 2), "H": self._safe_round(pw_pt, 4)})
+
+        return {
+            "H_total": self._safe_round(P_w, 6),
+            "unit": "kPa",
+            "intermediate": {
+                "gravity_pressure": self._safe_round(gravity_pressure, 6),
+                "friction_pressure": self._safe_round(friction_pressure, 6),
+                "P_j": P_j,
+                "P_n": P_n,
+                "P_z": P_z,
+            },
+            "hl_curve": hl_curve
+        }

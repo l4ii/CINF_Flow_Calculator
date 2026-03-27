@@ -3,11 +3,14 @@ import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
 import { FormulaInfo, FlowState } from './types'
 import { API_BASE_URL, API_TIMEOUT } from './config/api'
+import { APP_TAGLINE_ZH } from './constants/appCopy'
 
 function App() {
   const [formulas, setFormulas] = useState<FlowState>({
     临界流速计算: [],
-    沿程摩阻损失: [],
+    清水摩阻损失: [],
+    浆体摩阻损失: [],
+    压力与扬程: [],
     浆体加速流: [],
     浆体消能: []
   })
@@ -54,9 +57,15 @@ function App() {
     fetchFormulas()
   }, [])
 
-  // 闪屏/连接后端期间预加载科研创新中心图片，进入该页时已缓存，消除首次打开加载等待
+  // 闪屏期间仅预加载科研页缩略图（高清在点击放大时再拉取，避免拖慢启动）
   useEffect(() => {
-    const urls = ['./info1.jpg', './info2.jpg', './info3.jpg', './info4.jpg', './info5.jpg']
+    const urls = [
+      './info1-thumb.jpg',
+      './info2-thumb.jpg',
+      './info3-thumb.jpg',
+      './info4-thumb.jpg',
+      './info5-thumb.jpg',
+    ]
     urls.forEach((src) => {
       const img = new Image()
       img.src = src
@@ -100,7 +109,10 @@ function App() {
             : combinedFormulas.filter((f: any) => f?.id === 'slurry_accel_energy')
           const rawEnergyList = Array.isArray(raw['浆体消能'])
             ? raw['浆体消能'].filter(
-                (f: any) => f?.id === 'slurry_dissipation' || f?.id === 'slurry_energy_dissipation'
+                (f: any) =>
+                  f?.id === 'slurry_dissipation' ||
+                  f?.id === 'slurry_energy_dissipation' ||
+                  f?.id === 'slurry_dissipation_orifice'
               )
             : []
           const normalizeDissipation = (f: any) =>
@@ -109,7 +121,10 @@ function App() {
             ? rawEnergyList.map(normalizeDissipation)
             : (() => {
                 const fromCombined = combinedFormulas.filter(
-                  (f: any) => f?.id === 'slurry_dissipation' || f?.id === 'slurry_energy_dissipation'
+                  (f: any) =>
+                    f?.id === 'slurry_dissipation' ||
+                    f?.id === 'slurry_energy_dissipation' ||
+                    f?.id === 'slurry_dissipation_orifice'
                 )
                 if (fromCombined.length > 0) return fromCombined.map(normalizeDissipation)
                 return [{
@@ -127,17 +142,41 @@ function App() {
                 }]
               })()
           data.临界流速计算 = raw['临界流速计算'] ?? []
-          data.沿程摩阻损失 = raw['沿程摩阻损失'] ?? []
+          data.清水摩阻损失 = raw['清水摩阻损失'] ?? []
+          data.浆体摩阻损失 = raw['浆体摩阻损失'] ?? []
+          if (
+            (!data.清水摩阻损失?.length && !data.浆体摩阻损失?.length) &&
+            (raw['摩阻损失'] || raw['沿程摩阻损失'])
+          ) {
+            const legacy = [...(raw['摩阻损失'] || raw['沿程摩阻损失'] || [])]
+            data.清水摩阻损失 = legacy.filter((f: any) => f?.id === 'clear_water_friction_loss')
+            const slurryWf = legacy.find((f: any) => f?.id === 'slurry_friction_workflow')
+            if (slurryWf) {
+              data.浆体摩阻损失 = [slurryWf]
+            } else {
+              data.浆体摩阻损失 = legacy.filter((f: any) =>
+                ['density_mixing', 'darcy_friction', 'slurry_friction_loss'].includes(f?.id)
+              )
+            }
+          }
+          data.压力与扬程 = raw['压力与扬程'] ?? raw['总扬程'] ?? []
           data.浆体加速流 = accelFormulas
           data.浆体消能 = energyFormulas
-        } else if (raw['临界流速计算'] || raw['沿程摩阻损失'] || raw['密度混合公式']) {
+        } else if (raw['临界流速计算'] || raw['摩阻损失'] || raw['沿程摩阻损失'] || raw['密度混合公式']) {
           data.临界流速计算 = raw['临界流速计算'] ?? []
-          data.沿程摩阻损失 = [...(raw['沿程摩阻损失'] || []), ...(raw['密度混合公式'] || [])]
+          const legacyM = [...(raw['摩阻损失'] || raw['沿程摩阻损失'] || []), ...(raw['密度混合公式'] || [])]
+          data.清水摩阻损失 = legacyM.filter((f: any) => f?.id === 'clear_water_friction_loss')
+          data.浆体摩阻损失 = legacyM.filter((f: any) =>
+            ['density_mixing', 'darcy_friction', 'slurry_friction_loss', 'slurry_friction_workflow'].includes(f?.id)
+          )
+          data.压力与扬程 = raw['压力与扬程'] ?? raw['总扬程'] ?? []
           data.浆体加速流 = []
           data.浆体消能 = []
         } else if (raw['似均质流态'] || raw['非均质流态']) {
           data.临界流速计算 = [...(raw['似均质流态'] || []), ...(raw['非均质流态'] || [])]
-          data.沿程摩阻损失 = []
+          data.清水摩阻损失 = []
+          data.浆体摩阻损失 = []
+          data.压力与扬程 = []
           data.浆体加速流 = []
           data.浆体消能 = []
         } else {
@@ -210,6 +249,9 @@ function App() {
             </svg>
           </div>
           <div className="text-lg font-semibold text-gray-800 mb-1">长沙院浆体管道计算工具</div>
+          <div className="text-xs text-gray-600 max-w-md mx-auto leading-relaxed mb-2 px-2">
+            {APP_TAGLINE_ZH}
+          </div>
           <div className="text-sm text-gray-600">
             {loadingHint || '正在连接后端服务器…'}
           </div>
@@ -256,16 +298,18 @@ function App() {
         currentView={currentView}
         aboutDepartment={aboutDepartment}
       />
-      <MainContent 
-        formula={selectedFormula}
-        darkMode={darkMode}
-        currentView={currentView}
-        aboutDepartment={aboutDepartment}
-        language={language}
-        darkModeValue={darkMode}
-        onDarkModeChange={setDarkMode}
-        onLanguageChange={setLanguage}
-      />
+      <div className="flex-[4] min-w-0 min-h-0 flex flex-col overflow-hidden">
+        <MainContent 
+          formula={selectedFormula}
+          darkMode={darkMode}
+          currentView={currentView}
+          aboutDepartment={aboutDepartment}
+          language={language}
+          darkModeValue={darkMode}
+          onDarkModeChange={setDarkMode}
+          onLanguageChange={setLanguage}
+        />
+      </div>
     </div>
   )
 }

@@ -6,6 +6,7 @@
 const path = require('path')
 const fs = require('fs')
 const { execSync } = require('child_process')
+const { forceRemoveWinUnpackedOnly } = require('./clean')
 
 const root = path.join(__dirname, '..')
 const packagePath = path.join(root, 'package.json')
@@ -38,6 +39,11 @@ try {
   writePackage(pkg)
 
   run('npm install')
+  // electron-builder 需重写 win-unpacked\app.asar；若上次解包程序仍在运行会报「文件正由另一进程使用」
+  if (process.platform === 'win32') {
+    console.log('[build-win7] 释放 release-win7\\win-unpacked（结束可能占用 app.asar 的进程）…')
+    forceRemoveWinUnpackedOnly('release-win7')
+  }
   run('npx electron-builder --win --config electron-builder.win7.yml')
 
   console.log('\n[Win7 兼容版] 打包完成，恢复 Electron', savedElectron, '...')
