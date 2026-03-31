@@ -9,8 +9,95 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { downloadScientificHlChartPng } from '../utils/chartExportCanvas';
 import { APP_TAGLINE_EN, APP_TAGLINE_ZH } from '../constants/appCopy';
 
-/** 浆体摩阻三步在界面内调用的后端 formula_id（与侧栏「浆体摩阻损失」工作流联动） */
-const SLURRY_FRICTION_CHAIN_IDS = ['density_mixing', 'darcy_friction', 'slurry_friction_loss'] as const
+/** 浆体摩阻工作流：界面内分步调用的后端 formula_id（共 5 步：ρ_k → ρ₁ → Re_B → λ → i_k） */
+const SLURRY_FRICTION_CHAIN_IDS = [
+  'density_mixing',
+  'darcy_friction_step1_rho1',
+  'darcy_friction_step2_re',
+  'darcy_friction_step3_lambda',
+  'slurry_friction_loss',
+] as const
+
+const SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS = [
+  {
+    name: 'rho_1' as const,
+    label: '$\\rho_1$：混合物密度',
+    unit: 't/m³',
+    placeholder: '可直填如 1.25；留空则用下方三项推算',
+  },
+  {
+    name: 'rho_g' as const,
+    label: '$\\rho_g$：液相密度',
+    unit: 't/m³',
+    placeholder: '清水常取 1',
+  },
+  {
+    name: 'rho_s' as const,
+    label: '$\\rho_s$：固相密度',
+    unit: 't/m³',
+    placeholder: '如 2.65',
+  },
+  {
+    name: 'C1v' as const,
+    label: '$C_{1v}$：液相体积浓度',
+    unit: '无量纲',
+    placeholder: '液相体积分数 0～1，如 0.85',
+  },
+]
+
+const SLURRY_FRICTION_WF_DARCY_RE_FIELDS = [
+  {
+    name: 'rho_1' as const,
+    label: '$\\rho_1$：混合物密度',
+    unit: 't/m³',
+    placeholder: '可由步骤 2 填入，或本步直接填写',
+  },
+  {
+    name: 'Re_B' as const,
+    label: '$Re_B$：雷诺数',
+    unit: '无量纲',
+    placeholder: '可直填；留空则用 V、D_n、η₁ 与 ρ₁ 推算',
+  },
+  {
+    name: 'V' as const,
+    label: '$V$：断面平均流速',
+    unit: 'm/s',
+    placeholder: '如 2.0',
+  },
+  {
+    name: 'D_n' as const,
+    label: '$D_n$：管道内径',
+    unit: 'm',
+    placeholder: '如 0.20',
+  },
+  {
+    name: 'eta_1' as const,
+    label: '$\\eta_1$：混合物动力粘度',
+    unit: 'Pa·s',
+    placeholder: '如 0.001',
+  },
+]
+
+const SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS = [
+  {
+    name: 'Re_B' as const,
+    label: '$Re_B$：雷诺数',
+    unit: '无量纲',
+    placeholder: '可由步骤 3 填入，或本步直接填写',
+  },
+  {
+    name: 'D_n' as const,
+    label: '$D_n$：管道内径',
+    unit: 'm',
+    placeholder: '可与步骤 3 相同',
+  },
+  {
+    name: 'epsilon' as const,
+    label: '$\\varepsilon$：管壁绝对粗糙度',
+    unit: 'm',
+    placeholder: '可不填，默认 0.0002',
+  },
+]
 
 /** 浆体摩阻工作流：各步骤参数的标签、单位后缀；提示写在输入框 placeholder 内 */
 const SLURRY_FRICTION_WF_STEP1_FIELDS = [
@@ -30,64 +117,7 @@ const SLURRY_FRICTION_WF_STEP1_FIELDS = [
     name: 'rho_s' as const,
     label: '$\\rho_s$：固体颗粒密度',
     unit: 't/m³',
-    placeholder: '如 2.65；步骤2 用 kg/m³ 时请 ×1000',
-  },
-]
-
-const SLURRY_FRICTION_WF_STEP2_FIELDS = [
-  {
-    name: 'rho_1' as const,
-    label: '$\\rho_1$：混合物密度',
-    unit: 'kg/m³',
-    placeholder: '可直填如 1250；留空则用下方 ρg、ρs、C1v 推算',
-  },
-  {
-    name: 'rho_g' as const,
-    label: '$\\rho_g$：液相密度',
-    unit: 'kg/m³',
-    placeholder: '如 1000；与步骤1 t/m³ 差约 1000 倍',
-  },
-  {
-    name: 'rho_s' as const,
-    label: '$\\rho_s$：固相密度',
-    unit: 'kg/m³',
-    placeholder: '如 2650',
-  },
-  {
-    name: 'C1v' as const,
-    label: '$C_{1v}$：液相体积浓度',
-    unit: '无量纲',
-    placeholder: '液相体积分数 0～1，如 0.85',
-  },
-  {
-    name: 'Re_B' as const,
-    label: '$Re_B$：雷诺数',
-    unit: '无量纲',
-    placeholder: '可直填如 1.2e5；留空则用 V、Dn、η₁ 推算',
-  },
-  {
-    name: 'V' as const,
-    label: '$V$：断面平均流速',
-    unit: 'm/s',
-    placeholder: '与步骤3 同工况，如 2.0',
-  },
-  {
-    name: 'D_n' as const,
-    label: '$D_n$：管道内径',
-    unit: 'm',
-    placeholder: '如 0.20，多与步骤3 的 D 相同',
-  },
-  {
-    name: 'eta_1' as const,
-    label: '$\\eta_1$：混合物动力粘度',
-    unit: 'Pa·s',
-    placeholder: '推算 Re 用，如 0.001',
-  },
-  {
-    name: 'epsilon' as const,
-    label: '$\\varepsilon$：管壁绝对粗糙度',
-    unit: 'm',
-    placeholder: '可不填，默认 0.0002',
+    placeholder: '如 2.65',
   },
 ]
 
@@ -102,19 +132,19 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
     name: 'lambda_coef' as const,
     label: '$\\lambda$：达西摩阻系数',
     unit: '无量纲',
-    placeholder: '步骤2 可自动填入，或直接填如 0.018',
+    placeholder: '步骤4 可自动填入，或直接填如 0.018',
   },
   {
     name: 'V' as const,
     label: '$V$：平均流速',
     unit: 'm/s',
-    placeholder: '与步骤2 一致，如 2.0',
+    placeholder: '与步骤3 一致，如 2.0',
   },
   {
     name: 'D' as const,
     label: '$D$：管道内径',
     unit: 'm',
-    placeholder: '如 0.20，多与 Dn 相同',
+    placeholder: '如 0.20，多与步骤3、4 的 D_n 相同',
   },
   {
     name: 'rho_s' as const,
@@ -130,13 +160,20 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
   },
 ]
 
-const SLURRY_FRICTION_WF_STEP_INTROS: Record<'step1' | 'step2' | 'step3', string> = {
+const SLURRY_FRICTION_WF_STEP_INTROS: Record<
+  'step1' | 'darcy_rho1' | 'darcy_re' | 'darcy_lambda' | 'step5_ik',
+  string
+> = {
   step1:
-    '若尚无浆体当量密度 $\\rho_k$，可在此由质量浓度与液、固相密度求得；若已有化验或设计给定值，可跳过本步，在「水力坡降」中直接填写 $\\rho_k$。计算成功后 $\\rho_k$ 会写入最终式，并将本步的 $\\rho_g$、$\\rho_s$ 按 ×1000 换算为 $\\mathrm{kg/m^3}$ 填入达西页（仅当对应格为空时）。',
-  step2:
-    '达西摩阻系数 $\\lambda$ 是沿程损失的关键量：可直接输入 $\\rho_1$、$Re_B$，或由混合物与流速、管径、粘度推算。成功后 $\\lambda$ 会写入最终式，并在格为空时顺带填入与达西页一致的 $V$、$D$（由 $D_n$）及 $\\rho_s$（$\\mathrm{kg/m^3}\\to\\mathrm{t/m^3}$）。',
-  step3:
-    '核心结果为单位管长水力坡降 $i_k$（米水柱/米）：将 $\\lambda$、流速、管径与 $\\rho_k$、固相密度、$g$ 代入达西–魏斯巴赫关系。各量均可手填，亦可由前两步计算联动。',
+    '由固体质量浓度 $C_w$ 与液相密度 $\\rho_g$、固体颗粒密度 $\\rho_s$ 计算浆体当量密度 $\\rho_k$。',
+  darcy_rho1:
+    '直接填写 $\\rho_1$（t/m³），或由 $\\rho_g$、$\\rho_s$、$C_{1v}$ 推算。计算成功后若对应格为空，将 $\\rho_1$ 写入达西参数区并供步骤 3 使用；也可在步骤 3 中手填 $\\rho_1$ 跳过本步。',
+  darcy_re:
+    '需要 $\\rho_1$（t/m³）。可直接填写 $Re_B$，或由 $V$、$D_n$、$\\eta_1$ 推算（程序内用 $1000\\rho_1$ 为 kg/m³）。成功后若格为空，写入 $Re_B$、$D_n$、$V$ 等供步骤 4 使用。',
+  darcy_lambda:
+    '需要 $Re_B$ 与 $D_n$、$\\varepsilon$。可直接填写 $Re_B$，或沿用步骤 3 结果。成功后若格为空，将 $\\lambda$ 及 $V$、$D$、$\\rho_s$ 同步至步骤 5。',
+  step5_ik:
+    '将 $\\lambda$、$V$、$D$、$\\rho_k$、$\\rho_s$ 与 $g$ 代入达西–魏斯巴赫关系，得到单位管长水力坡降 $i_k$（米水柱/米）。各量可手填或由前面步骤联动。',
 }
 
 /** 清水摩阻：管材类型与海澄–威廉系数 C_h 对应（自定义除外） */
@@ -681,9 +718,18 @@ export default function MainContent({
       
       // 密度混合公式：ρ_k = 1/(Cw/ρg+(1-Cw)/ρs)，混合项为浓度与密度加权倒数
       'denom': '浓度与密度加权倒数项',
+
+      // 浆体摩阻工作流（达西分步）中间量
+      'term_rho_g_C1v': '液相体积项',
+      'term_1minusC1v_rho_s': '固相体积项',
+      'rho_1_kg_m3': 'SI 密度',
+      're_numerator_V_D_rho_kg': '雷诺分子项',
+      'mixture_rho_1': '所用混合物密度',
+      're_B_used': '所用雷诺数',
       
       // 达西摩阻系数公式
       'Re': '雷诺数',
+      'Re_B': '雷诺数',
       'flow_regime': '流态',
       'eps_D': '相对粗糙度 ε/D',
       
@@ -733,6 +779,13 @@ export default function MainContent({
       'numerator': 'V^2 \\cdot \\rho_k',
       'denominator': '2gD \\cdot \\rho_s',
       'denom': '\\frac{C_w}{\\rho_g} + \\frac{1-C_w}{\\rho_s}',
+      'term_rho_g_C1v': '\\rho_g \\cdot C_{1v}',
+      'term_1minusC1v_rho_s': '(1-C_{1v})\\cdot\\rho_s',
+      'rho_1_kg_m3': '1000\\rho_1\\ \\mathrm{(kg/m^3)}',
+      're_numerator_V_D_rho_kg': 'V \\cdot D_n \\cdot 1000\\rho_1',
+      'mixture_rho_1': '\\rho_1',
+      're_B_used': '\\mathrm{Re}_B',
+      'Re_B': '\\mathrm{Re}_B',
       'dissipation_kql_numerator': '(6.3755\\times10^{-9})\\lambda_d L_s',
       'dissipation_kql_denominator': 'd^5',
       'clear_hw_ch_pow': 'C_h^{-1.85}',
@@ -1439,6 +1492,7 @@ export default function MainContent({
   }
 
   const validateFrictionSubStep = (subId: string): string | null => {
+    const darcy = formulaParameters['darcy_friction'] || {}
     const p = formulaParameters[subId] || {}
     if (subId === 'density_mixing') {
       const Cw = p['C_w']
@@ -1447,27 +1501,41 @@ export default function MainContent({
       if (p['rho_s'] == null || isNaN(p['rho_s']!) || p['rho_s']! <= 0) return '步骤1：请填写 ρ_s'
       return null
     }
-    if (subId === 'darcy_friction') {
-      const rho1 = p['rho_1']
+    if (subId === 'darcy_friction_step1_rho1') {
+      const rho1 = darcy['rho_1']
       const hasRho1 = rho1 != null && !isNaN(rho1) && rho1 > 0
-      const hasStepA = [p['rho_g'], p['rho_s'], p['C1v']].every((v) => v != null && !isNaN(v!))
+      const hasStepA = [darcy['rho_g'], darcy['rho_s'], darcy['C1v']].every((v) => v != null && !isNaN(v!))
       if (!hasRho1 && !hasStepA) return '步骤2：请输入 ρ₁，或填写 ρ_g、ρ_s、C1v'
-      const ReB = p['Re_B']
+      return null
+    }
+    if (subId === 'darcy_friction_step2_re') {
+      const rho1 = darcy['rho_1']
+      if (rho1 == null || isNaN(rho1) || rho1 <= 0) {
+        return '步骤3：请填写 ρ₁（t/m³），可由步骤2 计算联动，或在本步直接填写'
+      }
+      const ReB = darcy['Re_B']
       const hasReB = ReB != null && !isNaN(ReB) && ReB > 0
-      const hasStepB = [p['V'], p['D_n'], p['eta_1']].every((v) => v != null && !isNaN(v!))
-      if (!hasReB && !hasStepB) return '步骤2：请输入 Re_B，或填写 V、D_n、η₁'
-      const Dn = p['D_n']
-      if (Dn == null || isNaN(Dn) || Dn <= 0) return '步骤2：请填写管道内径 D_n'
+      const hasStepB = [darcy['V'], darcy['D_n'], darcy['eta_1']].every((v) => v != null && !isNaN(v!))
+      if (!hasReB && !hasStepB) return '步骤3：请输入 Re_B，或填写 V、D_n、η₁'
+      return null
+    }
+    if (subId === 'darcy_friction_step3_lambda') {
+      const Dn = darcy['D_n']
+      if (Dn == null || isNaN(Dn) || Dn <= 0) return '步骤4：请填写管道内径 D_n'
+      const ReB = darcy['Re_B']
+      if (ReB == null || isNaN(ReB) || ReB <= 0) {
+        return '步骤4：请填写 Re_B（可由步骤3 联动），或完成步骤3 后再算'
+      }
       return null
     }
     if (subId === 'slurry_friction_loss') {
       const rhoK = p['rho_k']
-      if (rhoK == null || isNaN(rhoK) || rhoK <= 0) return '步骤3：请填写 ρ_k（可由步骤1结果联动）'
+      if (rhoK == null || isNaN(rhoK) || rhoK <= 0) return '步骤5：请填写 ρ_k（可由步骤1结果联动）'
       for (const name of ['lambda_coef', 'V', 'D', 'rho_s', 'g'] as const) {
         const v = p[name]
-        if (v == null || isNaN(v)) return `步骤3：请填写 ${name}`
-        if (name === 'D' && v === 0) return '步骤3：管道内径 D 不能为 0'
-        if (name === 'lambda_coef' && v <= 0) return '步骤3：λ 必须大于 0'
+        if (v == null || isNaN(v)) return `步骤5：请填写 ${name}`
+        if (name === 'D' && v === 0) return '步骤5：管道内径 D 不能为 0'
+        if (name === 'lambda_coef' && v <= 0) return '步骤5：λ 必须大于 0'
       }
       return null
     }
@@ -1480,17 +1548,37 @@ export default function MainContent({
       await showAppAlert('参数校验', err)
       return
     }
+    const dm = formulaParameters['density_mixing'] || {}
+    const darcy = formulaParameters['darcy_friction'] || {}
+    const sflP = formulaParameters['slurry_friction_loss'] || {}
     const p = formulaParameters[subId] || {}
+
     const validParameters: Record<string, number> = {}
-    for (const [key, value] of Object.entries(p)) {
-      if (value !== undefined && value !== null && !isNaN(value)) validParameters[key] = value as number
+    if (subId === 'density_mixing') {
+      for (const [key, value] of Object.entries(dm)) {
+        if (value !== undefined && value !== null && !isNaN(value as number)) validParameters[key] = value as number
+      }
+    } else if (
+      subId === 'darcy_friction_step1_rho1' ||
+      subId === 'darcy_friction_step2_re' ||
+      subId === 'darcy_friction_step3_lambda'
+    ) {
+      for (const [key, value] of Object.entries(darcy)) {
+        if (value !== undefined && value !== null && !isNaN(value as number)) validParameters[key] = value as number
+      }
+      if (subId === 'darcy_friction_step3_lambda' && validParameters['epsilon'] === undefined) {
+        validParameters['epsilon'] = 0.0002
+      }
+    } else if (subId === 'slurry_friction_loss') {
+      for (const [key, value] of Object.entries(sflP)) {
+        if (value !== undefined && value !== null && !isNaN(value)) validParameters[key] = value as number
+      }
+      if (validParameters['g'] === undefined) {
+        validParameters['g'] = 9.81
+      }
     }
-    if (subId === 'darcy_friction' && validParameters['epsilon'] === undefined) {
-      validParameters['epsilon'] = 0.0002
-    }
-    if (subId === 'slurry_friction_loss' && validParameters['g'] === undefined) {
-      validParameters['g'] = 9.81
-    }
+
+    const r6 = (x: number) => Math.round(x * 1e6) / 1e6
     setLoading(true)
     try {
       const response = await axios.post(
@@ -1500,27 +1588,38 @@ export default function MainContent({
       )
       const data = response.data as CalculationResult
       setFormulaResults((prev) => ({ ...prev, [subId]: data }))
+
+      if (subId === 'slurry_friction_loss') {
+        if (!data.success) {
+          updateResult({ success: false, error: data.error || '计算失败' })
+        } else {
+          updateResult(data)
+        }
+      } else {
+        updateResult(null)
+      }
+
       if (!data.success) return
       const res = data.result
+
       if (subId === 'density_mixing' && res?.rho_k != null) {
         const rk = Number(res.rho_k)
         const rhoG = p['rho_g']
         const rhoS = p['rho_s']
-        const r6 = (x: number) => Math.round(x * 1e6) / 1e6
         setFormulaParameters((prev) => {
           const sfl = { ...(prev.slurry_friction_loss || {}) }
           sfl.rho_k = rk
           if ((sfl.rho_s == null || isNaN(sfl.rho_s)) && rhoS != null && !isNaN(rhoS)) {
             sfl.rho_s = r6(rhoS)
           }
-          const darcy = { ...(prev.darcy_friction || {}) }
-          if ((darcy.rho_g == null || isNaN(darcy.rho_g)) && rhoG != null && !isNaN(rhoG)) {
-            darcy.rho_g = r6(rhoG * 1000)
+          const darcyN = { ...(prev.darcy_friction || {}) }
+          if ((darcyN.rho_g == null || isNaN(darcyN.rho_g)) && rhoG != null && !isNaN(rhoG)) {
+            darcyN.rho_g = r6(rhoG)
           }
-          if ((darcy.rho_s == null || isNaN(darcy.rho_s)) && rhoS != null && !isNaN(rhoS)) {
-            darcy.rho_s = r6(rhoS * 1000)
+          if ((darcyN.rho_s == null || isNaN(darcyN.rho_s)) && rhoS != null && !isNaN(rhoS)) {
+            darcyN.rho_s = r6(rhoS)
           }
-          return { ...prev, slurry_friction_loss: sfl, darcy_friction: darcy }
+          return { ...prev, slurry_friction_loss: sfl, darcy_friction: darcyN }
         })
         setFormulaRawInputs((prev) => {
           const sfl = { ...(prev.slurry_friction_loss || {}) }
@@ -1530,36 +1629,70 @@ export default function MainContent({
           }
           const darcyR = { ...(prev.darcy_friction || {}) }
           if ((darcyR.rho_g == null || darcyR.rho_g === '') && rhoG != null && !isNaN(rhoG)) {
-            darcyR.rho_g = String(r6(rhoG * 1000))
+            darcyR.rho_g = String(r6(rhoG))
           }
           if ((darcyR.rho_s == null || darcyR.rho_s === '') && rhoS != null && !isNaN(rhoS)) {
-            darcyR.rho_s = String(r6(rhoS * 1000))
+            darcyR.rho_s = String(r6(rhoS))
           }
           return { ...prev, slurry_friction_loss: sfl, darcy_friction: darcyR }
         })
       }
-      if (subId === 'darcy_friction' && res?.lambda_coef != null) {
-        const lam = Number(res.lambda_coef)
-        const r6 = (x: number) => Math.round(x * 1e6) / 1e6
+
+      if (subId === 'darcy_friction_step1_rho1' && res?.rho_1 != null) {
+        const r1 = Number(res.rho_1)
         setFormulaParameters((prev) => {
-          const darcy = prev.darcy_friction || {}
+          const darcyN = { ...(prev.darcy_friction || {}) }
+          darcyN.rho_1 = r6(r1)
+          return { ...prev, darcy_friction: darcyN }
+        })
+        setFormulaRawInputs((prev) => {
+          const darcyR = { ...(prev.darcy_friction || {}) }
+          darcyR.rho_1 = String(r6(r1))
+          return { ...prev, darcy_friction: darcyR }
+        })
+      }
+
+      if (subId === 'darcy_friction_step2_re' && res?.Re_B != null) {
+        const reB = Number(res.Re_B)
+        setFormulaParameters((prev) => {
+          const darcyN = { ...(prev.darcy_friction || {}) }
+          darcyN.Re_B = r6(reB)
+          if (res.rho_1 != null && (darcyN.rho_1 == null || isNaN(darcyN.rho_1))) {
+            darcyN.rho_1 = r6(Number(res.rho_1))
+          }
+          return { ...prev, darcy_friction: darcyN }
+        })
+        setFormulaRawInputs((prev) => {
+          const darcyR = { ...(prev.darcy_friction || {}) }
+          darcyR.Re_B = String(r6(reB))
+          if (res.rho_1 != null && (darcyR.rho_1 == null || darcyR.rho_1 === '')) {
+            darcyR.rho_1 = String(r6(Number(res.rho_1)))
+          }
+          return { ...prev, darcy_friction: darcyR }
+        })
+      }
+
+      if (subId === 'darcy_friction_step3_lambda' && res?.lambda_coef != null) {
+        const lam = Number(res.lambda_coef)
+        setFormulaParameters((prev) => {
+          const dart = prev.darcy_friction || {}
           const sfl = { ...(prev.slurry_friction_loss || {}) }
-          sfl.lambda_coef = lam
-          if ((sfl.V == null || isNaN(sfl.V)) && darcy.V != null && !isNaN(darcy.V)) {
-            sfl.V = r6(darcy.V)
+          if (sfl.lambda_coef == null || isNaN(sfl.lambda_coef)) sfl.lambda_coef = lam
+          if ((sfl.V == null || isNaN(sfl.V)) && dart.V != null && !isNaN(dart.V)) {
+            sfl.V = r6(dart.V)
           }
-          if ((sfl.D == null || isNaN(sfl.D)) && darcy.D_n != null && !isNaN(darcy.D_n)) {
-            sfl.D = r6(darcy.D_n)
+          if ((sfl.D == null || isNaN(sfl.D)) && dart.D_n != null && !isNaN(dart.D_n)) {
+            sfl.D = r6(dart.D_n)
           }
-          if ((sfl.rho_s == null || isNaN(sfl.rho_s)) && darcy.rho_s != null && !isNaN(darcy.rho_s)) {
-            sfl.rho_s = r6(darcy.rho_s / 1000)
+          if ((sfl.rho_s == null || isNaN(sfl.rho_s)) && dart.rho_s != null && !isNaN(dart.rho_s)) {
+            sfl.rho_s = r6(dart.rho_s)
           }
           return { ...prev, slurry_friction_loss: sfl }
         })
         setFormulaRawInputs((prev) => {
           const darcyR = prev.darcy_friction || {}
           const sfl = { ...(prev.slurry_friction_loss || {}) }
-          sfl.lambda_coef = String(lam)
+          if (sfl.lambda_coef == null || sfl.lambda_coef === '') sfl.lambda_coef = String(lam)
           if ((sfl.V == null || sfl.V === '') && darcyR.V != null && darcyR.V !== '') {
             sfl.V = String(r6(Number(darcyR.V)))
           }
@@ -1567,38 +1700,19 @@ export default function MainContent({
             sfl.D = String(r6(Number(darcyR.D_n)))
           }
           if ((sfl.rho_s == null || sfl.rho_s === '') && darcyR.rho_s != null && darcyR.rho_s !== '') {
-            sfl.rho_s = String(r6(Number(darcyR.rho_s) / 1000))
+            sfl.rho_s = String(r6(Number(darcyR.rho_s)))
           }
           return { ...prev, slurry_friction_loss: sfl }
         })
       }
     } catch (e: any) {
+      if (subId === 'slurry_friction_loss') {
+        updateResult({ success: false, error: e.response?.data?.error || '计算失败' })
+      }
       await showAppAlert('计算失败', e.response?.data?.error || '请检查输入参数')
     } finally {
       setLoading(false)
     }
-  }
-
-  /** 将步骤1的 ρ_g、ρ_s（t/m³）换算为 kg/m³ 写入达西页（用户主动同步） */
-  const applyDensityMixingToDarcyKg = async () => {
-    const dm = formulaParameters['density_mixing'] || {}
-    const rhoG = dm['rho_g']
-    const rhoS = dm['rho_s']
-    if (rhoG == null || isNaN(rhoG) || rhoS == null || isNaN(rhoS)) {
-      await showAppAlert('提示', '请先在当前步填写 ρ_g、ρ_s（t/m³）')
-      return
-    }
-    const r6 = (x: number) => Math.round(x * 1e6) / 1e6
-    const gk = r6(rhoG * 1000)
-    const sk = r6(rhoS * 1000)
-    setFormulaParameters((prev) => ({
-      ...prev,
-      darcy_friction: { ...(prev.darcy_friction || {}), rho_g: gk, rho_s: sk },
-    }))
-    setFormulaRawInputs((prev) => ({
-      ...prev,
-      darcy_friction: { ...(prev.darcy_friction || {}), rho_g: String(gk), rho_s: String(sk) },
-    }))
   }
 
   const validateOrificeSubStep = (step: 1 | 2 | 3): string | null => {
@@ -3004,27 +3118,6 @@ export default function MainContent({
       return validateOrificeSubStep(3)
     }
 
-    // 达西摩阻系数：ρ₁ 与 (ρ_g,ρ_s,C1v) 二选一；ReB 与 (V,D_n,η₁) 二选一；D_n、ε 必填
-    if (formula.id === 'darcy_friction') {
-      const rho1 = parameters['rho_1']
-      const hasRho1 = rho1 != null && !isNaN(rho1) && rho1 > 0
-      const hasStepAParams = [parameters['rho_g'], parameters['rho_s'], parameters['C1v']].every(v => v != null && !isNaN(v))
-      if (!hasRho1 && !hasStepAParams) return '请输入 ρ₁，或填写 ρ_g、ρ_s、C1v'
-      if (!hasRho1 && (parameters['rho_g'] === 0 || parameters['rho_s'] === 0)) return 'ρ_g、ρ_s 必须大于 0'
-      if (parameters['C1v'] != null && !isNaN(parameters['C1v']) && (parameters['C1v'] < 0 || parameters['C1v'] > 1)) return 'C1v 应在 0～1 之间'
-
-      const ReB = parameters['Re_B']
-      const hasReB = ReB != null && !isNaN(ReB) && ReB > 0
-      const hasStepBParams = [parameters['V'], parameters['D_n'], parameters['eta_1']].every(v => v != null && !isNaN(v))
-      const hasRho1ForB = hasRho1 || hasStepAParams
-      if (!hasReB && (!hasStepBParams || !hasRho1ForB)) return '请输入 ReB，或填写 V、D_n、η₁ 及步骤 A 参数（或直接输入 ρ₁）'
-      if (!hasReB && (parameters['D_n'] === 0 || parameters['eta_1'] === 0)) return 'D_n、η₁ 必须大于 0'
-
-      const Dn = parameters['D_n']
-      if (Dn == null || isNaN(Dn) || Dn <= 0) return '请填写管道内径 D_n'
-      return null
-    }
-
     // 浆体摩阻损失：ρ_k、λ 为前置量，需直接输入；沿程参数必填
     if (formula.id === 'slurry_friction_loss') {
       const rhoK = parameters['rho_k']
@@ -3434,6 +3527,17 @@ export default function MainContent({
       add('beta', s2.beta)
       add('K_Qk', s3.K_Qk)
       add('Q', s3.Q)
+    } else if (formula.id === 'slurry_friction_workflow') {
+      const addFrom = (obj: Record<string, number | undefined>) => {
+        for (const [key, value] of Object.entries(obj)) {
+          if (value !== undefined && value !== null && !isNaN(value as number)) {
+            validParameters[key] = value as number
+          }
+        }
+      }
+      addFrom(formulaParameters['density_mixing'] || {})
+      addFrom(formulaParameters['darcy_friction'] || {})
+      addFrom(formulaParameters['slurry_friction_loss'] || {})
     } else {
       for (const [key, value] of Object.entries(parameters)) {
         if (value !== undefined && value !== null && !isNaN(value)) {
@@ -3443,6 +3547,29 @@ export default function MainContent({
     }
 
     let exportResult = result.result
+    if (formula.id === 'slurry_friction_workflow' && exportResult) {
+      type Im = Record<string, number | string | boolean>
+      const r0 = formulaResults['density_mixing']?.result
+      const r1 = formulaResults['darcy_friction_step1_rho1']?.result
+      const r2 = formulaResults['darcy_friction_step2_re']?.result
+      const r3 = formulaResults['darcy_friction_step3_lambda']?.result
+      const r4 = formulaResults['slurry_friction_loss']?.result
+      const baseIm = (exportResult as { intermediate?: Im }).intermediate || {}
+      exportResult = {
+        ...exportResult,
+        rho_1: r1?.rho_1 ?? (exportResult as { rho_1?: number }).rho_1,
+        Re_B: r2?.Re_B ?? r3?.Re_B ?? (exportResult as { Re_B?: number }).Re_B,
+        lambda_coef: r3?.lambda_coef ?? (exportResult as { lambda_coef?: number }).lambda_coef,
+        intermediate: {
+          ...baseIm,
+          ...((r0?.intermediate ?? {}) as Im),
+          ...((r1?.intermediate ?? {}) as Im),
+          ...((r2?.intermediate ?? {}) as Im),
+          ...((r3?.intermediate ?? {}) as Im),
+          ...((r4?.intermediate ?? {}) as Im),
+        },
+      }
+    }
     if (formula.id === 'slurry_dissipation_orifice' && exportResult) {
       const r1 = formulaResults['orifice_step1']?.result
       const r2 = formulaResults['orifice_step2']?.result
@@ -3689,29 +3816,27 @@ export default function MainContent({
     dissipationStep1Parts ??
     (formula ? dissipationStep1IxCacheByFormula[formula.id] ?? null : null)
 
-  const dissipationDeltaHDisplay =
-    result?.success && isSlurryDissipationFormula
-      ? (() => {
-          const dh =
-            result.result?.delta_h ?? result.result?.intermediate?.step_2_delta_h
-          return dh != null && dh !== undefined && !isNaN(Number(dh))
-            ? `${fmtDissipation(Number(dh))} m`
-            : null
-        })()
-      : null
-
-  /** 与刘德忠等公式底部「中间计算结果」相同的版式（灰底卡片 + 四列网格 + getIntermediateLabel） */
+  /** 与刘德忠等公式底部「中间计算结果」相同的版式；`white` 为白底分区（与孔板消能主结果+中间分区一致） */
   const renderIntermediateResultsBlock = (
     entries: [string, unknown][],
-    formulaIdForLabel?: string
+    formulaIdForLabel?: string,
+    surface: 'gray' | 'white' = 'gray'
   ) => {
     if (entries.length === 0) return null
+    const surfaceCls =
+      surface === 'white'
+        ? darkMode
+          ? 'mt-3 p-4 rounded-lg border border-gray-600 bg-gray-800/90'
+          : 'mt-3 p-4 rounded-lg border border-gray-200 bg-white'
+        : darkMode
+          ? 'mt-4 p-4 rounded-lg bg-gray-800'
+          : 'mt-4 p-4 rounded-lg bg-gray-50'
     return (
-      <div className={`mt-4 p-4 rounded-lg ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+      <div className={surfaceCls}>
         <div
           className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
         >
-          中间计算结果:
+          中间计算结果：
         </div>
         <div
           className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-sm ${
@@ -3815,31 +3940,24 @@ export default function MainContent({
             </>
           ) : isSlurryFrictionWorkflow ? (
             <>
-              <div className="mb-6">
-                <div className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>公式说明</div>
-                <div className="space-y-3">
-                  {formula.description
-                    .split(/\n\n+/)
-                    .map((para) => para.trim())
-                    .filter(Boolean)
-                    .map((para, idx) => (
-                      <p
-                        key={idx}
-                        className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
-                      >
-                        {renderDescriptionWithMath(para)}
-                      </p>
-                    ))}
-                </div>
+              <div className="mb-6 space-y-3">
+                {formula.description
+                  .split(/\n\n+/)
+                  .map((para) => para.trim())
+                  .filter(Boolean)
+                  .map((para, idx) => (
+                    <p
+                      key={idx}
+                      className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
+                    >
+                      {renderDescriptionWithMath(para)}
+                    </p>
+                  ))}
               </div>
-
-              <p className={`text-xs mb-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                以下在同一页内自上而下完成：① 准备 <InlineMath math="\rho_k" />（可选）→ ② 达西摩阻 <InlineMath math="\lambda" />（关键）→ ③ 水力坡降 <InlineMath math="i_k" />（核心）。不必每步都算，有现成量可直接在下面填写。计算成功时仅在目标格为空时自动传递，避免覆盖已改动的数。
-              </p>
 
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  第 1 步（可选）— 浆体当量密度 <InlineMath math="\rho_k" />
+                  {renderDescriptionWithMath('1. 浆体当量密度 ($\\rho_k$)')}
                 </div>
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.step1)}
@@ -3881,49 +3999,241 @@ export default function MainContent({
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
                   <button
                     type="button"
-                    onClick={() => void applyDensityMixingToDarcyKg()}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-                      darkMode
-                        ? 'border-gray-500 text-gray-200 hover:bg-gray-500/30'
-                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    将 ρ_g、ρ_s 换算填入达西页（×1000 → kg/m³）
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => runFrictionWorkflowStep('density_mixing')}
                     disabled={loading}
                     className="px-6 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
                   >
-                    计算本步
+                    计算
                   </button>
                 </div>
-                {formulaResults['density_mixing']?.success && (
-                  <div className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-blue-900/30 text-gray-200' : 'bg-blue-50 text-gray-800'}`}>
-                    <InlineMath math="\rho_k" /> ={' '}
-                    <span className="font-mono font-bold text-lg">
-                      {String(formulaResults['density_mixing']?.result?.rho_k ?? '—')}
-                    </span>{' '}
-                    t/m³；已写入最终式；达西页 ρ_g、ρ_s 若为空已按 ×1000 尝试填入（可改）
+                {formulaResults['density_mixing']?.success === false && formulaResults['density_mixing']?.error && (
+                  <div
+                    className={`mb-3 rounded-lg border px-3 py-3 text-sm ${
+                      darkMode ? 'border-red-500/50 bg-red-950/40 text-red-200' : 'border-red-200 bg-red-50 text-red-800'
+                    }`}
+                  >
+                    {formulaResults['density_mixing']!.error}
                   </div>
                 )}
+                {formulaResults['density_mixing']?.success && (() => {
+                  const r = formulaResults['density_mixing']!.result
+                  const denom = r?.intermediate?.denom
+                  return (
+                    <>
+                      <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+                        <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>浆体当量密度：</div>
+                        <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                          {r?.rho_k != null ? `${fmtDissipation(Number(r.rho_k))} t/m³` : '—'}
+                        </div>
+                      </div>
+                      {denom != null && !isNaN(Number(denom)) &&
+                        renderIntermediateResultsBlock(
+                          [['denom', `${fmtDissipation(Number(denom))} m³/t`]],
+                          'density_mixing',
+                          'white'
+                        )}
+                    </>
+                  )
+                })()}
               </div>
 
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  第 2 步 — 达西摩阻系数 <InlineMath math="\lambda" />
+                  {renderDescriptionWithMath('2. 混合物密度 ($\\rho_1$)')}
                 </div>
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.step2)}
+                  {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.darcy_rho1)}
                 </p>
-                <div className={`mb-4 space-y-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   <BlockMath math="\rho_1 = \rho_g \cdot C_{1v} + (1 - C_{1v}) \cdot \rho_s" />
-                  <BlockMath math="Re_B = \frac{V \cdot D_n \cdot \rho_1}{\eta_1}" />
-                  <BlockMath math="\lambda = \begin{cases} \dfrac{64}{Re_B}, & Re_B < 2000 \\[0.6em] \dfrac{1.33036}{\left[\ln\left(\dfrac{\varepsilon}{3.7 D_n} + \dfrac{5.7385}{Re_B^{0.9}}\right)\right]^2}, & Re_B \ge 2000 \end{cases}" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {SLURRY_FRICTION_WF_STEP2_FIELDS.map(({ name, label, unit, placeholder }) => (
+                  {SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS.map(({ name, label, unit, placeholder }) => (
+                    <div key={name}>
+                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                        {renderDescriptionWithMath(label)}
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          spellCheck={false}
+                          placeholder={placeholder}
+                          value={
+                            formulaRawInputs['darcy_friction']?.[name] ??
+                            (formulaParameters['darcy_friction']?.[name] != null &&
+                            !isNaN(formulaParameters['darcy_friction']![name]!)
+                              ? String(formulaParameters['darcy_friction']![name])
+                              : '')
+                          }
+                          onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
+                          onBlur={() => handleSubParameterBlur('darcy_friction', name)}
+                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
+                            darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                          }`}
+                        />
+                        <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => runFrictionWorkflowStep('darcy_friction_step1_rho1')}
+                    disabled={loading}
+                    className="px-6 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                  >
+                    计算
+                  </button>
+                </div>
+                {formulaResults['darcy_friction_step1_rho1']?.success === false &&
+                  formulaResults['darcy_friction_step1_rho1']?.error && (
+                    <div
+                      className={`mb-3 rounded-lg border px-3 py-3 text-sm ${
+                        darkMode ? 'border-red-500/50 bg-red-950/40 text-red-200' : 'border-red-200 bg-red-50 text-red-800'
+                      }`}
+                    >
+                      {formulaResults['darcy_friction_step1_rho1']!.error}
+                    </div>
+                  )}
+                {formulaResults['darcy_friction_step1_rho1']?.success && (() => {
+                  const r = formulaResults['darcy_friction_step1_rho1']!.result
+                  const im = r?.intermediate as Record<string, unknown> | undefined
+                  const tL = im?.term_rho_g_C1v
+                  const tS = im?.term_1minusC1v_rho_s
+                  const mid: [string, string][] = []
+                  if (tL != null && !isNaN(Number(tL))) {
+                    mid.push(['term_rho_g_C1v', `${fmtDissipation(Number(tL))} t/m³`])
+                  }
+                  if (tS != null && !isNaN(Number(tS))) {
+                    mid.push(['term_1minusC1v_rho_s', `${fmtDissipation(Number(tS))} t/m³`])
+                  }
+                  return (
+                    <>
+                      <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+                        <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          {renderDescriptionWithMath('混合物密度 $\\rho_1$：')}
+                        </div>
+                        <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                          {r?.rho_1 != null ? `${fmtDissipation(Number(r.rho_1))} t/m³` : '—'}
+                        </div>
+                      </div>
+                      {mid.length > 0 && renderIntermediateResultsBlock(mid, undefined, 'white')}
+                    </>
+                  )
+                })()}
+              </div>
+
+              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
+                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  {renderDescriptionWithMath('3. 雷诺数 ($Re_B$)')}
+                </div>
+                <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.darcy_re)}
+                </p>
+                <div className={`mb-3 space-y-2 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <BlockMath math="Re_B = \frac{V \cdot D_n \cdot 1000 \rho_1}{\eta_1}" />
+                  <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    式中 <InlineMath math="\rho_1" /> 为 t/m³；乘以 1000 后为 SI 密度（kg/m³），与 <InlineMath math="\eta_1" />（Pa·s）配套得无量纲{' '}
+                    <InlineMath math="Re_B" />。
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {SLURRY_FRICTION_WF_DARCY_RE_FIELDS.map(({ name, label, unit, placeholder }) => (
+                    <div key={name}>
+                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                        {renderDescriptionWithMath(label)}
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          spellCheck={false}
+                          placeholder={placeholder}
+                          value={
+                            formulaRawInputs['darcy_friction']?.[name] ??
+                            (formulaParameters['darcy_friction']?.[name] != null &&
+                            !isNaN(formulaParameters['darcy_friction']![name]!)
+                              ? String(formulaParameters['darcy_friction']![name])
+                              : '')
+                          }
+                          onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
+                          onBlur={() => handleSubParameterBlur('darcy_friction', name)}
+                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
+                            darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                          }`}
+                        />
+                        <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => runFrictionWorkflowStep('darcy_friction_step2_re')}
+                    disabled={loading}
+                    className="px-6 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                  >
+                    计算
+                  </button>
+                </div>
+                {formulaResults['darcy_friction_step2_re']?.success === false && formulaResults['darcy_friction_step2_re']?.error && (
+                  <div
+                    className={`mb-3 rounded-lg border px-3 py-3 text-sm ${
+                      darkMode ? 'border-red-500/50 bg-red-950/40 text-red-200' : 'border-red-200 bg-red-50 text-red-800'
+                    }`}
+                  >
+                    {formulaResults['darcy_friction_step2_re']!.error}
+                  </div>
+                )}
+                {formulaResults['darcy_friction_step2_re']?.success && (() => {
+                  const r = formulaResults['darcy_friction_step2_re']!.result
+                  const im = r?.intermediate as Record<string, unknown> | undefined
+                  const rhoKg = im?.rho_1_kg_m3
+                  const num = im?.re_numerator_V_D_rho_kg
+                  const mid: [string, string][] = []
+                  if (r?.rho_1 != null && !isNaN(Number(r.rho_1))) {
+                    mid.push(['mixture_rho_1', `${fmtDissipation(Number(r.rho_1))} t/m³`])
+                  }
+                  if (rhoKg != null && !isNaN(Number(rhoKg))) {
+                    mid.push(['rho_1_kg_m3', `${fmtDissipation(Number(rhoKg))} kg/m³`])
+                  }
+                  if (num != null && !isNaN(Number(num))) {
+                    mid.push(['re_numerator_V_D_rho_kg', fmtDissipation(Number(num))])
+                  }
+                  return (
+                    <>
+                      <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+                        <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          {renderDescriptionWithMath('雷诺数 $Re_B$：')}
+                        </div>
+                        <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                          {r?.Re_B != null ? fmtDissipation(Number(r.Re_B)) : '—'}
+                        </div>
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>无量纲</div>
+                      </div>
+                      {mid.length > 0 && renderIntermediateResultsBlock(mid, undefined, 'white')}
+                    </>
+                  )
+                })()}
+              </div>
+
+              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
+                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  {renderDescriptionWithMath('4. 达西摩阻系数 ($\\lambda$)')}
+                </div>
+                <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.darcy_lambda)}
+                </p>
+                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <BlockMath math="\lambda = \frac{1.33036}{\left[\ln\left(\frac{\varepsilon}{3.7 D_n} + \frac{5.7385}{Re_B^{0.9}}\right)\right]^2}" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS.map(({ name, label, unit, placeholder }) => (
                     <div key={name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                         {renderDescriptionWithMath(label)}
@@ -3958,30 +4268,57 @@ export default function MainContent({
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
                   <button
                     type="button"
-                    onClick={() => runFrictionWorkflowStep('darcy_friction')}
+                    onClick={() => runFrictionWorkflowStep('darcy_friction_step3_lambda')}
                     disabled={loading}
                     className="px-6 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
                   >
-                    计算本步
+                    计算
                   </button>
                 </div>
-                {formulaResults['darcy_friction']?.success && (
-                  <div className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-blue-900/30 text-gray-200' : 'bg-blue-50 text-gray-800'}`}>
-                    <InlineMath math="\lambda" /> ={' '}
-                    <span className="font-mono font-bold text-lg">
-                      {String(formulaResults['darcy_friction']?.result?.lambda_coef ?? '—')}
-                    </span>
-                    ；已写入最终式；V、D、ρ_s（t/m³）若为空已尝试从本步同步（可改）
-                  </div>
-                )}
+                {formulaResults['darcy_friction_step3_lambda']?.success === false &&
+                  formulaResults['darcy_friction_step3_lambda']?.error && (
+                    <div
+                      className={`mb-3 rounded-lg border px-3 py-3 text-sm ${
+                        darkMode ? 'border-red-500/50 bg-red-950/40 text-red-200' : 'border-red-200 bg-red-50 text-red-800'
+                      }`}
+                    >
+                      {formulaResults['darcy_friction_step3_lambda']!.error}
+                    </div>
+                  )}
+                {formulaResults['darcy_friction_step3_lambda']?.success && (() => {
+                  const r = formulaResults['darcy_friction_step3_lambda']!.result
+                  const im = r?.intermediate as Record<string, unknown> | undefined
+                  const regime = im?.flow_regime
+                  const mid: [string, string][] = []
+                  if (r?.Re_B != null && !isNaN(Number(r.Re_B))) {
+                    mid.push(['re_B_used', fmtDissipation(Number(r.Re_B))])
+                  }
+                  if (regime != null && String(regime).trim() !== '') {
+                    mid.push(['flow_regime', String(regime)])
+                  }
+                  return (
+                    <>
+                      <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+                        <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          {renderDescriptionWithMath('达西摩阻系数 $\\lambda$：')}
+                        </div>
+                        <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                          {r?.lambda_coef != null ? fmtDissipation(Number(r.lambda_coef)) : '—'}
+                        </div>
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>无量纲</div>
+                      </div>
+                      {mid.length > 0 && renderIntermediateResultsBlock(mid, undefined, 'white')}
+                    </>
+                  )
+                })()}
               </div>
 
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  第 3 步（核心）— 达西–魏斯巴赫水力坡降 <InlineMath math="i_k" />
+                  {renderDescriptionWithMath('5. 水力坡降 ($i_k$)')}
                 </div>
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.step3)}
+                  {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.step5_ik)}
                 </p>
                 <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   <BlockMath math="i_k = \lambda \cdot \frac{V^2 \rho_k}{2 g D \rho_s}" />
@@ -4026,24 +4363,51 @@ export default function MainContent({
                     disabled={loading}
                     className="px-6 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
                   >
-                    计算 i_k
+                    计算
                   </button>
                 </div>
 
-                <div className={`rounded-xl border-2 p-4 ${darkMode ? 'bg-blue-900/30 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
-                  <div className={`text-sm mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>本步结果（沿程水力坡降）</div>
-                  {formulaResults['slurry_friction_loss']?.success ? (
-                    <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                      <InlineMath math="i_k" /> = {String(formulaResults['slurry_friction_loss']?.result?.i_k ?? '—')} mH₂O/m
+                {formulaResults['slurry_friction_loss']?.success === false && formulaResults['slurry_friction_loss']?.error && (
+                  <div
+                    className={`mb-3 rounded-lg border px-3 py-3 text-sm ${
+                      darkMode ? 'border-red-500/50 bg-red-950/40 text-red-200' : 'border-red-200 bg-red-50 text-red-800'
+                    }`}
+                  >
+                    {formulaResults['slurry_friction_loss']!.error}
+                  </div>
+                )}
+                {formulaResults['slurry_friction_loss']?.success ? (() => {
+                  const r = formulaResults['slurry_friction_loss']!.result
+                  const num = r?.intermediate?.numerator
+                  const den = r?.intermediate?.denominator
+                  const mid: [string, string][] = []
+                  if (num != null && !isNaN(Number(num))) {
+                    mid.push(['numerator', fmtDissipation(Number(num))])
+                  }
+                  if (den != null && !isNaN(Number(den))) {
+                    mid.push(['denominator', fmtDissipation(Number(den))])
+                  }
+                  return (
+                    <>
+                      <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+                        <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          {renderDescriptionWithMath('水力坡降 $i_k$：')}
+                        </div>
+                        <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                          {r?.i_k != null ? `${fmtDissipation(Number(r.i_k))} mH₂O/m` : '—'}
+                        </div>
+                      </div>
+                      {mid.length > 0 && renderIntermediateResultsBlock(mid, 'slurry_friction_loss', 'white')}
+                    </>
+                  )
+                })() : (
+                  <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+                    <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                      {renderDescriptionWithMath('水力坡降 $i_k$：')}
                     </div>
-                  ) : formulaResults['slurry_friction_loss']?.error ? (
-                    <span className={`text-base font-normal ${darkMode ? 'text-red-300' : 'text-red-600'}`}>
-                      {formulaResults['slurry_friction_loss']!.error}
-                    </span>
-                  ) : (
-                    <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
-                  )}
-                </div>
+                    <div className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</div>
+                  </div>
+                )}
               </div>
             </>
           ) : isClearWaterFrictionLoss ? (
@@ -4835,7 +5199,7 @@ export default function MainContent({
                   )}
               </div>
 
-              <div className={`rounded-xl border-2 p-5 ${darkMode ? 'bg-blue-900 bg-opacity-30 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
+              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   2. 计算消能水头 <InlineMath math="\Delta h" />
                 </div>
@@ -4910,26 +5274,43 @@ export default function MainContent({
                     </div>
                   ))}
                 </div>
-                <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
-                  <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                    消能水头:
-                  </div>
-                  <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                    {dissipationDeltaHDisplay ?? '—'}
-                  </div>
+                <div className="flex justify-end mb-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSlurryDissipationStepCalculate(2)}
+                    disabled={loading}
+                    className={`px-6 py-2 rounded-lg font-medium ${darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'} disabled:opacity-50`}
+                  >
+                    计算
+                  </button>
                 </div>
-                {result?.success &&
-                  (result.result?.intermediate?.step_2_delta_h != null || result.result?.delta_h != null) &&
-                  result.result?.intermediate?.Q_squared != null &&
-                  renderIntermediateResultsBlock(
-                    [
-                      [
-                        'dissipation_q_squared',
-                        fmtDissipation(Number(result.result.intermediate.Q_squared)),
-                      ],
-                    ],
-                    formula?.id
-                  )}
+                {/* 与步骤1相同版式：参数区 → 计算按钮 → 浅蓝主结果卡 → 灰底中间计算结果 */}
+                {(() => {
+                  const dhRaw =
+                    result?.success &&
+                    (result.result?.delta_h ?? result.result?.intermediate?.step_2_delta_h)
+                  const dhNum =
+                    dhRaw != null && dhRaw !== '' && !isNaN(Number(dhRaw)) ? Number(dhRaw) : null
+                  const q2 = result?.success ? result.result?.intermediate?.Q_squared : undefined
+                  const showMid =
+                    dhNum != null && q2 != null && !isNaN(Number(q2))
+                  return (
+                    <>
+                      <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+                        <div className={`text-xs mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>消能水头：</div>
+                        <div className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                          {dhNum != null ? fmtDissipation(dhNum) : '—'}
+                        </div>
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>单位 m</div>
+                      </div>
+                      {showMid &&
+                        renderIntermediateResultsBlock(
+                          [['dissipation_q_squared', fmtDissipation(Number(q2))]],
+                          formula?.id
+                        )}
+                    </>
+                  )
+                })()}
               </div>
             </>
           ) : isSlurryDissipationOrifice ? (
@@ -5222,142 +5603,6 @@ export default function MainContent({
                 </div>
               </div>
             </>
-          ) : formula?.id === 'darcy_friction' ? (
-            <>
-              <p className={`text-sm leading-relaxed mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {renderDescriptionWithMath('本部分用于计算管道内流体流动的沿程阻力系数 $\\lambda$，该系数是计算管道摩阻损失、选择泵型和确定输送能耗的关键参数。')}
-              </p>
-
-              {/* 1. 计算混合物密度 ρ₁ */}
-              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
-                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{renderDescriptionWithMath('1) 计算混合物密度 ($\\rho_1$)')}</div>
-                <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('管道内流动的矿浆为固液两相混合物，其密度由固体颗粒和液相（通常为水）的体积分数加权平均计算。')}
-                </p>
-                <div className={`mb-4 text-lg ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  <BlockMath math="\rho_1 = \rho_g \cdot C_{1v} + (1 - C_{1v}) \cdot \rho_s" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {formula.parameters.filter((p) => ['rho_1', 'rho_g', 'rho_s', 'C1v'].includes(p.name)).map((param) => {
-                    const placeholders: Record<string, string> = { rho_1: '下方计算或直接输入', rho_g: '液相密度 kg/m³', rho_s: '固体颗粒密度 kg/m³', C1v: '0～1，液相体积分数' }
-                    return (
-                    <div key={param.name}>
-                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
-                      </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={rawInputs[param.name] ?? (parameters[param.name] != null && !isNaN(parameters[param.name]!) ? String(parameters[param.name]) : '')}
-                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          onBlur={() => handleParameterBlur(param.name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                          placeholder={param.default !== undefined ? String(param.default) : placeholders[param.name] || ''}
-                        />
-                        {param.unit != null && param.unit !== '' && (
-                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
-                        )}
-                      </div>
-                    </div>
-                  )})}
-                </div>
-              </div>
-
-              {/* 2. 计算雷诺数 ReB */}
-              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
-                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{renderDescriptionWithMath('2) 计算雷诺数 ($Re_B$)')}</div>
-                <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('雷诺数是判断流体流动状态（层流或湍流）的无量纲数，其大小直接影响摩阻系数的计算方法。')}
-                </p>
-                <div className={`mb-4 text-lg ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  <BlockMath math="Re_B = \frac{V \cdot D_n \cdot \rho_1}{\eta_1}" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {formula.parameters.filter((p) => ['Re_B', 'V', 'D_n', 'eta_1'].includes(p.name)).map((param) => {
-                    const placeholders: Record<string, string> = { Re_B: '下方计算或直接输入', V: '管道内矿浆平均流速', D_n: '管道内径', eta_1: '动力粘度，实验或经验公式' }
-                    return (
-                    <div key={param.name}>
-                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
-                      </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={rawInputs[param.name] ?? (parameters[param.name] != null && !isNaN(parameters[param.name]!) ? String(parameters[param.name]) : '')}
-                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          onBlur={() => handleParameterBlur(param.name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                          placeholder={param.default !== undefined ? String(param.default) : placeholders[param.name] || ''}
-                        />
-                        {param.unit != null && param.unit !== '' && (
-                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
-                        )}
-                      </div>
-                    </div>
-                  )})}
-                </div>
-              </div>
-
-              {/* 3. 计算达西摩阻系数 λ */}
-              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
-                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>{renderDescriptionWithMath('3) 计算达西摩阻系数 ($\\lambda$)')}</div>
-                <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('采用显式科尔布鲁克-怀特公式，适用于水力光滑区、过渡区和完全粗糙区（湍流）。当 $Re_B < 2000$ 时采用层流解析解 $\\lambda = 64/Re_B$。所得 $\\lambda$ 可代入达西-魏斯巴赫公式 $h_f = \\lambda \\cdot (L/D_n) \\cdot (V^2/(2g))$ 计算沿程水头损失。在本软件中，可通过侧栏选择「沿程摩阻损失 → 浆体摩阻损失」模块，基于 $\\lambda$ 进行水力坡降与单位管长摩阻损失 $i_k$ 的计算。')}
-                </p>
-                <div className={`mb-4 text-lg ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  <BlockMath math="\lambda = \frac{1.33036}{\left[\ln\left(\frac{\varepsilon}{3.7 D_n} + \frac{5.7385}{Re_B^{0.9}}\right)\right]^2}" />
-                </div>
-                <div className={`text-xs mb-2 opacity-80 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{renderDescriptionWithMath('层流 ($Re_B < 2000$) 时：$\\lambda = 64/Re_B$')}</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {formula.parameters.filter((p) => ['epsilon', 'D_n', 'Re_B'].includes(p.name)).map((param) => {
-                    const placeholders: Record<string, string> = { epsilon: '可查工程手册', D_n: '下方计算或直接输入', Re_B: '下方计算或直接输入' }
-                    return (
-                    <div key={param.name}>
-                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
-                      </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={rawInputs[param.name] ?? (parameters[param.name] != null && !isNaN(parameters[param.name]!) ? String(parameters[param.name]) : '')}
-                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          onBlur={() => handleParameterBlur(param.name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                          placeholder={param.default !== undefined ? String(param.default) : placeholders[param.name] || ''}
-                        />
-                        {param.unit != null && param.unit !== '' && (
-                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
-                        )}
-                      </div>
-                    </div>
-                  )})}
-                </div>
-              </div>
-
-              {/* 底部结果区（计算由右下角「开始计算」统一触发） */}
-              <div className={`rounded-xl border-2 p-5 ${darkMode ? 'bg-blue-900 bg-opacity-30 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
-                <div className={`text-sm mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>计算结果：</div>
-                <div className={`space-y-1 text-base ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                  {result?.success ? (
-                    <>
-                      <div><InlineMath math="\rho_1" /> = <span className={`font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{result.result?.intermediate?.step_A_rho_1 ?? result.result?.rho_1 ?? '—'}</span> kg/m³</div>
-                      <div><InlineMath math="Re_B" /> = <span className={`font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{result.result?.intermediate?.step_B_Re_B ?? result.result?.Re_B ?? '—'}</span></div>
-                      <div><InlineMath math="\lambda" /> = <span className={`font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{result.result?.lambda_coef ?? '—'}</span> {result.result?.intermediate?.flow_regime ? `（${result.result.intermediate.flow_regime}）` : ''}</div>
-                    </>
-                  ) : result?.error ? (
-                    <span className={darkMode ? 'text-red-300' : 'text-red-600'}>{result.error}</span>
-                  ) : (
-                    <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
-                  )}
-                </div>
-              </div>
-            </>
           ) : formula?.id === 'slurry_friction_loss' ? (
             <>
               <p className={`text-sm leading-relaxed mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
@@ -5375,7 +5620,7 @@ export default function MainContent({
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {formula.parameters.filter((p) => ['rho_k', 'lambda_coef', 'V', 'D', 'rho_s', 'g'].includes(p.name)).map((param) => {
-                    const placeholders: Record<string, string> = { rho_k: '可由「密度混合公式」计算或直接输入', lambda_coef: '可由「达西摩阻系数」计算或直接输入', V: '管道内平均流速', D: '管道内径', rho_s: '固体颗粒密度', g: '9.81' }
+                    const placeholders: Record<string, string> = { rho_k: '可由「密度混合公式」计算或直接输入', lambda_coef: '可由「浆体摩阻损失」工作流第 4 步或直接输入', V: '管道内平均流速', D: '管道内径', rho_s: '固体颗粒密度', g: '9.81' }
                     return (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
@@ -5643,8 +5888,8 @@ export default function MainContent({
             </>
           )}
 
-          {/* Input Parameters - 非 B.C.克诺罗兹法、非浆体摩阻损失、非达西摩阻系数、非密度混合 时显示统一参数区 */}
-          {formula?.id !== 'kronodze_pressure' && formula?.id !== 'slurry_friction_loss' && formula?.id !== 'darcy_friction' && formula?.id !== 'density_mixing' && formula?.id !== 'slurry_friction_workflow' && !isSlurryDissipationFormula && !isSlurryEnergyPlaceholder && !isClearWaterFrictionLoss && !isTotalHeadFormula && !isPumpHeadPlaceholder && !isSlurryDissipationOrifice && (
+          {/* Input Parameters - 非 B.C.克诺罗兹法、非浆体摩阻损失、非密度混合 时显示统一参数区 */}
+          {formula?.id !== 'kronodze_pressure' && formula?.id !== 'slurry_friction_loss' && formula?.id !== 'density_mixing' && formula?.id !== 'slurry_friction_workflow' && !isSlurryDissipationFormula && !isSlurryEnergyPlaceholder && !isClearWaterFrictionLoss && !isTotalHeadFormula && !isPumpHeadPlaceholder && !isSlurryDissipationOrifice && (
           <div className={`border-t pt-4 ${
             darkMode ? 'border-gray-600' : 'border-gray-200'
           }`}>
@@ -5702,7 +5947,6 @@ export default function MainContent({
         {/* Results Section：克诺罗兹法在完成步骤3得到 V_L 后与本区联动（锁定/对比）；步骤未完成时不显示本区以免与步骤内结果重复 */}
         {(formula?.id !== 'kronodze_pressure' || kronodzeStep3Visible) &&
           formula?.id !== 'slurry_friction_loss' &&
-          formula?.id !== 'darcy_friction' &&
           formula?.id !== 'density_mixing' &&
           formula?.id !== 'slurry_friction_workflow' &&
           !isSlurryDissipationFormula &&
@@ -5729,8 +5973,6 @@ export default function MainContent({
                     ? '沿程摩阻损失:'
                     : formula?.id === 'density_mixing'
                     ? '浆体密度:'
-                    : formula?.id === 'darcy_friction'
-                    ? '达西摩阻系数 λ:'
                     : isSlurryAccelFormula
                     ? '条件判断:'
                     : '临界流速计算结果:'}
@@ -6298,6 +6540,31 @@ export default function MainContent({
                       setFormulaResults((prev) => {
                         const n = { ...prev }
                         for (const id of ORIFICE_WORKFLOW_SUB_IDS) {
+                          delete n[id]
+                        }
+                        delete n[formula.id]
+                        return n
+                      })
+                      return
+                    }
+                    if (formula.id === 'slurry_friction_workflow') {
+                      setFormulaParameters((prev) => {
+                        const n = { ...prev }
+                        delete n.density_mixing
+                        delete n.darcy_friction
+                        delete n.slurry_friction_loss
+                        return n
+                      })
+                      setFormulaRawInputs((prev) => {
+                        const n = { ...prev }
+                        delete n.density_mixing
+                        delete n.darcy_friction
+                        delete n.slurry_friction_loss
+                        return n
+                      })
+                      setFormulaResults((prev) => {
+                        const n = { ...prev }
+                        for (const id of SLURRY_FRICTION_CHAIN_IDS) {
                           delete n[id]
                         }
                         delete n[formula.id]

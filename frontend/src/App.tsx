@@ -155,7 +155,7 @@ function App() {
               data.浆体摩阻损失 = [slurryWf]
             } else {
               data.浆体摩阻损失 = legacy.filter((f: any) =>
-                ['density_mixing', 'darcy_friction', 'slurry_friction_loss'].includes(f?.id)
+                ['density_mixing', 'slurry_friction_loss'].includes(f?.id)
               )
             }
           }
@@ -167,7 +167,7 @@ function App() {
           const legacyM = [...(raw['摩阻损失'] || raw['沿程摩阻损失'] || []), ...(raw['密度混合公式'] || [])]
           data.清水摩阻损失 = legacyM.filter((f: any) => f?.id === 'clear_water_friction_loss')
           data.浆体摩阻损失 = legacyM.filter((f: any) =>
-            ['density_mixing', 'darcy_friction', 'slurry_friction_loss', 'slurry_friction_workflow'].includes(f?.id)
+            ['density_mixing', 'slurry_friction_loss', 'slurry_friction_workflow'].includes(f?.id)
           )
           data.压力与扬程 = raw['压力与扬程'] ?? raw['总扬程'] ?? []
           data.浆体加速流 = []

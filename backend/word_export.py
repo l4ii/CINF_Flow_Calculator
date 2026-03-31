@@ -625,7 +625,7 @@ class WordExporter:
             Re_B = result.get('Re_B', 'N/A')
             lam = result.get('lambda_coef', 'N/A')
             flow_regime = result.get('intermediate', {}).get('flow_regime', '')
-            value = f"ρ₁={rho_1} kg/m³，ReB={Re_B}，λ={lam}" + (f"（{flow_regime}）" if flow_regime else "")
+            value = f"ρ₁={rho_1} t/m³，ReB={Re_B}，λ={lam}" + (f"（{flow_regime}）" if flow_regime else "")
         elif formula_id == 'slurry_accel_energy':
             item_label = '浆体加速流条件'
             value = '满足' if result.get('condition_met') else '不满足'
@@ -640,6 +640,11 @@ class WordExporter:
             value = f"Δh = {delta_h} m（K_Qk、Q 见第三节输入参数表）"
         elif formula_id == 'slurry_friction_loss':
             item_label = '浆体摩阻损失'
+            rho_k = result.get('rho_k', 'N/A')
+            i_k = result.get('i_k', 'N/A')
+            value = f"ρ_k = {rho_k} t/m³，i_k = {i_k} mH₂O/m"
+        elif formula_id == 'slurry_friction_workflow':
+            item_label = '浆体摩阻损失（分步）'
             rho_k = result.get('rho_k', 'N/A')
             i_k = result.get('i_k', 'N/A')
             value = f"ρ_k = {rho_k} t/m³，i_k = {i_k} mH₂O/m"
@@ -670,7 +675,7 @@ class WordExporter:
         result_table.cell(1, 0).text = item_label
         unit_suffix = result.get('unit', '')
         # slurry_friction_loss、darcy_friction 的 value 已包含单位，不再追加
-        if formula_id in ('slurry_friction_loss', 'darcy_friction', 'slurry_dissipation', 'slurry_energy_dissipation', 'slurry_dissipation_orifice', 'slurry_total_head', 'clear_water_total_head', 'clear_water_friction_loss'):
+        if formula_id in ('slurry_friction_loss', 'slurry_friction_workflow', 'darcy_friction', 'slurry_dissipation', 'slurry_energy_dissipation', 'slurry_dissipation_orifice', 'slurry_total_head', 'clear_water_total_head', 'clear_water_friction_loss'):
             result_table.cell(1, 1).text = value_display
         else:
             result_table.cell(1, 1).text = f"{value_display} {unit_suffix}".strip() if unit_suffix else value_display
@@ -730,6 +735,14 @@ class WordExporter:
         elif formula_id == "slurry_dissipation_orifice":
             self._add_slurry_dissipation_orifice_process(doc, parameters, result)
         elif formula_id == "slurry_friction_loss":
+            self._add_slurry_friction_loss_process(doc, parameters, result)
+        elif formula_id == "slurry_friction_workflow":
+            intro_wf = doc.add_paragraph(
+                "以下对应界面内分步完成的浆体摩阻流程：浆体当量密度 ρ_k、混合物密度 ρ₁、雷诺数 Re_B、达西系数 λ 与沿程水力坡降 i_k；主要代入关系见本节。"
+            )
+            for run in intro_wf.runs:
+                self._set_font(run)
+            intro_wf.paragraph_format.first_line_indent = Pt(24)
             self._add_slurry_friction_loss_process(doc, parameters, result)
         elif formula_id == "slurry_total_head":
             self._add_slurry_total_head_process(doc, parameters, result)
@@ -888,12 +901,12 @@ class WordExporter:
         flow_regime = intermediate.get('flow_regime', 'N/A')
         rho_g, rho_s, C1v = parameters.get('rho_g'), parameters.get('rho_s'), parameters.get('C1v')
         if rho_g is not None and rho_s is not None and C1v is not None:
-            step_a = [f"步骤 A: ρ₁ = ρg·C1v + (1-C1v)·ρs", f"代入 ρg={rho_g}, ρs={rho_s}, C1v={C1v} → ρ₁ = {rho_1} kg/m³"]
+            step_a = [f"步骤 A: ρ₁ = ρg·C1v + (1-C1v)·ρs（t/m³）", f"代入 ρg={rho_g}, ρs={rho_s}, C1v={C1v} → ρ₁ = {rho_1} t/m³"]
         else:
-            step_a = [f"步骤 A: 用户直接输入 ρ₁ = {rho_1} kg/m³"]
+            step_a = [f"步骤 A: 用户直接输入 ρ₁ = {rho_1} t/m³"]
         V, D_n, eta_1 = parameters.get('V'), parameters.get('D_n'), parameters.get('eta_1')
         if V is not None and D_n is not None and eta_1 is not None:
-            step_b = ["", "步骤 B: ReB = (V·Dn·ρ₁)/η₁", f"代入 V={V}, Dn={D_n}, ρ₁={rho_1}, η₁={eta_1} → ReB = {Re_B}"]
+            step_b = ["", "步骤 B: ReB = (V·Dn·1000·ρ₁)/η₁（ρ₁ 为 t/m³）", f"代入 V={V}, Dn={D_n}, ρ₁={rho_1}, η₁={eta_1} → ReB = {Re_B}"]
         else:
             step_b = ["", f"步骤 B: 用户直接输入 ReB = {Re_B}"]
         epsilon = parameters.get('epsilon', 0.0002)

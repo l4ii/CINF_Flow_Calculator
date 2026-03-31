@@ -269,7 +269,7 @@ def _md_result_section(formula_id: str, result: Dict[str, Any]) -> List[str]:
         re_b = result.get("Re_B", "N/A")
         lam = result.get("lambda_coef", "N/A")
         fr = intermediate.get("flow_regime", "")
-        value = rf"$\rho_1$={rho_1} kg/m³，$\mathrm{{Re}}_B$={re_b}，$\lambda$={lam}"
+        value = rf"$\rho_1$={rho_1} t/m³，$\mathrm{{Re}}_B$={re_b}，$\lambda$={lam}"
         if fr:
             value += f"（{fr}）"
     elif formula_id == "slurry_accel_energy":
@@ -287,6 +287,11 @@ def _md_result_section(formula_id: str, result: Dict[str, Any]) -> List[str]:
         rho_k = result.get("rho_k", "N/A")
         i_k = result.get("i_k", "N/A")
         value = rf"$\rho_k = {rho_k}$ t/m³，$i_k = {i_k}$ mH₂O/m"
+    elif formula_id == "slurry_friction_workflow":
+        item = "浆体摩阻损失（分步）"
+        rho_k = result.get("rho_k", "N/A")
+        i_k = result.get("i_k", "N/A")
+        value = rf"$\rho_k = {rho_k}$ t/m³，$i_k = {i_k}$ mH₂O/m"
     elif formula_id == "slurry_total_head":
         item = r"浆体管道输送压力 $P_k$"
         value = result.get("H_total", "N/A")
@@ -301,6 +306,7 @@ def _md_result_section(formula_id: str, result: Dict[str, Any]) -> List[str]:
         value_s = f"{value:.4f}".rstrip("0").rstrip(".")
         if formula_id not in (
             "slurry_friction_loss",
+            "slurry_friction_workflow",
             "darcy_friction",
             "slurry_dissipation",
             "slurry_energy_dissipation",
@@ -438,14 +444,14 @@ def _calc_process_md(
         rho_g, rho_s, c1v = parameters.get("rho_g"), parameters.get("rho_s"), parameters.get("C1v")
         if rho_g is not None and rho_s is not None and c1v is not None:
             lines.append(
-                rf"步骤 A：$\rho_1 = \rho_g C_{{1v}} + (1-C_{{1v}})\rho_s$，代入得 $\rho_1 = {rho_1}$ kg/m³"
+                rf"步骤 A：$\rho_1 = \rho_g C_{{1v}} + (1-C_{{1v}})\rho_s$（$\rho_g$、$\rho_s$、$\rho_1$ 均为 t/m³），代入得 $\rho_1 = {rho_1}$ t/m³"
             )
         else:
-            lines.append(rf"步骤 A：用户给定 $\rho_1 = {rho_1}$ kg/m³")
+            lines.append(rf"步骤 A：用户给定 $\rho_1 = {rho_1}$ t/m³")
         V, D_n, eta_1 = parameters.get("V"), parameters.get("D_n"), parameters.get("eta_1")
         if V is not None and D_n is not None and eta_1 is not None:
             lines.append(
-                rf"步骤 B：$\mathrm{{Re}}_B = (V D_n \rho_1)/\eta_1$ → $\mathrm{{Re}}_B = {re_b}$"
+                rf"步骤 B：$\mathrm{{Re}}_B = (V D_n \cdot 1000\rho_1)/\eta_1$（$\rho_1$ 为 t/m³）→ $\mathrm{{Re}}_B = {re_b}$"
             )
         else:
             lines.append(rf"步骤 B：用户给定 $\mathrm{{Re}}_B = {re_b}$")
@@ -502,6 +508,23 @@ def _calc_process_md(
         i_k = result.get("i_k", "N/A")
         lines.extend(
             [
+                r"达西–魏斯巴赫：$i_k = \lambda (V^2 \rho_k)/(2 g D \rho_s)$",
+                rf"代入 $\lambda={lam}$，$V={V}$，$\rho_k={rho_k}$，$D={D}$，$\rho_s={rho_s}$，$g={g}$",
+                rf"$i_k = {i_k}$ mH₂O/m",
+                "",
+            ]
+        )
+    elif formula_id == "slurry_friction_workflow":
+        rho_k = parameters.get("rho_k", result.get("rho_k", "N/A"))
+        rho_s = parameters.get("rho_s", "N/A")
+        lam = parameters.get("lambda_coef", "N/A")
+        V = parameters.get("V", "N/A")
+        D = parameters.get("D", "N/A")
+        g = parameters.get("g", 9.81)
+        i_k = result.get("i_k", "N/A")
+        lines.extend(
+            [
+                "界面内分步：$\\rho_k$、$\\rho_1$、$\\mathrm{Re}_B$、$\\lambda$ 与 $i_k$。",
                 r"达西–魏斯巴赫：$i_k = \lambda (V^2 \rho_k)/(2 g D \rho_s)$",
                 rf"代入 $\lambda={lam}$，$V={V}$，$\rho_k={rho_k}$，$D={D}$，$\rho_s={rho_s}$，$g={g}$",
                 rf"$i_k = {i_k}$ mH₂O/m",

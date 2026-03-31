@@ -35,6 +35,12 @@ class CalculationEngine:
             return self._calculate_density_mixing(parameters, g)
         elif formula_id == "darcy_friction":
             return self._calculate_darcy_friction(parameters)
+        elif formula_id == "darcy_friction_step1_rho1":
+            return self._calculate_darcy_friction_step1_rho1(parameters)
+        elif formula_id == "darcy_friction_step2_re":
+            return self._calculate_darcy_friction_step2_re(parameters)
+        elif formula_id == "darcy_friction_step3_lambda":
+            return self._calculate_darcy_friction_step3_lambda(parameters)
         elif formula_id == "slurry_accel_energy":
             return self._calculate_slurry_accel_energy(parameters)
         elif formula_id in ("slurry_dissipation", "slurry_energy_dissipation"):
@@ -52,7 +58,7 @@ class CalculationEngine:
         elif formula_id == "slurry_dissipation_orifice":
             return self._calculate_slurry_dissipation_orifice(parameters)
         elif formula_id == "slurry_friction_workflow":
-            raise ValueError("浆体摩阻损失为分步计算，请在界面内分别执行步骤 1～3 的计算按钮。")
+            raise ValueError("浆体摩阻损失为分步计算，请在界面内分别执行步骤 1～5 的计算按钮。")
         else:
             raise ValueError(f"未知的公式ID: {formula_id}")
     
@@ -431,50 +437,12 @@ class CalculationEngine:
             }
         }
 
-    def _calculate_darcy_friction(self, params):
-        """达西摩阻系数：三步 A 混合物密度 ρ₁，B 雷诺数 ReB，C 达西摩阻系数 λ。支持用户直接输入 ρ₁ 或 ReB 跳过前序步骤。"""
-        # Step A: ρ₁ = ρg·C1v + (1-C1v)·ρs
-        rho_1_val = params.get('rho_1')
-        if rho_1_val is not None and isinstance(rho_1_val, (int, float)) and rho_1_val > 0 and not math.isnan(rho_1_val):
-            rho_1 = float(rho_1_val)
-        else:
-            rho_g = params.get('rho_g')
-            rho_s = params.get('rho_s')
-            C1v = params.get('C1v')
-            if None in [rho_g, rho_s, C1v]:
-                raise ValueError("请提供 ρ₁，或填写 ρ_g、ρ_s、C1v")
-            if rho_g <= 0 or rho_s <= 0:
-                raise ValueError("ρ_g、ρ_s 必须大于 0")
-            if C1v < 0 or C1v > 1:
-                raise ValueError("液相体积浓度 C1v 应在 0～1 之间")
-            rho_1 = rho_g * C1v + (1.0 - C1v) * rho_s
-        step_A_rho_1 = rho_1
-
-        # Step B: ReB = (V·Dn·ρ₁)/η₁
-        Re_B_val = params.get('Re_B')
-        if Re_B_val is not None and isinstance(Re_B_val, (int, float)) and Re_B_val > 0 and not math.isnan(Re_B_val):
-            Re_B = float(Re_B_val)
-        else:
-            V = params.get('V')
-            D_n = params.get('D_n')
-            eta_1 = params.get('eta_1')
-            if None in [V, D_n, eta_1]:
-                raise ValueError("请提供 ReB，或填写 V、D_n、η₁")
-            if D_n <= 0 or eta_1 <= 0:
-                raise ValueError("D_n、η₁ 必须大于 0")
-            Re_B = (V * D_n * rho_1) / eta_1
-        step_B_Re_B = Re_B
-
-        # Step C: λ
-        epsilon = params.get('epsilon', 0.0002)
-        D_n = params.get('D_n')
-        if D_n is None or D_n <= 0:
-            raise ValueError("步骤 C 需要管道内径 D_n")
+    def _darcy_lambda_from_re(self, Re_B: float, epsilon: float, D_n: float):
+        """由 Re_B、ε、D_n 求 λ 及流态标签。"""
         if Re_B < 2000:
             lam = 64.0 / Re_B
             flow_regime = "层流"
         else:
-            # 显式 Colebrook-White: λ = 1.33036 / (ln(ε/(3.7·Dn) + 5.7385/ReB^0.9))²
             eps_term = (epsilon / (3.7 * D_n)) if epsilon else 1e-10
             re_term = 5.7385 / (Re_B ** 0.9)
             inner = eps_term + re_term
@@ -482,17 +450,131 @@ class CalculationEngine:
                 raise ValueError("达西摩阻系数计算项无效")
             lam = 1.33036 / (math.log(inner) ** 2)
             flow_regime = "湍流"
+        return lam, flow_regime
 
+    def _calculate_darcy_friction_step1_rho1(self, params):
+        """仅算混合物密度 ρ₁（t/m³）：直填 ρ₁ 或由 ρ_g、ρ_s、C1v 推算。"""
+        rho_1_val = params.get('rho_1')
+        if rho_1_val is not None and isinstance(rho_1_val, (int, float)) and rho_1_val > 0 and not math.isnan(rho_1_val):
+            rho_1_t = float(rho_1_val)
+            return {
+                "rho_1": self._safe_round(rho_1_t, 12),
+                "unit": "t/m³",
+                "intermediate": {
+                    "step_A_rho_1": rho_1_t,
+                    "rho1_input_mode": "direct",
+                },
+            }
+        rho_g = params.get('rho_g')
+        rho_s = params.get('rho_s')
+        C1v = params.get('C1v')
+        if None in [rho_g, rho_s, C1v]:
+            raise ValueError("请提供 ρ₁，或填写 ρ_g、ρ_s、C1v")
+        if rho_g <= 0 or rho_s <= 0:
+            raise ValueError("ρ_g、ρ_s 必须大于 0")
+        if C1v < 0 or C1v > 1:
+            raise ValueError("液相体积浓度 C1v 应在 0～1 之间")
+        term_liquid = rho_g * C1v
+        term_solid = (1.0 - C1v) * rho_s
+        rho_1_t = term_liquid + term_solid
         return {
-            "lambda_coef": self._safe_round(lam, 12),
-            "rho_1": self._safe_round(step_A_rho_1, 12),
-            "Re_B": self._safe_round(step_B_Re_B, 12),
+            "rho_1": self._safe_round(rho_1_t, 12),
+            "unit": "t/m³",
+            "intermediate": {
+                "step_A_rho_1": rho_1_t,
+                "rho1_input_mode": "mixture",
+                "term_rho_g_C1v": self._safe_round(term_liquid, 12),
+                "term_1minusC1v_rho_s": self._safe_round(term_solid, 12),
+            },
+        }
+
+    def _calculate_darcy_friction_step2_re(self, params):
+        """仅算雷诺数 Re_B：直填 Re_B 或由 V、D_n、η₁ 与 ρ₁（t/m³）推算。"""
+        rho_1_val = params.get('rho_1')
+        if rho_1_val is None or not isinstance(rho_1_val, (int, float)) or rho_1_val <= 0 or math.isnan(rho_1_val):
+            raise ValueError("本步需要混合物密度 ρ₁（t/m³）。请先完成「计算 ρ₁」或在本步直接填写。")
+        rho_1_t = float(rho_1_val)
+        rho_1_kg_m3 = rho_1_t * 1000.0
+        Re_B_val = params.get('Re_B')
+        if Re_B_val is not None and isinstance(Re_B_val, (int, float)) and Re_B_val > 0 and not math.isnan(Re_B_val):
+            Re_B = float(Re_B_val)
+            return {
+                "Re_B": self._safe_round(Re_B, 12),
+                "rho_1": self._safe_round(rho_1_t, 12),
+                "unit": "",
+                "intermediate": {
+                    "step_B_Re_B": Re_B,
+                    "rho_1_kg_m3": self._safe_round(rho_1_kg_m3, 12),
+                    "re_input_mode": "direct",
+                },
+            }
+        V = params.get('V')
+        D_n = params.get('D_n')
+        eta_1 = params.get('eta_1')
+        if None in [V, D_n, eta_1]:
+            raise ValueError("请提供 Re_B，或填写 V、D_n、η₁")
+        if D_n <= 0 or eta_1 <= 0:
+            raise ValueError("D_n、η₁ 必须大于 0")
+        num = V * D_n * rho_1_kg_m3
+        Re_B = num / eta_1
+        return {
+            "Re_B": self._safe_round(Re_B, 12),
+            "rho_1": self._safe_round(rho_1_t, 12),
             "unit": "",
             "intermediate": {
-                "step_A_rho_1": step_A_rho_1,
-                "step_B_Re_B": step_B_Re_B,
-                "flow_regime": flow_regime
-            }
+                "step_B_Re_B": Re_B,
+                "rho_1_kg_m3": self._safe_round(rho_1_kg_m3, 12),
+                "re_numerator_V_D_rho_kg": self._safe_round(num, 12),
+                "re_input_mode": "computed",
+            },
+        }
+
+    def _calculate_darcy_friction_step3_lambda(self, params):
+        """仅算达西摩阻系数 λ：需要 D_n、ε、Re_B。"""
+        epsilon = params.get('epsilon', 0.0002)
+        D_n = params.get('D_n')
+        Re_B_val = params.get('Re_B')
+        if D_n is None or D_n <= 0:
+            raise ValueError("本步需要管道内径 D_n")
+        if Re_B_val is None or not isinstance(Re_B_val, (int, float)) or Re_B_val <= 0 or math.isnan(Re_B_val):
+            raise ValueError("本步需要雷诺数 Re_B。请先完成上一步或在本步直接填写。")
+        Re_B = float(Re_B_val)
+        lam, flow_regime = self._darcy_lambda_from_re(Re_B, float(epsilon or 0.0002), float(D_n))
+        return {
+            "lambda_coef": self._safe_round(lam, 12),
+            "Re_B": self._safe_round(Re_B, 12),
+            "unit": "",
+            "intermediate": {
+                "flow_regime": flow_regime,
+                "step_C_lambda": lam,
+            },
+        }
+
+    def _calculate_darcy_friction(self, params):
+        """达西摩阻系数（一步算完）：与分步逻辑一致，ρ 为 t/m³。"""
+        r1 = self._calculate_darcy_friction_step1_rho1(params)
+        rho_1_num = float(r1["rho_1"])
+        p2 = dict(params)
+        p2["rho_1"] = rho_1_num
+        r2 = self._calculate_darcy_friction_step2_re(p2)
+        p3 = dict(p2)
+        p3["Re_B"] = float(r2["Re_B"])
+        r3 = self._calculate_darcy_friction_step3_lambda(p3)
+        im = {
+            "step_A_rho_1": r1["intermediate"]["step_A_rho_1"],
+            "step_B_Re_B": float(r2["Re_B"]),
+            "flow_regime": r3["intermediate"]["flow_regime"],
+        }
+        for src in (r1["intermediate"], r2["intermediate"]):
+            for k, v in src.items():
+                if k not in im:
+                    im[k] = v
+        return {
+            "lambda_coef": r3["lambda_coef"],
+            "rho_1": r1["rho_1"],
+            "Re_B": r2["Re_B"],
+            "unit": "",
+            "intermediate": im,
         }
 
     def _calculate_slurry_accel_energy(self, params):
