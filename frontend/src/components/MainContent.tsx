@@ -3109,220 +3109,229 @@ export default function MainContent({
       )
     }
 
-    // 如果是长沙有色冶金设计研究院，显示公司介绍和联系信息
+    // 长沙有色冶金设计研究院公司介绍（版式与科研、市政「了解我们」页一致）
     if (aboutDepartment === 'cinf') {
+      const sectionTitleCls = `text-lg font-bold tracking-tight mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`
+      const sectionKickerCls = `text-[11px] font-semibold uppercase tracking-[0.2em] mb-3 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
+      const bodyCls = `text-sm leading-relaxed space-y-3 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`
+      const panelCls = `rounded-2xl border overflow-hidden shadow-sm ${darkMode ? 'border-gray-600 bg-gray-700/40' : 'border-slate-200 bg-white'}`
+      const capCls = `px-3 py-2 text-[11px] shrink-0 ${darkMode ? 'text-gray-400 bg-gray-800/60' : 'text-slate-600 bg-slate-50'}`
+      const dividerCls = darkMode ? 'border-gray-600' : 'border-slate-200'
+      const chipCls = `px-3 py-1 rounded-full text-xs font-medium border ${
+        darkMode ? 'border-gray-600 bg-gray-800/60 text-gray-300' : 'border-slate-200 bg-white text-slate-700'
+      }`
+      const valueCls = `px-3 py-1 text-xs font-semibold rounded-full border ${
+        darkMode ? 'border-blue-700/50 bg-blue-900/40 text-blue-300' : 'border-blue-200 bg-blue-50 text-blue-700'
+      }`
+
+      const cinfStats = [
+        { n: '11项', l: '甲级资质' },
+        { n: '900+', l: '在册职工' },
+        { n: '1300+', l: '获奖项目' },
+        { n: '500+', l: '有效专利' },
+      ]
+
       return (
         <div ref={scrollContainerRef} className={mainScrollClassName}>
           <div className={contentWrapperClassName}>
-            {/* Header */}
             <div className="mb-5">
-              <h1 className={`text-2xl font-bold mb-2 ${
-                darkMode ? 'text-gray-100' : 'text-gray-900'
-              }`}>
+              <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                 长沙院浆体管道计算工具
               </h1>
-              <p className={`text-xs ${
-                darkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                {APP_TAGLINE_ZH}
-              </p>
+              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{APP_TAGLINE_ZH}</p>
             </div>
 
-            {/* Frame - 公司介绍：左图右文，下方信息栏（与公式页外层卡片一致） */}
-            <div className={`${mainPanelCardClassName} overflow-hidden`}>
-              {/* 上区：图片左侧 + 文字右侧 */}
-              <div className="flex flex-row gap-6 pb-4">
-                <div className="flex-shrink-0 w-64 sm:w-72">
-                  <img 
-                    src="./pic1.png" 
-                    alt="长沙有色冶金设计研究院有限公司" 
-                    className="w-full h-48 sm:h-56 object-cover rounded-lg"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className={`text-xl font-bold tracking-tight mb-2 ${
-                    darkMode ? 'text-gray-100' : 'text-gray-900'
-                  }`}>
-                    公司简介
+            {/* Hero：渐变主视觉，左文右图（建筑效果图）*/}
+            <div className={`mb-10 rounded-2xl border px-5 py-7 sm:px-10 sm:py-9 ${
+              darkMode
+                ? 'border-gray-600 bg-gradient-to-br from-slate-900/95 via-gray-900 to-slate-950'
+                : 'border-slate-200/90 bg-gradient-to-br from-white via-slate-50/80 to-blue-50/50 shadow-sm'
+            }`}>
+              <p className={sectionKickerCls}>长沙有色冶金设计研究院有限公司 · 企业概况</p>
+              <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-10 xl:gap-12 lg:items-stretch">
+                <div className="min-w-0 flex flex-col justify-center">
+                  <h2
+                    className={`text-2xl sm:text-3xl font-bold tracking-tight leading-snug ${darkMode ? 'text-white' : 'text-slate-900'}`}
+                  >
+                    有色金属行业全产业链<br className="hidden sm:block" />技术与服务提供商
                   </h2>
-                  <div className={`text-sm font-medium mb-3 ${
-                    darkMode ? 'text-gray-300' : 'text-gray-600'
-                  }`}>
-                    长沙有色冶金设计研究院有限公司
+                  <div
+                    className={`mt-4 leading-relaxed text-[15px] sm:text-base ${darkMode ? 'text-gray-200' : 'text-slate-800'}`}
+                  >
+                    <p>
+                      <span className="font-semibold">长沙有色冶金设计研究院有限公司</span>（简称长沙有色院）于1953年正式成立，为国家高新技术企业、国家技术创新示范企业、国家企业技术中心，是我国最早成立的大型综合性设计研究单位之一；隶属于中国铝业集团有限公司，为中铝国际工程股份有限公司子公司。
+                    </p>
                   </div>
-                  <p className={`text-base leading-relaxed ${
-                    darkMode ? 'text-gray-300' : 'text-gray-700'
-                  }`}>
-                    <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>
-                      长沙有色冶金设计研究院有限公司
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {['国家高新技术企业', '国家技术创新示范企业', '国家企业技术中心', 'AAA级信用企业'].map((c) => (
+                      <span key={c} className={chipCls}>{c}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <div
+                    className={`relative overflow-hidden rounded-xl border shadow-sm ${
+                      darkMode ? 'border-gray-600 bg-black/20' : 'border-slate-200/90 bg-slate-100'
+                    }`}
+                  >
+                    <div className="aspect-[16/10] w-full">
+                      <img
+                        src="./about/chinalco-building.png"
+                        alt="长沙有色冶金设计研究院大楼"
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                    <p className={capCls}>长沙有色冶金设计研究院大楼效果图</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 核心数据条：4 等宽格子，无内边距，数字突出 */}
+            <div className={`mb-10 ${panelCls}`}>
+              <div className={`grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 ${dividerCls} [&>*]:border-${dividerCls}`}>
+                {cinfStats.map((s) => (
+                  <div key={s.l} className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                    <div className={`text-2xl sm:text-3xl font-bold tabular-nums ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      {s.n}
+                    </div>
+                    <div className={`mt-1.5 text-xs sm:text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-slate-500'}`}>
+                      {s.l}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 发展历程：左=企业文化横幅，右=文字 */}
+            <div className={`mb-10 ${panelCls}`}>
+              <div className="grid grid-cols-1 lg:grid-cols-2">
+                <div className={`flex flex-col border-b lg:border-b-0 lg:border-r ${dividerCls}`}>
+                  <div className="aspect-video w-full overflow-hidden bg-black/[0.03] dark:bg-black/20">
+                    <img
+                      src="./about/cinf-culture-banner.png"
+                      alt="励精图治 创新求强"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <p className={capCls}>企业文化 · 励精图治　创新求强</p>
+                </div>
+                <div className="flex flex-col justify-center p-6 sm:p-8">
+                  <p className={sectionKickerCls}>历史沿革</p>
+                  <h3 className={sectionTitleCls}>发展历程</h3>
+                  <div className={bodyCls}>
+                    <p>
+                      1954年，长沙有色院由赣州迁至长沙，先后隶属于重工业部、冶金工业部、中国有色金属工业总公司、国家有色金属工业局、中国稀有稀土集团。2000年7月由中央下放到湖南省管理，2007年6月加入中国铝业公司。
+                    </p>
+                    <p>
+                      2011年3月改制为中铝国际出资设立的一人有限责任公司，名称变更为「长沙有色冶金设计研究院有限公司」。2015年3月，中铝国际将山东建设（后更名为南方工程）划转；2024年3月，将长勘院划转到长沙有色院。
+                    </p>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {['责任', '诚信', '开放', '卓越'].map((v) => (
+                      <span key={v} className={valueCls}>{v}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 技术实力：左=文字，右=中国铝业标识配图 */}
+            <div className={`mb-10 ${panelCls}`}>
+              <div className="grid grid-cols-1 lg:grid-cols-2">
+                <div className="flex flex-col justify-center p-6 sm:p-8">
+                  <p className={sectionKickerCls}>人才与专业力量</p>
+                  <h3 className={sectionTitleCls}>技术实力</h3>
+                  <div className={bodyCls}>
+                    <p>
+                      现有在册职工900余人，专业技术人员800余人，其中全国工程勘察设计大师1人、全国有色金属行业勘察设计大师9人、湖南省科技创新领军人才1人、湖南省优秀青年工程勘察设计师16人、中铝集团首席工程师3人、享受政府特殊津贴专家14人、高级职称366人（含正高级工程师65人）、各类国家注册工程师500余人。
+                    </p>
+                    <p>
+                      已构建由<strong className={darkMode ? 'text-gray-100' : 'text-slate-900'}>3个国家级科技创新平台、7个省级科技创新平台</strong>和多个研究生联合培养基地、中试基地组成的高水平多层次科技创新平台体系。
+                    </p>
+                  </div>
+                </div>
+                <div className={`flex flex-col border-t lg:border-t-0 lg:border-l ${dividerCls}`}>
+                  <div className="aspect-video w-full overflow-hidden flex-1 bg-black/[0.03] dark:bg-black/20">
+                    <img
+                      src="./about/chinalco-signage.png"
+                      alt="中国铝业 · 长沙有色冶金设计研究院"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <p className={capCls}>中国铝业集团 · 长沙有色冶金设计研究院</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 成就与荣誉：左=中铝国际大楼，右=文字 */}
+            <div className={`mb-10 ${panelCls}`}>
+              <div className="grid grid-cols-1 lg:grid-cols-2">
+                <div className={`flex flex-col border-b lg:border-b-0 lg:border-r ${dividerCls}`}>
+                  <div className="aspect-video w-full overflow-hidden bg-black/[0.03] dark:bg-black/20">
+                    <img
+                      src="./about/zhonglv-tech-building.png"
+                      alt="中铝国际工程"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <p className={capCls}>中铝国际工程股份有限公司 · 长沙有色院所属集团</p>
+                </div>
+                <div className="flex flex-col justify-center p-6 sm:p-8">
+                  <p className={sectionKickerCls}>成果与品牌</p>
+                  <h3 className={sectionTitleCls}>成就与荣誉</h3>
+                  <div className={bodyCls}>
+                    <p>
+                      建院70余年，为40余个国家提供技术服务，完成工程咨询设计项目万余项，其中国家大中型重点建设项目千余项。获国家、省、部级科技进步奖、优秀工程设计咨询奖1300余项，拥有有效专利500余件。
+                    </p>
+                    <p>
+                      在矿山、冶炼和环境保护方面处于国际领先水平；是非煤矿山领域先进技术领航者、贵重有色冶金行业产业迭代主导者、稀有稀土行业服务主力军、新能源材料全生命周期服务排头兵。
+                    </p>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {['AAA级信用企业', '优秀勘察设计企业', '百强企业'].map((c) => (
+                      <span key={c} className={chipCls}>{c}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 发展愿景：渐变底色 */}
+            <div className={`mb-10 ${panelCls}`}>
+              <div className={`p-6 sm:p-8 ${
+                darkMode
+                  ? 'bg-gradient-to-br from-gray-800/80 to-gray-900/40'
+                  : 'bg-gradient-to-br from-blue-50/60 to-slate-50/40'
+              }`}>
+                <p className={sectionKickerCls}>发展愿景</p>
+                <h3 className={sectionTitleCls}>使命与方向</h3>
+                <div className={`mt-3 text-sm leading-relaxed ${darkMode ? 'text-gray-200' : 'text-slate-800'}`}>
+                  <p>
+                    面对新的经济形势与竞争环境，长沙有色院将秉承
+                    <strong className={darkMode ? 'text-white' : 'text-slate-900'}>
+                      创新驱动，诚信服务，持续为客户创造价值
                     </strong>
-                    {' '}（简称长沙有色院）于1953年正式成立，国家高新技术企业，国家技术创新示范企业，国家企业技术中心，是我国最早成立的大型综合性设计研究单位之一，隶属于中国铝业集团有限公司，为中铝国际工程股份有限公司的子公司。
+                    的理念，致力成为有色行业创新型领军企业。
                   </p>
                 </div>
               </div>
+            </div>
 
-              {/* 下区：信息栏（发展历程、核心优势等） */}
-              <div className="pt-2">
-                <div className={`space-y-6 text-base leading-relaxed ${
-                  darkMode ? 'text-gray-300' : 'text-gray-700'
-                }`}>
-                  {/* 发展历程 */}
-                  <div>
-                    <h3 className={`text-lg font-semibold mb-3 ${
-                      darkMode ? 'text-gray-200' : 'text-gray-900'
-                    }`}>
-                      发展历程
-                    </h3>
-                    <p className={`leading-relaxed ${
-                      darkMode ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      1954年，长沙有色院由赣州迁至长沙，先后隶属于重工业部、冶金工业部、中国有色金属工业总公司、国家有色金属工业局、中国稀有稀土集团。2000年7月由中央下放到湖南省管理，2007年6月加入中国铝业公司。2011年3月，长沙有色院改制为中铝国际出资设立的一人有限责任公司，名称变更为"长沙有色冶金设计研究院有限公司"。2015年3月，中铝国际将山东建设（后更名为南方工程）划转到长沙有色院。2024年3月，中铝国际将长勘院划转到长沙有色院。
-                    </p>
-                  </div>
-                  
-                  {/* 核心优势 - 使用卡片布局 */}
-                  <div>
-                    <h3 className={`text-lg font-semibold mb-4 ${
-                      darkMode ? 'text-gray-200' : 'text-gray-900'
-                    }`}>
-                      核心优势
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                      <div className={`p-4 rounded-lg ${
-                        darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'
-                      }`}>
-                        <div className={`text-2xl font-bold mb-1 ${
-                          darkMode ? 'text-blue-400' : 'text-blue-600'
-                        }`}>
-                          11项
-                        </div>
-                        <div className={`text-sm ${
-                          darkMode ? 'text-gray-400' : 'text-gray-600'
-                        }`}>
-                          甲级资质
-                        </div>
-                      </div>
-                      <div className={`p-4 rounded-lg ${
-                        darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'
-                      }`}>
-                        <div className={`text-2xl font-bold mb-1 ${
-                          darkMode ? 'text-blue-400' : 'text-blue-600'
-                        }`}>
-                          1200+
-                        </div>
-                        <div className={`text-sm ${
-                          darkMode ? 'text-gray-400' : 'text-gray-600'
-                        }`}>
-                          在册职工
-                        </div>
-                      </div>
-                      <div className={`p-4 rounded-lg ${
-                        darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'
-                      }`}>
-                        <div className={`text-2xl font-bold mb-1 ${
-                          darkMode ? 'text-blue-400' : 'text-blue-600'
-                        }`}>
-                          1300+
-                        </div>
-                        <div className={`text-sm ${
-                          darkMode ? 'text-gray-400' : 'text-gray-600'
-                        }`}>
-                          获奖项目
-                        </div>
-                      </div>
-                      <div className={`p-4 rounded-lg ${
-                        darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'
-                      }`}>
-                        <div className={`text-2xl font-bold mb-1 ${
-                          darkMode ? 'text-blue-400' : 'text-blue-600'
-                        }`}>
-                          500+
-                        </div>
-                        <div className={`text-sm ${
-                          darkMode ? 'text-gray-400' : 'text-gray-600'
-                        }`}>
-                          有效专利
-                        </div>
-                      </div>
-                    </div>
-                    <p className={`leading-relaxed ${
-                      darkMode ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      经过70余年的励精图治，长沙有色院已发展成为有色金属行业全产业链和项目全生命周期的技术和服务提供商，拥有冶金行业、市政行业（排水工程、热力工程、载人索道工程）专业、建筑行业（建筑工程）专业、化工石化医药行业（化工工程）专业、环境工程设计专项（水污染防治工程、大气污染防治工程、固体废物处理处置工程）、工程勘察综合类、测绘、地质灾害治理工程勘查、地质灾害治理工程设计、地质灾害治理工程施工及地质灾害评估等11项甲级资质，业务领域涵盖工程咨询、设计、总承包、监理、勘察、测绘、检验检测、施工、环境治理、生态修复、装备制造、科学研究和技术开发等。
-                    </p>
-                  </div>
-                  
-                  {/* 技术实力 */}
-                  <div>
-                    <h3 className={`text-lg font-semibold mb-3 ${
-                      darkMode ? 'text-gray-200' : 'text-gray-900'
-                    }`}>
-                      技术实力
-                    </h3>
-                    <p className={`leading-relaxed ${
-                      darkMode ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      长沙有色院技术实力雄厚，现有在册职工1200余人，拥有专业技术人员900余人，其中，全国工程勘察设计大师1人，全国有色金属行业勘察设计大师10人，湖南省科技创新领军人才1人，湖南省优秀青年工程勘察设计师12人，中铝集团首席工程师3人，享受国务院政府特殊津贴专家2人，高级职称478人（含正高级工程师67人），各类国家注册工程师474人。
-                    </p>
-                  </div>
-                  
-                  {/* 成就与荣誉 */}
-                  <div>
-                    <h3 className={`text-lg font-semibold mb-3 ${
-                      darkMode ? 'text-gray-200' : 'text-gray-900'
-                    }`}>
-                      成就与荣誉
-                    </h3>
-                    <p className={`leading-relaxed mb-4 ${
-                      darkMode ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      建院70余年来，长沙有色院在设计研究领域硕果累累，为40余个国家提供了技术服务，完成各类工程咨询设计项目万余项，其中国家大、中型重点建设项目千余项，获国家、省、部级科技进步奖、优秀工程设计咨询奖1300余项，拥有有效专利500余件，形成了一批具有自主知识产权的核心技术，在矿山、冶炼和环境保护方面处于国际领先水平，尤其是自主研发的"高、深、难"矿山采选技术，创新研发的氧压浸出、CSCC熔池熔炼和闪速熔炼等新型绿色冶炼技术，为我国打造矿业强国，推动有色金属冶炼行业发展提供了强有力的技术支撑。
-                    </p>
-                    <div className={`flex flex-wrap gap-2 ${
-                      darkMode ? 'text-gray-400' : 'text-gray-600'
-                    }`}>
-                      <span className={`px-3 py-1 rounded-full text-sm ${
-                        darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-blue-50 border border-blue-200'
-                      }`}>
-                        AAA级信用企业
-                      </span>
-                      <span className={`px-3 py-1 rounded-full text-sm ${
-                        darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-blue-50 border border-blue-200'
-                      }`}>
-                        优秀勘察设计企业
-                      </span>
-                      <span className={`px-3 py-1 rounded-full text-sm ${
-                        darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-blue-50 border border-blue-200'
-                      }`}>
-                        百强企业
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {/* 愿景 */}
-                  <div className={`p-6 rounded-lg ${
-                    darkMode ? 'bg-gradient-to-r from-gray-800 to-gray-700 border border-gray-600' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200'
-                  }`}>
-                    <p className={`text-base leading-relaxed ${
-                      darkMode ? 'text-gray-200' : 'text-gray-800'
-                    }`}>
-                      面对新的经济形势和竞争环境，长沙有色院将秉承<strong className={darkMode ? 'text-white' : 'text-gray-900'}>创新驱动，诚信服务，持续为客户创造价值</strong>的理念，致力成为有色行业创新型领军企业。
-                    </p>
-                  </div>
-                </div>
-
-                {/* 公司信息 - 横向展示 */}
-                <div className={`pt-8 border-t ${
-                  darkMode ? 'border-gray-700' : 'border-gray-200'
-                }`}>
-                  <h3 className={`text-xl font-bold mb-4 ${
-                    darkMode ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    公司信息
-                  </h3>
-                  <div className={`p-6 rounded-xl mb-8 flex flex-wrap gap-6 ${
-                    darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'
-                  }`}>
+            {/* 联系信息 */}
+            <div className={`mb-10 ${panelCls}`}>
+              <div className="p-6 sm:p-8">
+                <p className={sectionKickerCls}>联系方式</p>
+                <h3 className={`text-lg font-bold tracking-tight mb-4 ${darkMode ? 'text-white' : 'text-slate-900'}`}>公司信息</h3>
+                <div
+                  className={`mb-8 flex flex-wrap gap-6 rounded-xl border p-5 sm:p-6 ${
+                    darkMode ? 'border-gray-600 bg-gray-800/35' : 'border-slate-200 bg-slate-50/80'
+                  }`}
+                >
                     <div className="flex items-start min-w-0 flex-1 basis-40">
                       <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
                         darkMode ? 'bg-blue-500' : 'bg-blue-600'
@@ -3384,15 +3393,11 @@ export default function MainContent({
                     </div>
                   </div>
 
-                  {/* 业务联系 - 各部门 */}
-                  <h3 className={`text-xl font-bold mb-4 ${
-                    darkMode ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    业务联系
-                  </h3>
+                  <p className={`${sectionKickerCls} mt-2`}>对外联络</p>
+                  <h3 className={`${sectionTitleCls} mb-4 text-base sm:text-lg`}>业务联系</h3>
                   <div className="space-y-4">
-                        <div className={`p-5 rounded-lg ${
-                          darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-white border border-gray-200 shadow-sm'
+                        <div className={`p-5 rounded-xl border ${
+                          darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white shadow-sm'
                         }`}>
                           <div className={`font-semibold mb-3 text-sm ${
                             darkMode ? 'text-gray-200' : 'text-gray-900'
@@ -3433,8 +3438,8 @@ export default function MainContent({
                           </div>
                         </div>
 
-                        <div className={`p-5 rounded-lg ${
-                          darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-white border border-gray-200 shadow-sm'
+                        <div className={`p-5 rounded-xl border ${
+                          darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white shadow-sm'
                         }`}>
                           <div className={`font-semibold mb-3 text-sm ${
                             darkMode ? 'text-gray-200' : 'text-gray-900'
@@ -3475,8 +3480,8 @@ export default function MainContent({
                           </div>
                         </div>
 
-                        <div className={`p-5 rounded-lg ${
-                          darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-white border border-gray-200 shadow-sm'
+                        <div className={`p-5 rounded-xl border ${
+                          darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white shadow-sm'
                         }`}>
                           <div className={`font-semibold mb-3 text-sm ${
                             darkMode ? 'text-gray-200' : 'text-gray-900'
@@ -3502,7 +3507,6 @@ export default function MainContent({
                           </div>
                         </div>
                       </div>
-                </div>
               </div>
             </div>
           </div>

@@ -11,8 +11,4 @@ export default defineConfig({
     assetsDir: 'assets',
     emptyOutDir: true,
   },
-  define: {
-    // 打包时由 scripts/build-frontend.js 注入，用于界面显示以确认是否为当次构建
-    'import.meta.env.VITE_BUILD_ID': JSON.stringify(process.env.VITE_BUILD_ID || 'dev'),
-  },
 })

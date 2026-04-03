@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-计算书 Markdown 正文（含 LaTeX 数学公式），供 Pandoc 转为 Word OMML 公式。
+计算书 Markdown 正文（含 LaTeX 数学公式）。
 """
 from __future__ import annotations
 
@@ -15,34 +15,6 @@ def escape_table_cell(text: str) -> str:
         return ""
     s = str(text).replace("\n", " ").replace("\r", " ")
     return s.replace("|", "\\|")
-
-
-def _rewrite_inline_math_in_segment(seg: str) -> str:
-    """
-    将正文中的 $...$ 转为 \\(...\\)（Pandoc/Word 更稳），并压缩数学片段内多余反斜杠。
-    避免 $\\rho_k$ 等在表格单元格中被 Markdown 下划线误解析。
-    不处理 $$...$$ 显示公式块。
-    """
-
-    def fix_inner(inner: str) -> str:
-        inner = inner.strip()
-        inner = re.sub(r"\\{2,}(?=[a-zA-Z\{])", r"\\", inner)
-        return inner
-
-    def repl(m: re.Match) -> str:
-        return "\\(" + fix_inner(m.group(1)) + "\\)"
-
-    return re.sub(r"\$([^\$\n]+?)\$", repl, seg)
-
-
-def finalize_export_markdown(md: str) -> str:
-    """仅处理 YAML 之后的正文，保留 front matter 不变。"""
-    if md.startswith("---"):
-        m = re.match(r"^---\n.*?\n---\n", md, re.DOTALL)
-        if m:
-            return m.group(0) + _rewrite_inline_math_in_segment(md[m.end() :])
-    return _rewrite_inline_math_in_segment(md)
-
 
 def program_formula_to_latex(expr: str) -> str:
     """
@@ -642,7 +614,7 @@ def compose_markdown(
     date_cn = now.strftime("%Y年%m月%d日 %H:%M")
     chunks: List[str] = []
 
-    # Word 文档属性（Pandoc 元数据）
+    # Word 文档属性（文档元信息）
     chunks.append("---")
     chunks.append('title: "浆体管道水力计算书"')
     chunks.append('subtitle: "程序自动生成稿"')
@@ -793,4 +765,4 @@ def compose_markdown(
     )
     chunks.append("")
 
-    return finalize_export_markdown("\n".join(chunks))
+    return "\n".join(chunks)

@@ -32,14 +32,14 @@ if (fs.existsSync(viteCacheDir)) {
 }
 
 const buildId = Date.now().toString()
-console.log('在 frontend 目录执行: npx vite build (VITE_BUILD_ID=' + buildId + ')')
+console.log('在 frontend 目录执行: npx vite build')
 console.log('工作目录:', frontendDir)
 execSync('npx vite build', {
   cwd: frontendDir,
   stdio: 'inherit',
   shell: true,
   windowsHide: true,
-  env: { ...process.env, VITE_BUILD_ID: buildId },
+  env: { ...process.env },
 })
 
 if (!fs.existsSync(path.join(distDir, 'index.html'))) {

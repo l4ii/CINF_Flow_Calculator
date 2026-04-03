@@ -4,4 +4,3 @@ python-docx==1.1.0
 numpy==1.26.2
 matplotlib>=3.7.0
 pyinstaller>=6.0.0
-# Word export with formulas may need Pandoc: https://pandoc.org/installing.html

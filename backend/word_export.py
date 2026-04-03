@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-计算书导出：纯 python-docx 生成 Word，不依赖 Pandoc。
+计算书导出：
 公式与含 LaTeX 的说明在文档中转为易读 Unicode/普通文本，可在 Word 内用公式编辑器再排版。
 """
 from datetime import datetime
@@ -91,7 +91,7 @@ def _hydraulic_grade_xy(l_max, h_user, loss_head_m_fn, n_points):
 
 
 class WordExporter:
-    """Word 文档导出器（python-docx，无外部转换依赖）"""
+    """Word 文档导出器"""
     
     # 类变量：存储每天的导出次数 {日期字符串: 次数}
     _daily_export_count = {}
