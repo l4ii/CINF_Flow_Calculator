@@ -5,25 +5,89 @@
 """
 from datetime import datetime
 import json
+import math
 import os
 import re
 import tempfile
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH  # type: ignore
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK  # type: ignore
 from docx.oxml import parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from export_markdown import program_formula_to_latex
 
+# 公式 id → 侧栏「四大类」之一（与前端分组一致，便于导出叙述）
+FORMULA_CATEGORY_TITLE = {
+    "liu_dezhong": "临界流速计算",
+    "wasp": "临界流速计算",
+    "fei_xiangjun": "临界流速计算",
+    "kronodze_pressure": "临界流速计算",
+    "clear_water_friction_loss": "摩阻损失",
+    "slurry_friction_loss": "摩阻损失",
+    "slurry_friction_workflow": "摩阻损失",
+    "density_mixing": "摩阻损失",
+    "friction_loss": "摩阻损失",
+    "darcy_friction": "摩阻损失",
+    "darcy_friction_step1_rho1": "摩阻损失",
+    "darcy_friction_step2_re": "摩阻损失",
+    "darcy_friction_step3_lambda": "摩阻损失",
+    "slurry_total_head": "压力与扬程",
+    "clear_water_total_head": "压力与扬程",
+    "centrifugal_pump_total_head": "压力与扬程",
+    "positive_displacement_pump_outlet_pressure": "压力与扬程",
+    "slurry_accel_energy": "加速流与消能",
+    "slurry_dissipation": "加速流与消能",
+    "slurry_energy_dissipation": "加速流与消能",
+    "slurry_dissipation_orifice": "加速流与消能",
+}
+
+CATEGORY_INTRO = {
+    "临界流速计算": (
+        "用于判定或核算浆体在管道中维持悬浮输送所需的临界流速，涵盖国内常用经验公式及 B.C.克诺罗兹法等。"
+        "计算结果服务于管径与流速选取、流态判别及与后续摩阻、扬程模块的衔接。"
+    ),
+    "摩阻损失": (
+        "用于清水或浆体管道沿程水头损失、浆体当量密度与达西摩阻系数等配套计算，"
+        "输出单位管长水力坡降或压力梯度等，可与总扬程、加压泵站设计条件对接。"
+    ),
+    "压力与扬程": (
+        "在几何扬程、沿程与局部损失及泵站附加损失等条件下，估算浆体或清水管道所需输送压力（表压），"
+        "并可生成水力坡度线示意（纵轴水头、横轴管长；安装包内置 matplotlib 导出）。"
+    ),
+    "加速流与消能": (
+        "提供浆体加速流判别、消能水头与孔板消能等专项核算，用于运行工况校核与消能设施参数初算；"
+        "具体边界条件与系数应结合项目规范与试验资料复核。"
+    ),
+}
+
 
 def _matplotlib_stack_for_export():
-    """非交互后端 (Agg) 下的 pyplot 与 rcParams；未安装 matplotlib 时抛出 ImportError。"""
+    """非交互后端 (Agg) 下的 pyplot 与 rcParams；缺失或损坏时抛出 ImportError。"""
     import matplotlib as _mpl  # pyright: ignore[reportMissingImports]
     _mpl.use("Agg")
     import matplotlib.pyplot as _plt  # pyright: ignore[reportMissingImports]
     return _plt, _mpl.rcParams
+
+
+# 与前端 MainContent 水力坡度图一致：密集折线点、横轴 10 等分刻度
+HYDRAULIC_GRADE_CURVE_POINTS = 240
+HYDRAULIC_GRADE_TICK_DIVISIONS = 10
+SLURRY_HYDRAULIC_LINE = "#F59E0B"
+CLEAR_HYDRAULIC_LINE = "#3B82F6"
+
+
+def _hydraulic_grade_xy(l_max, h_user, loss_head_m_fn, n_points):
+    """由损失水头函数得到水力坡度折线 (L, 水头 m)，与界面公式一致。"""
+    total_loss = loss_head_m_fn(l_max)
+    xs, ys = [], []
+    for i in range(n_points + 1):
+        L = l_max * i / n_points
+        lh = loss_head_m_fn(L)
+        xs.append(L)
+        ys.append(h_user + total_loss - lh)
+    return xs, ys
 
 
 class WordExporter:
@@ -107,9 +171,9 @@ class WordExporter:
             hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
             for run in hp.runs:
                 run.font.size = Pt(9)
-                run.font.name = "宋体"
+                run.font.name = "Times New Roman"
                 try:
-                    run.font._element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+                    run.font._element.rPr.rFonts.set(qn("w:eastAsia"), "仿宋")
                 except (AttributeError, TypeError):
                     pass
 
@@ -126,40 +190,64 @@ class WordExporter:
         WordExporter._daily_export_count[today] += 1
         return WordExporter._daily_export_count[today]
     
-    def export(self, formula_id, formula_info, parameters, result, save_path=None):
+    def export(
+        self,
+        formula_id,
+        formula_info,
+        parameters,
+        result,
+        save_path=None,
+    ):
         """导出计算书到Word文档。save_path 为 None 时保存到 exports 目录；否则保存到用户指定路径。"""
         try:
             doc = Document()
             
-            # 设置文档样式
+            # 正文：小四（12 pt）；西文 Times New Roman，中文仿宋
             self._setup_document_style(doc)
             
-            # 添加软件介绍
-            self._add_software_intro(doc)
-            
-            # 添加标题
-            title = doc.add_heading('浆体管道临界流速计算书', 0)
+            module_name = formula_info.get("name", "计算模块")
+            title = doc.add_heading(f"浆体管道水力计算书 · {module_name}", 0)
             title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            # 添加基本信息
-            self._add_basic_info(doc, formula_info)
-            
-            # 添加计算公式（带数学公式格式）
+            for run in title.runs:
+                run.font.size = Pt(18)
+                run.bold = True
+                self._set_font(run)
+
+            # 一、软件简要说明
+            self._add_software_intro(doc)
+            self._insert_page_break(doc)
+
+            # 二、本次计算概况（功能大类 + 模块 + 时间）
+            self._add_session_overview(doc, formula_id, formula_info)
+            self._insert_page_break(doc)
+
+            # 三、计算公式与模块说明
             self._add_formula_section(doc, formula_info)
-            
-            # 添加输入参数
+            self._insert_page_break(doc)
+
+            # 四、输入参数（含符号、取值、单位、说明）
             self._add_parameters_section(doc, parameters, formula_info)
-            
-            # 添加中间结果
+            self._insert_page_break(doc)
+
+            # 五、中间计算量（有则输出）
             self._add_intermediate_results(doc, result)
-            
-            # 添加最终结果（需 formula_id 区分 Vc/i_k/rho_k）
+            if result.get("intermediate"):
+                self._insert_page_break(doc)
+
+            # 六、计算成果
             self._add_result_section(doc, result, formula_id)
-            
-            # 添加计算过程
-            self._add_calculation_process(doc, formula_id, formula_info, parameters, result)
-            
-            # 添加软件推广信息
+            self._insert_page_break(doc)
+
+            # 七、计算过程推演
+            self._add_calculation_process(
+                doc,
+                formula_id,
+                formula_info,
+                parameters,
+                result,
+            )
+
+            # 八、附录：软件功能总览（四大类）
             self._add_software_promotion(doc)
 
             self._apply_docx_header_to_document(doc)
@@ -220,99 +308,140 @@ class WordExporter:
             raise Exception(f"导出失败: {str(e)}")
     
     def _setup_document_style(self, doc):
-        """设置文档样式"""
+        """正文默认：小四（12 pt），中文仿宋、西文 Times New Roman"""
         style = doc.styles['Normal']
-        font = style.font
-        # 设置西文字体为Times New Roman，中文字体为仿宋
-        font.name = 'Times New Roman'
-        font._element.set(qn('w:eastAsia'), '仿宋')
-        font.size = Pt(12)
-    
+        style.font.name = "Times New Roman"
+        style.font.size = Pt(12)
+        try:
+            rPr = style.element.get_or_add_rPr()
+            rFonts = rPr.get_or_add_rFonts()
+            rFonts.set(qn("w:ascii"), "Times New Roman")
+            rFonts.set(qn("w:hAnsi"), "Times New Roman")
+            rFonts.set(qn("w:eastAsia"), "仿宋")
+        except (AttributeError, TypeError):
+            pass
+
+    def _insert_page_break(self, doc):
+        """段后分页，便于分章阅读"""
+        p = doc.add_paragraph()
+        r = p.add_run()
+        r.add_break(WD_BREAK.PAGE)
+
     def _set_font(self, run, chinese_font='仿宋', english_font='Times New Roman'):
         """设置run的字体：中文用指定中文字体，英文用指定英文字体"""
         run.font.name = english_font
-        # 设置中文字体（eastAsia）
-        run.font._element.set(qn('w:eastAsia'), chinese_font)
-    
-    def _add_software_intro(self, doc):
-        """添加软件说明（封面式引言）"""
+        try:
+            run._element.rPr.rFonts.set(qn("w:eastAsia"), chinese_font)
+        except (AttributeError, TypeError):
+            pass
+
+    def _category_title_for(self, formula_id: str) -> str:
+        return FORMULA_CATEGORY_TITLE.get(formula_id, "其他功能")
+
+    def _style_section_heading(self, doc, text: str):
         doc.add_paragraph()
         p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_run = p.add_run("长沙院浆体管道水力计算工具")
-        title_run.bold = True
-        title_run.font.size = Pt(16)
-        self._set_font(title_run)
+        run = p.add_run(text)
+        run.bold = True
+        run.font.size = Pt(14)
+        self._set_font(run)
+    
+    def _add_software_intro(self, doc):
+        """一、软件简要说明（不含本次算例细节）"""
+        self._style_section_heading(doc, "一、软件简要说明")
+        title, ver = self._get_app_title_version()
+        sub = doc.add_paragraph()
+        sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        sr = sub.add_run(f"{title}（版本 {ver}）")
+        sr.bold = True
+        sr.font.size = Pt(12)
+        self._set_font(sr)
 
-        doc.add_paragraph()
         intro_p = doc.add_paragraph()
         intro_run = intro_p.add_run(
-            "本计算书由长沙有色冶金设计研究院有限公司开发的浆体管道水力计算工具自动生成，"
-            "面向浆体与清水管道输送中的临界流速、摩阻与扬程等工程计算，便于校核与归档。"
+            "本计算书由长沙有色冶金设计研究院有限公司研发的浆体与清水管道水力计算软件自动生成。"
+            "软件面向工程设计中的水力校核与资料整理，计算结论应与现行规范、试验资料及专业判断结合使用。"
         )
         self._set_font(intro_run)
         intro_p.paragraph_format.first_line_indent = Pt(24)
+        intro_p.paragraph_format.line_spacing = 1.25
 
-        doc.add_paragraph()
-        features_p = doc.add_paragraph()
-        features_run = features_p.add_run("主要能力：")
-        features_run.bold = True
-        self._set_font(features_run)
-        features_list = [
-            "多种临界流速经验公式与浆体密度、摩阻系数等配套计算",
-            "浆体总扬程、清水总扬程及 P–L 特性曲线示意（需 matplotlib）",
-            "中间量与分步推演写入同一文档，便于审查",
-            "公式与符号在 Word 中以可读 Unicode/文本呈现，可在 Word 内用公式编辑器进一步排版",
+        scope_p = doc.add_paragraph()
+        scope_run = scope_p.add_run("平台功能按业务板块划分为四类：")
+        scope_run.bold = True
+        self._set_font(scope_run)
+
+        blocks = [
+            "（1）临界流速计算：多种经验公式与克诺罗兹法等，用于流速与管径相关判别；",
+            "（2）摩阻损失：清水海澄–威廉式、浆体达西–魏斯巴赫型水力坡降及密度混合、摩阻系数等配套计算；",
+            "（3）压力与扬程：浆体/清水总扬程（输送压力）及压力—管长特性曲线示意；",
+            "（4）加速流与消能：加速流判据、消能水头与孔板消能等专项核算。",
         ]
-        for feature in features_list:
-            bp = doc.add_paragraph(feature, style="List Bullet")
-            for run in bp.runs:
+        for line in blocks:
+            lp = doc.add_paragraph(line)
+            for run in lp.runs:
                 self._set_font(run)
-            bp.paragraph_format.left_indent = Pt(24)
-        doc.add_paragraph()
-    
-    def _add_basic_info(self, doc, formula_info):
-        """添加计算概况"""
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        run = p.add_run("一、计算概况")
-        run.bold = True
-        run.font.size = Pt(14)
-        self._set_font(run)
+            lp.paragraph_format.first_line_indent = Pt(24)
+            lp.paragraph_format.line_spacing = 1.25
 
-        info_table = doc.add_table(rows=2, cols=2)
+        tail = doc.add_paragraph()
+        tail_run = tail.add_run(
+            "本文件后续章节给出本次所选模块的公式、输入、中间量、成果及推演过程；"
+            "附录中对上述四类功能作汇总说明。公式与符号在 Word 中以 Unicode 及普通文本为主，必要时可在 Word 中改用公式对象排版。"
+        )
+        self._set_font(tail_run)
+        tail.paragraph_format.first_line_indent = Pt(24)
+        tail.paragraph_format.line_spacing = 1.25
+
+    def _add_session_overview(self, doc, formula_id, formula_info):
+        """二、本次计算概况：功能大类 + 模块名称 + 大类说明"""
+        self._style_section_heading(doc, "二、本次计算概况")
+        cat = self._category_title_for(formula_id)
+        info_table = doc.add_table(rows=4, cols=2)
         info_table.style = "Light Grid Accent 1"
+        headers = [("项目", "内容"), ("功能大类", cat), ("计算模块", formula_info.get("name", "—")), ("导出时间", datetime.now().strftime("%Y年%m月%d日 %H:%M:%S"))]
+        for i, (a, b) in enumerate(headers):
+            info_table.cell(i, 0).text = a
+            info_table.cell(i, 1).text = b
+            for cell in info_table.rows[i].cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        if i == 0:
+                            run.bold = True
+                        self._set_font(run)
 
-        info_table.cell(0, 0).text = "条目"
-        info_table.cell(0, 1).text = "说明"
-        for cell in info_table.rows[0].cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    self._set_font(run)
-        
-        info_table.cell(1, 0).text = "所选计算模块"
-        info_table.cell(1, 1).text = formula_info.get("name", "未知公式")
-        for cell in info_table.rows[1].cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    self._set_font(run)
+        doc.add_paragraph()
+        intro_text = CATEGORY_INTRO.get(cat)
+        if intro_text:
+            cp = doc.add_paragraph(self._tex_ish_to_plain(intro_text))
+            for run in cp.runs:
+                self._set_font(run)
+            cp.paragraph_format.first_line_indent = Pt(24)
+            cp.paragraph_format.line_spacing = 1.25
 
-        row_calc = info_table.add_row()
-        row_calc.cells[0].text = "导出时间"
-        row_calc.cells[1].text = datetime.now().strftime("%Y年%m月%d日 %H:%M:%S")
-        for cell in row_calc.cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
+        desc = formula_info.get("description")
+        if desc and str(desc).strip():
+            doc.add_paragraph()
+            hp = doc.add_paragraph()
+            hr = hp.add_run("本模块要点（摘要）")
+            hr.bold = True
+            self._set_font(hr)
+            excerpt = str(desc).strip()
+            if len(excerpt) > 1200:
+                excerpt = excerpt[:1200] + "……（以下略，全文见「计算公式与模块说明」节）"
+            for block in excerpt.split("\n\n"):
+                block = block.strip()
+                if not block:
+                    continue
+                dp = doc.add_paragraph(self._tex_ish_to_plain(block))
+                for run in dp.runs:
                     self._set_font(run)
+                dp.paragraph_format.first_line_indent = Pt(24)
+                dp.paragraph_format.line_spacing = 1.25
     
     def _add_formula_section(self, doc, formula_info):
-        """添加计算公式（程序式 → 可读文本）与说明"""
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        run = p.add_run("二、计算公式与说明")
-        run.bold = True
-        run.font.size = Pt(14)
-        self._set_font(run)
+        """三、计算公式（程序式 → 可读文本）与模块完整说明"""
+        self._style_section_heading(doc, "三、计算公式与模块说明")
 
         formula_name_p = doc.add_paragraph()
         formula_name_run = formula_name_p.add_run(f"模块名称：{formula_info.get('name', '未知')}")
@@ -342,6 +471,7 @@ class WordExporter:
                 for run in desc_p.runs:
                     self._set_font(run)
                 desc_p.paragraph_format.first_line_indent = Pt(24)
+                desc_p.paragraph_format.line_spacing = 1.25
     
     def _insert_math_formula(self, paragraph, formula):
         """使用OMML格式插入Word数学公式"""
@@ -401,103 +531,82 @@ class WordExporter:
                    .replace("'", '&apos;'))
     
     def _add_parameters_section(self, doc, parameters, formula_info):
-        """添加输入条件与参数"""
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        run = p.add_run("三、输入条件与参数")
-        run.bold = True
-        run.font.size = Pt(14)
-        self._set_font(run)
-        
-        # 获取公式的参数定义
-        formula_params = formula_info.get('parameters', [])
-        
-        # 创建参数表格
-        valid_params = {k: v for k, v in parameters.items() 
-                       if k != 'g' or v != 9.81}  # 排除默认的重力加速度
-        
-        # 计算实际需要的行数（公式中定义的参数 + 其他参数）
-        formula_param_names = {p.get('name') for p in formula_params}
-        formula_params_count = sum(1 for name in formula_param_names if name in valid_params)
-        other_params_count = sum(1 for name in valid_params.keys() if name not in formula_param_names)
-        total_rows = formula_params_count + other_params_count
-        
+        """四、输入参数：符号（含中文说明）、取值、单位、字段说明"""
+        self._style_section_heading(doc, "四、输入参数与取值")
+
+        formula_params = formula_info.get("parameters", [])
+        raw = parameters or {}
+        valid_params = {}
+        for k, v in raw.items():
+            if v is None or v == "":
+                continue
+            if isinstance(v, float) and math.isnan(v):
+                continue
+            valid_params[k] = v
+
+        def _fmt_val(value):
+            if isinstance(value, (int, float)):
+                return f"{value:.6f}".rstrip("0").rstrip(".")
+            return str(value)
+
+        param_def_by_name = {p.get("name"): p for p in formula_params if p.get("name")}
+
+        formula_param_names = [p.get("name") for p in formula_params if p.get("name")]
+        ordered_names = [n for n in formula_param_names if n in valid_params]
+        extra_keys = [k for k in valid_params if k not in set(formula_param_names)]
+        extra_keys.sort()
+        all_names = ordered_names + extra_keys
+        total_rows = len(all_names)
+
         if total_rows == 0:
-            no_params_p = doc.add_paragraph('无输入参数')
+            no_params_p = doc.add_paragraph("（本模块无独立数值参数或由界面分步汇总，详见计算过程节。）")
             for run in no_params_p.runs:
                 self._set_font(run)
             return
-        
-        param_table = doc.add_table(rows=total_rows + 1, cols=3)
-        param_table.style = 'Light Grid Accent 1'
-        
+
+        param_table = doc.add_table(rows=total_rows + 1, cols=4)
+        param_table.style = "Light Grid Accent 1"
+
         header_cells = param_table.rows[0].cells
-        header_cells[0].text = "参数（符号及含义）"
+        header_cells[0].text = "参数（符号与含义）"
         header_cells[1].text = "取值"
         header_cells[2].text = "单位"
-        
-        # 设置表头样式
+        header_cells[3].text = "说明"
         for cell in header_cells:
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.bold = True
                     self._set_font(run)
-                    self._set_font(run)
-        
-        # 填充参数（按公式定义的顺序）
+
         row = 1
-        # 先添加公式中定义的参数
-        for param_def in formula_params:
-            param_name = param_def.get('name')
-            if param_name in valid_params:
-                if row >= len(param_table.rows):
-                    break
-                param_table.cell(row, 0).text = self._tex_ish_to_plain(
-                    param_def.get("label", param_name)
-                )
-                value = valid_params[param_name]
-                if isinstance(value, (int, float)):
-                    param_table.cell(row, 1).text = f"{value:.6f}".rstrip('0').rstrip('.')
-                else:
-                    param_table.cell(row, 1).text = str(value)
-                param_table.cell(row, 2).text = param_def.get('unit', self._get_unit(param_name))
-                # 设置该行所有单元格的字体
-                for cell in param_table.rows[row].cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            self._set_font(run)
-                row += 1
-        
-        # 添加其他参数（如果有）
-        for key, value in valid_params.items():
-            if key not in formula_param_names:
-                if row >= len(param_table.rows):
-                    break
-                param_table.cell(row, 0).text = key
-                if isinstance(value, (int, float)):
-                    param_table.cell(row, 1).text = f"{value:.6f}".rstrip('0').rstrip('.')
-                else:
-                    param_table.cell(row, 1).text = str(value)
-                param_table.cell(row, 2).text = self._get_unit(key)
-                # 设置该行所有单元格的字体
-                for cell in param_table.rows[row].cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            self._set_font(run)
-                row += 1
+        for name in all_names:
+            value = valid_params[name]
+            pdef = param_def_by_name.get(name)
+            label = self._tex_ish_to_plain(pdef.get("label", name)) if pdef else name
+            unit = (pdef.get("unit") if pdef else None) or self._get_unit(name)
+            desc = (pdef.get("description") if pdef else None) or "—"
+            if desc and str(desc).strip():
+                desc = self._tex_ish_to_plain(str(desc).strip())
+            else:
+                desc = "—"
+
+            param_table.cell(row, 0).text = label
+            param_table.cell(row, 1).text = _fmt_val(value)
+            param_table.cell(row, 2).text = unit or "—"
+            param_table.cell(row, 3).text = desc
+            for cell in param_table.rows[row].cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        self._set_font(run)
+            row += 1
     
     def _add_intermediate_results(self, doc, result):
-        """添加中间结果部分"""
+        """五、中间计算量"""
         intermediate = result.get('intermediate', {})
         if not intermediate:
             return
-        
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        run = p.add_run("四、中间计算量")
-        run.bold = True
-        run.font.size = Pt(14)
-        self._set_font(run)
+
+        self._style_section_heading(doc, "五、中间计算量")
         
         # 创建中间结果表格
         intermediate_table = doc.add_table(rows=len(intermediate) + 1, cols=2)
@@ -587,17 +696,20 @@ class WordExporter:
             "orifice_numer": "K_Qk 分子项 (1-β²)(1.142-β²)",
             "orifice_beta": "步骤1 孔径比 β",
             "orifice_K_Qk_step2": "步骤2 孔板流量消能系数 K_Qk",
+            "term_0p25_Cw": "项 0.25·C_w",
+            "Sigma_H_s": "装置所需压力累计 ΣH_s",
+            "K_p_K_m": "分母 K_p·K_m",
+            "K_p": "扬程降低率 K_p",
+            "K_m": "磨蚀后扬程折损率 K_m",
+            "C_w": "浆体重量浓度 C_w",
+            "K_f": "压力富余系数 K_f",
+            "P_k": "浆体管道输送压力 P_k（输入）",
         }
         return labels.get(key, key)
     
     def _add_result_section(self, doc, result, formula_id=None):
-        """添加最终结果部分。根据 formula_id 显示 Vc（临界流速）、i_k（沿程摩阻损失）或 rho_k（浆体密度）"""
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        run = p.add_run("五、计算成果")
-        run.bold = True
-        run.font.size = Pt(14)
-        self._set_font(run)
+        """六、计算成果。根据 formula_id 显示 Vc、i_k、rho_k 等"""
+        self._style_section_heading(doc, "六、计算成果")
         
         result_table = doc.add_table(rows=3, cols=2)
         result_table.style = 'Light Grid Accent 1'
@@ -626,6 +738,15 @@ class WordExporter:
             lam = result.get('lambda_coef', 'N/A')
             flow_regime = result.get('intermediate', {}).get('flow_regime', '')
             value = f"ρ₁={rho_1} t/m³，ReB={Re_B}，λ={lam}" + (f"（{flow_regime}）" if flow_regime else "")
+        elif formula_id == "darcy_friction_step1_rho1":
+            item_label = "混合物密度 ρ₁"
+            value = f"{result.get('rho_1', 'N/A')} t/m³"
+        elif formula_id == "darcy_friction_step2_re":
+            item_label = "混合物雷诺数 Re_B"
+            value = str(result.get("Re_B", "N/A"))
+        elif formula_id == "darcy_friction_step3_lambda":
+            item_label = "达西摩阻系数 λ"
+            value = str(result.get("lambda_coef", "N/A"))
         elif formula_id == 'slurry_accel_energy':
             item_label = '浆体加速流条件'
             value = '满足' if result.get('condition_met') else '不满足'
@@ -637,7 +758,7 @@ class WordExporter:
         elif formula_id == 'slurry_dissipation_orifice':
             item_label = '孔板消能水头 Δh'
             delta_h = result.get('delta_h', 'N/A')
-            value = f"Δh = {delta_h} m（K_Qk、Q 见第三节输入参数表）"
+            value = f"Δh = {delta_h} m（K_Qk、Q 见「输入参数与取值」节）"
         elif formula_id == 'slurry_friction_loss':
             item_label = '浆体摩阻损失'
             rho_k = result.get('rho_k', 'N/A')
@@ -650,12 +771,20 @@ class WordExporter:
             value = f"ρ_k = {rho_k} t/m³，i_k = {i_k} mH₂O/m"
         elif formula_id == 'slurry_total_head':
             item_label = '浆体管道输送压力 Pk'
-            value = result.get('H_total', 'N/A')
-            unit_suffix = 'kPa'
+            ht = result.get('H_total', 'N/A')
+            value = f"{ht} kPa" if ht != 'N/A' else 'N/A'
         elif formula_id == 'clear_water_total_head':
             item_label = '清水管道输送压力 Pw'
-            value = result.get('H_total', 'N/A')
-            unit_suffix = 'kPa'
+            ht = result.get('H_total', 'N/A')
+            value = f"{ht} kPa" if ht != 'N/A' else 'N/A'
+        elif formula_id == 'centrifugal_pump_total_head':
+            item_label = '主泵扬送清水的总扬程 H_b（液柱）'
+            ht = result.get('H_total', 'N/A')
+            value = f"{ht} m" if ht != 'N/A' else 'N/A'
+        elif formula_id == 'positive_displacement_pump_outlet_pressure':
+            item_label = '容积式泵总扬程 P_b（压力）'
+            pb = result.get('P_b', result.get('H_total', 'N/A'))
+            value = f"{pb} kPa" if pb != 'N/A' else 'N/A'
         elif formula_id == 'clear_water_friction_loss':
             item_label = '单位长度水头损失 i'
             i_val = result.get('i', 'N/A')
@@ -673,9 +802,24 @@ class WordExporter:
             value_display = str(value)
         
         result_table.cell(1, 0).text = item_label
-        unit_suffix = result.get('unit', '')
-        # slurry_friction_loss、darcy_friction 的 value 已包含单位，不再追加
-        if formula_id in ('slurry_friction_loss', 'slurry_friction_workflow', 'darcy_friction', 'slurry_dissipation', 'slurry_energy_dissipation', 'slurry_dissipation_orifice', 'slurry_total_head', 'clear_water_total_head', 'clear_water_friction_loss'):
+        unit_suffix = result.get("unit", "")
+        embed_unit_ids = (
+            "slurry_friction_loss",
+            "slurry_friction_workflow",
+            "darcy_friction",
+            "darcy_friction_step1_rho1",
+            "darcy_friction_step2_re",
+            "darcy_friction_step3_lambda",
+            "slurry_dissipation",
+            "slurry_energy_dissipation",
+            "slurry_dissipation_orifice",
+            "slurry_total_head",
+            "clear_water_total_head",
+            "centrifugal_pump_total_head",
+            "positive_displacement_pump_outlet_pressure",
+            "clear_water_friction_loss",
+        )
+        if formula_id in embed_unit_ids:
             result_table.cell(1, 1).text = value_display
         else:
             result_table.cell(1, 1).text = f"{value_display} {unit_suffix}".strip() if unit_suffix else value_display
@@ -697,21 +841,24 @@ class WordExporter:
                 for run in paragraph.runs:
                     self._set_font(run)
     
-    def _add_calculation_process(self, doc, formula_id, formula_info, parameters, result):
-        """添加计算过程"""
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        run = p.add_run("六、计算过程推演")
-        run.bold = True
-        run.font.size = Pt(14)
-        self._set_font(run)
+    def _add_calculation_process(
+        self,
+        doc,
+        formula_id,
+        formula_info,
+        parameters,
+        result,
+    ):
+        """七、计算过程推演"""
+        self._style_section_heading(doc, "七、计算过程推演")
 
         intro = doc.add_paragraph(
-            "以下按本模块常用书写顺序列出主要代入关系与中间量，与上方「中间计算量」表中的键值一致。"
+            "以下按本模块常用书写顺序列出主要代入关系与中间量；若上一节「中间计算量」有表，则本节数值与其一致，便于对照复核。"
         )
         for run in intro.runs:
             self._set_font(run)
         intro.paragraph_format.first_line_indent = Pt(24)
+        intro.paragraph_format.line_spacing = 1.25
 
         # 根据公式ID添加详细计算步骤
         if formula_id == "liu_dezhong":
@@ -728,6 +875,8 @@ class WordExporter:
             self._add_density_mixing_process(doc, parameters, result)
         elif formula_id == "darcy_friction":
             self._add_darcy_friction_process(doc, parameters, result)
+        elif formula_id in ("darcy_friction_step1_rho1", "darcy_friction_step2_re", "darcy_friction_step3_lambda"):
+            self._add_darcy_substep_process(doc, formula_id, parameters, result)
         elif formula_id == "slurry_accel_energy":
             self._add_slurry_accel_energy_process(doc, parameters, result)
         elif formula_id in ("slurry_dissipation", "slurry_energy_dissipation"):
@@ -738,7 +887,8 @@ class WordExporter:
             self._add_slurry_friction_loss_process(doc, parameters, result)
         elif formula_id == "slurry_friction_workflow":
             intro_wf = doc.add_paragraph(
-                "以下对应界面内分步完成的浆体摩阻流程：浆体当量密度 ρ_k、混合物密度 ρ₁、雷诺数 Re_B、达西系数 λ 与沿程水力坡降 i_k；主要代入关系见本节。"
+                "本模块在界面内按步骤完成：浆体当量密度 ρ_k、混合物密度 ρ₁、混合物雷诺数 Re_B、达西摩阻系数 λ 与单位管长水力坡降 i_k；"
+                "下列推演对应最终合并代入关系，与界面分步结果一致。"
             )
             for run in intro_wf.runs:
                 self._set_font(run)
@@ -748,6 +898,10 @@ class WordExporter:
             self._add_slurry_total_head_process(doc, parameters, result)
         elif formula_id == "clear_water_total_head":
             self._add_clear_water_total_head_process(doc, parameters, result)
+        elif formula_id == "centrifugal_pump_total_head":
+            self._add_centrifugal_pump_total_head_process(doc, parameters, result)
+        elif formula_id == "positive_displacement_pump_outlet_pressure":
+            self._add_positive_displacement_pump_process(doc, parameters, result)
         elif formula_id == "clear_water_friction_loss":
             self._add_clear_water_friction_loss_process(doc, parameters, result)
     
@@ -892,6 +1046,30 @@ class WordExporter:
             for run in p.runs:
                 self._set_font(run)
 
+    def _add_darcy_substep_process(self, doc, formula_id, parameters, result):
+        """达西链单步：ρ₁ / Re_B / λ"""
+        lines = []
+        if formula_id == "darcy_friction_step1_rho1":
+            lines = [
+                f"混合物密度：ρ₁ = {result.get('rho_1', 'N/A')} t/m³",
+            ]
+        elif formula_id == "darcy_friction_step2_re":
+            lines = [
+                f"混合物雷诺数：Re_B = {result.get('Re_B', 'N/A')}（ρ₁ = {result.get('rho_1', 'N/A')} t/m³）",
+            ]
+        elif formula_id == "darcy_friction_step3_lambda":
+            im = result.get("intermediate") or {}
+            regime = im.get("flow_regime", "")
+            lines = [
+                f"达西摩阻系数：λ = {result.get('lambda_coef', 'N/A')}"
+                + (f"，流态：{regime}" if regime else ""),
+                f"雷诺数 Re_B = {result.get('Re_B', 'N/A')}",
+            ]
+        for text in lines:
+            p = doc.add_paragraph(text)
+            for run in p.runs:
+                self._set_font(run)
+
     def _add_darcy_friction_process(self, doc, parameters, result):
         """添加达西摩阻系数（三步）计算过程"""
         intermediate = result.get('intermediate', {})
@@ -1018,8 +1196,161 @@ class WordExporter:
             for run in p.runs:
                 self._set_font(run)
     
+    @staticmethod
+    def _try_slurry_hydraulic_grade_xy(parameters):
+        """与界面浆体水力坡度线相同的 (L, 水头 m) 折线；失败返回 None。"""
+        try:
+            l_max = float(parameters.get('L') or 0)
+            if l_max <= 0:
+                return None
+            rho_s = float(parameters.get('rho_s') or 0)
+            rho_k = float(parameters.get('rho_k') or 0)
+            g = float(parameters.get('g') or 9.81)
+            i_k = float(parameters.get('i_k') or 0)
+            H = float(parameters.get('H') or 0)
+            P_j = float(parameters.get('P_j') or 0)
+            if rho_s <= 0 or rho_k <= 0 or g <= 0:
+                return None
+
+            def loss_head_m(l):
+                pk = rho_s * g * i_k * l + (P_j * (l / l_max) if l_max > 0 else 0)
+                return pk / (rho_k * g)
+
+            return _hydraulic_grade_xy(l_max, H, loss_head_m, HYDRAULIC_GRADE_CURVE_POINTS)
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+
+    @staticmethod
+    def _try_slurry_page_clear_hydraulic_grade_xy(parameters):
+        """浆体页清水对比线：与界面一致，取当前浆体参数的 H、L、P_j、g 与 i_k，ρ_w=1 t/m³、i_w=i_k。"""
+        try:
+            l_max = float(parameters.get('L') or 0)
+            if l_max <= 0:
+                return None
+            rho_w = 1.0
+            g = float(parameters.get('g') or 9.81)
+            i_w = float(parameters.get('i_k') or 0)
+            H = float(parameters.get('H') or 0)
+            P_j = float(parameters.get('P_j') or 0)
+            if g <= 0 or rho_w <= 0:
+                return None
+
+            def loss_head_m(l):
+                pk = rho_w * g * i_w * l + (P_j * (l / l_max) if l_max > 0 else 0)
+                return pk / (rho_w * g)
+
+            return _hydraulic_grade_xy(l_max, H, loss_head_m, HYDRAULIC_GRADE_CURVE_POINTS)
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+
+    @staticmethod
+    def _try_clear_hydraulic_grade_xy(l_max, clear_parameters):
+        """与界面清水水力坡度线相同；横轴用浆体侧 l_max。"""
+        try:
+            if l_max <= 0 or not clear_parameters:
+                return None
+            rho_w = float(clear_parameters.get('rho_w') or 1)
+            g = float(clear_parameters.get('g') or 9.81)
+            i_w = float(clear_parameters.get('i_w') or 0)
+            H = float(clear_parameters.get('H') or 0)
+            P_j = float(clear_parameters.get('P_j') or 0)
+            if rho_w <= 0 or g <= 0:
+                return None
+
+            def loss_head_m(l):
+                pk = rho_w * g * i_w * l + (P_j * (l / l_max) if l_max > 0 else 0)
+                return pk / (rho_w * g)
+
+            return _hydraulic_grade_xy(l_max, H, loss_head_m, HYDRAULIC_GRADE_CURVE_POINTS)
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+
+    def _embed_matplotlib_hydraulic_grade(
+        self,
+        doc,
+        *,
+        title,
+        x_label,
+        y_label,
+        l_max,
+        series_list,
+        caption,
+    ):
+        """series_list: [(xs, ys, color, label), ...]；固定坐标轴范围与软件一致。"""
+        try:
+            plt, rcParams = _matplotlib_stack_for_export()
+            rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial']
+            rcParams['axes.unicode_minus'] = False
+
+            all_y = []
+            for xs, ys, _c, _lb in series_list:
+                all_y.extend(ys)
+            if not all_y:
+                return False
+            y_lo, y_hi = min(all_y), max(all_y)
+            span = max(y_hi - y_lo, 1e-6)
+            pad = max(span * 0.06, 0.5)
+            y_min = y_lo - pad
+            y_max = y_hi + pad
+
+            fig, ax = plt.subplots(figsize=(7.2, 4.0), dpi=150)
+            for xs, ys, color, label in series_list:
+                ax.plot(xs, ys, color=color, linewidth=2.5, label=label)
+
+            ax.set_xlim(0.0, float(l_max))
+            ax.set_ylim(float(y_min), float(y_max))
+            xticks = [l_max * i / HYDRAULIC_GRADE_TICK_DIVISIONS for i in range(HYDRAULIC_GRADE_TICK_DIVISIONS + 1)]
+            ax.set_xticks(xticks)
+            ax.set_xlabel(x_label, fontsize=11, fontstyle='italic')
+            ax.set_ylabel(y_label, fontsize=11, fontstyle='italic')
+            ax.set_title(title, fontsize=13, fontweight='bold', pad=10)
+            ax.grid(True, linestyle='--', alpha=0.4)
+            n_series = len(series_list)
+            ncol = max(1, min(n_series, 3))
+            ax.legend(
+                fontsize=9,
+                loc='upper center',
+                bbox_to_anchor=(0.5, -0.14),
+                ncol=ncol,
+                frameon=True,
+                columnspacing=1.4,
+            )
+            fig.subplots_adjust(left=0.11, right=0.97, top=0.90, bottom=0.22)
+
+            tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+            tmp_path = tmp.name
+            tmp.close()
+            fig.savefig(tmp_path, dpi=150)
+            plt.close(fig)
+
+            doc.add_paragraph()
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run()
+            run.add_picture(tmp_path, width=Inches(5.8))
+
+            cap = doc.add_paragraph(caption)
+            cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for r in cap.runs:
+                r.font.size = Pt(9)
+                r.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
+                self._set_font(r)
+
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            return True
+        except ImportError:
+            p = doc.add_paragraph(
+                '（水力坡度图未能生成：安装包应已包含绘图组件；若开发环境运行请执行 pip install matplotlib，或重新安装应用。）'
+            )
+            for run in p.runs:
+                self._set_font(run)
+            return False
+
     def _add_slurry_total_head_process(self, doc, parameters, result):
-        """浆体总扬程计算过程 + Pk-L 曲线图"""
+        """浆体总扬程计算过程 + 与界面一致的双线水力坡度图（清水对比线由浆体参数推导）"""
         intermediate = result.get('intermediate', {})
         rho_k = parameters.get('rho_k', 'N/A')
         g = parameters.get('g', 9.81)
@@ -1045,72 +1376,45 @@ class WordExporter:
             for run in p.runs:
                 self._set_font(run)
 
-        hl_curve = result.get('hl_curve')
-        if hl_curve and len(hl_curve) > 1:
-            self._add_pk_l_chart(doc, hl_curve, parameters)
+        doc.add_paragraph()
+        hdg = doc.add_paragraph('附图：水力坡度线')
+        for run in hdg.runs:
+            run.bold = True
+            self._set_font(run)
 
-    def _add_pk_l_chart(self, doc, hl_curve, parameters):
-        """用 matplotlib 生成 Pk-L 曲线并嵌入 Word"""
-        try:
-            plt, rcParams = _matplotlib_stack_for_export()
-            rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial']
-            rcParams['axes.unicode_minus'] = False
-
-            ls = [pt['L'] for pt in hl_curve]
-            pks = [pt['H'] for pt in hl_curve]
-
-            fig, ax = plt.subplots(figsize=(7.5, 4.2), dpi=150)
-            ax.plot(ls, pks, color='#D97706', linewidth=2, label='$P_k$')
-            ax.fill_between(ls, pks, alpha=0.08, color='#D97706')
-            ax.set_xlabel('$L$ (m)', fontsize=11, fontstyle='italic')
-            ax.set_ylabel('$P_k$ (kPa)', fontsize=11, fontstyle='italic')
-            ax.set_title('$P_k$–$L$ Characteristic Curve', fontsize=13, fontweight='bold', pad=12)
-            ax.grid(True, linestyle='--', alpha=0.4)
-            ax.legend(fontsize=10, loc='upper left')
-
-            info_parts = []
-            if parameters.get('rho_k') is not None:
-                info_parts.append(f"$\\rho_k$={parameters['rho_k']} t/m³")
-            if parameters.get('i_k') is not None:
-                info_parts.append(f"$i_k$={parameters['i_k']}")
-            if parameters.get('H') is not None:
-                info_parts.append(f"$H$={parameters['H']} m")
-            if info_parts:
-                ax.annotate('  '.join(info_parts), xy=(0.5, -0.18),
-                            xycoords='axes fraction', ha='center', fontsize=8, color='#6B7280')
-
-            fig.tight_layout(rect=[0, 0.05, 1, 1])
-
-            tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-            tmp_path = tmp.name
-            tmp.close()
-            fig.savefig(tmp_path, dpi=150, bbox_inches='tight')
-            plt.close(fig)
-
-            doc.add_paragraph()
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.add_run()
-            run.add_picture(tmp_path, width=Inches(5.8))
-
-            caption = doc.add_paragraph('图：浆体管道输送压力 Pk 随管长 L 的变化关系')
-            caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in caption.runs:
-                run.font.size = Pt(9)
-                run.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
-                self._set_font(run)
-
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-        except ImportError:
-            p = doc.add_paragraph('(Pk-L 曲线图需要安装 matplotlib: pip install matplotlib)')
+        slurry_xy = WordExporter._try_slurry_hydraulic_grade_xy(parameters)
+        if not slurry_xy:
+            p = doc.add_paragraph('（水力坡度图：当前参数不足以按界面模型绘制。）')
             for run in p.runs:
                 self._set_font(run)
+            return
+
+        xs_s, ys_s = slurry_xy
+        l_max = float(parameters.get('L') or 0)
+        series = [(xs_s, ys_s, SLURRY_HYDRAULIC_LINE, '浆体水力坡度线')]
+        cl_xy = WordExporter._try_slurry_page_clear_hydraulic_grade_xy(parameters)
+        cap_extra = ''
+        if cl_xy:
+            series.append((cl_xy[0], cl_xy[1], CLEAR_HYDRAULIC_LINE, '清水对比水力坡度线'))
+            cap_extra = (
+                ' 橙色为浆体；蓝色为清水对比线（与浆体同 H、L、P_j、g，取 ρ_w=1 t/m³、i_w=i_k）。'
+            )
+
+        self._embed_matplotlib_hydraulic_grade(
+            doc,
+            title='浆体管道水力坡度线（示意）',
+            x_label='管长 L (m)',
+            y_label='水头 H (m)',
+            l_max=l_max,
+            series_list=series,
+            caption=(
+                '图：横轴管长 L，范围 [0, L_max]，主刻度步长 L_max/10；纵轴水头 H（m），范围按曲线极值加 6% 边距；Pn、Pz 未计入线内。'
+                + cap_extra
+            ),
+        )
 
     def _add_clear_water_total_head_process(self, doc, parameters, result):
-        """清水总扬程计算过程 + Pw-L 曲线图"""
+        """清水总扬程计算过程 + 与界面一致的单线水力坡度图"""
         intermediate = result.get('intermediate', {})
         rho_w = parameters.get('rho_w', 1)
         g = parameters.get('g', 9.81)
@@ -1136,119 +1440,127 @@ class WordExporter:
             for run in p.runs:
                 self._set_font(run)
 
-        hl_curve = result.get('hl_curve')
-        if hl_curve and len(hl_curve) > 1:
-            self._add_pw_l_chart(doc, hl_curve, parameters)
+        doc.add_paragraph()
+        hdg = doc.add_paragraph('附图：水力坡度线')
+        for run in hdg.runs:
+            run.bold = True
+            self._set_font(run)
 
-    def _add_pw_l_chart(self, doc, hl_curve, parameters):
-        """用 matplotlib 生成清水 Pw-L 曲线并嵌入 Word"""
-        try:
-            plt, rcParams = _matplotlib_stack_for_export()
-            rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial']
-            rcParams['axes.unicode_minus'] = False
-
-            ls = [pt['L'] for pt in hl_curve]
-            pws = [pt['H'] for pt in hl_curve]
-
-            fig, ax = plt.subplots(figsize=(7.5, 4.2), dpi=150)
-            ax.plot(ls, pws, color='#2563EB', linewidth=2, label='$P_w$')
-            ax.fill_between(ls, pws, alpha=0.06, color='#2563EB')
-            ax.set_xlabel('$L$ (m)', fontsize=11, fontstyle='italic')
-            ax.set_ylabel('$P_w$ (kPa)', fontsize=11, fontstyle='italic')
-            ax.set_title('$P_w$\u2013$L$ Characteristic Curve (Clear Water)', fontsize=13, fontweight='bold', pad=12)
-            ax.grid(True, linestyle='--', alpha=0.4)
-            ax.legend(fontsize=10, loc='upper left')
-
-            info_parts = []
-            if parameters.get('rho_w') is not None:
-                info_parts.append(f"$\\rho_w$={parameters['rho_w']} t/m³")
-            if parameters.get('i_w') is not None:
-                info_parts.append(f"$i_w$={parameters['i_w']}")
-            if parameters.get('H') is not None:
-                info_parts.append(f"$H$={parameters['H']} m")
-            if info_parts:
-                ax.annotate('  '.join(info_parts), xy=(0.5, -0.18),
-                            xycoords='axes fraction', ha='center', fontsize=8, color='#6B7280')
-
-            fig.tight_layout(rect=[0, 0.05, 1, 1])
-
-            tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-            tmp_path = tmp.name
-            tmp.close()
-            fig.savefig(tmp_path, dpi=150, bbox_inches='tight')
-            plt.close(fig)
-
-            doc.add_paragraph()
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.add_run()
-            run.add_picture(tmp_path, width=Inches(5.8))
-
-            caption = doc.add_paragraph('Fig: Clear water pipeline delivery pressure Pw vs pipe length L')
-            caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in caption.runs:
-                run.font.size = Pt(9)
-                run.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
+        l_max = float(parameters.get('L') or 0)
+        cl_xy = WordExporter._try_clear_hydraulic_grade_xy(l_max, parameters)
+        if not cl_xy:
+            p = doc.add_paragraph('（水力坡度图：当前参数不足以按界面模型绘制。）')
+            for run in p.runs:
                 self._set_font(run)
+            return
 
+        xs, ys = cl_xy
+        self._embed_matplotlib_hydraulic_grade(
+            doc,
+            title='清水管道水力坡度线（示意）',
+            x_label='管长 L (m)',
+            y_label='水头 H (m)',
+            l_max=l_max,
+            series_list=[(xs, ys, CLEAR_HYDRAULIC_LINE, '清水水力坡度线')],
+            caption='图：横轴管长 L，范围 [0, L_max]，主刻度步长 L_max/10；纵轴水头 H（m），边距 6%；Pn、Pz 未计入线内。',
+        )
+
+    def _add_centrifugal_pump_total_head_process(self, doc, parameters, result):
+        """离心泵总扬程：步骤1 K_p，步骤2 H_b = ΣH_s/(K_p·K_m)"""
+        im = result.get('intermediate', {})
+        cw = parameters.get('C_w', im.get('C_w', 'N/A'))
+        kp = im.get('K_p', parameters.get('K_p', 'N/A'))
+        s_hs = im.get('Sigma_H_s', parameters.get('Sigma_H_s', 'N/A'))
+        km = im.get('K_m', parameters.get('K_m', 'N/A'))
+        denom = im.get('K_p_K_m', 'N/A')
+        hb = result.get('H_total', 'N/A')
+        term = im.get('term_0p25_Cw')
+        if term is None and cw not in (None, 'N/A'):
             try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-        except ImportError:
-            p = doc.add_paragraph('(Pw-L chart requires matplotlib: pip install matplotlib)')
+                cwf = float(cw)
+                term = 0.25 * cwf
+            except (TypeError, ValueError):
+                term = 'N/A'
+        process_texts = [
+            "步骤1：主泵输送浆体时的扬程降低率 K_p = 1 - 0.25·C_w（C_w 为固相质量分数，浆体重量浓度）。",
+            f"  已知 C_w = {cw}，0.25·C_w = {term if term is not None else 'N/A'}，得 K_p = {kp}。",
+            "步骤2：主泵扬送清水的总扬程（液柱高度）H_b = ΣH_s / (K_p·K_m)。",
+            f"  ΣH_s = {s_hs} m；K_m = {km}；K_p·K_m = {denom}。",
+            f"  H_b = {s_hs} / ({denom}) = {hb} m。",
+        ]
+        for text in process_texts:
+            p = doc.add_paragraph(text)
             for run in p.runs:
                 self._set_font(run)
 
+    def _add_positive_displacement_pump_process(self, doc, parameters, result):
+        """容积式泵：P_b = P_k / K_f"""
+        im = result.get('intermediate', {})
+        pk = im.get('P_k', parameters.get('P_k', 'N/A'))
+        kf = im.get('K_f', parameters.get('K_f', 'N/A'))
+        pb = result.get('P_b', result.get('H_total', 'N/A'))
+        process_texts = [
+            "容积式泵总扬程（压力形式）：P_b = P_k / K_f。",
+            f"  已知 P_k = {pk} kPa，K_f = {kf}。",
+            f"  P_b = {pk} / {kf} = {pb} kPa。",
+        ]
+        for text in process_texts:
+            p = doc.add_paragraph(text)
+            for run in p.runs:
+                self._set_font(run)
+        rho_k = parameters.get('rho_k', 1)
+        g = parameters.get('g', 9.81)
+        try:
+            if pb != 'N/A' and rho_k and float(rho_k) > 0 and g and float(g) > 0:
+                hm = float(pb) / (float(rho_k) * float(g))
+                p2 = doc.add_paragraph(
+                    f"折合浆体液柱高度（P_b/(ρ_k·g)）：约 {hm:.4f} m（ρ_k = {rho_k} t/m³，g = {g} m/s²）。"
+                )
+                for run in p2.runs:
+                    self._set_font(run)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+
     def _add_software_promotion(self, doc):
-        """附录：软件与文档说明"""
-        doc.add_page_break()
+        """附录：编制单位业务简介与致谢"""
+        self._insert_page_break(doc)
         p = doc.add_paragraph()
-        run = p.add_run("附录 A　软件与导出说明")
+        run = p.add_run("附录　编制单位简介")
         run.bold = True
         run.font.size = Pt(16)
         self._set_font(run)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph()
-        blocks = [
+        paras = [
             (
-                "关于本工具",
-                [
-                    "本程序由长沙有色冶金设计研究院有限公司提供，用于浆体与清水管道相关水力计算辅助。",
-                    "导出文件为标准 .docx，由 Word 或 WPS 等可直接打开，无需安装 Pandoc 等外部转换工具。",
-                ],
+                "长沙有色冶金设计研究院有限公司（简称长沙有色院）成立于1953年，为国家高新技术企业、"
+                "国家技术创新示范企业、国家企业技术中心，是我国成立较早的大型综合性设计研究单位之一，"
+                "隶属于中国铝业集团有限公司，为中铝国际工程股份有限公司的子公司。"
             ),
             (
-                "文档中公式与符号的呈现方式",
-                [
-                    "为兼容各类办公环境，计算书中的公式主行与说明文字以 Unicode 数学符号与普通文本为主；",
-                    "若需期刊或标准格式的公式排版，可在 Word 中选中相应内容后使用「插入 → 公式」自行转换。",
-                ],
+                "经过七十余年的发展，长沙有色院已形成覆盖有色金属行业全产业链与项目全生命周期的技术服务能力，"
+                "持有冶金、市政、建筑、化工石化医药、环境工程及工程勘察、测绘、地质灾害治理等多类甲级资质，"
+                "业务涵盖工程咨询、设计、工程总承包、监理、勘察、测绘、检验检测、施工、环境治理与生态修复、"
+                "装备制造及科研开发等，在矿山、冶炼与环保等领域积累了大量工程经验与自主知识产权成果。"
             ),
             (
-                "功能范围（摘要）",
-                [
-                    "临界流速：刘德忠、E.J.瓦斯普、费祥俊、B.C.克诺罗兹法等；",
-                    "浆体密度混合、沿程摩阻、达西摩阻系数；浆体加速流与消能、浆体/清水总扬程及特性曲线示意等。",
-                ],
+                "本院秉承「创新驱动，诚信服务，持续为客户创造价值」的理念，致力成为有色行业创新型领军企业。"
+                "本浆体与清水管道水力计算软件由本院组织研发，用于设计辅助与资料整理，计算结论应与现行规范及工程实际相结合。"
             ),
         ]
-        for sub_title, lines in blocks:
-            h = doc.add_paragraph()
-            hr = h.add_run(sub_title)
-            hr.bold = True
-            self._set_font(hr)
-            for line in lines:
-                lp = doc.add_paragraph(line)
-                for run in lp.runs:
-                    self._set_font(run)
-                lp.paragraph_format.first_line_indent = Pt(24)
-            doc.add_paragraph()
+        for text in paras:
+            lp = doc.add_paragraph(text)
+            for r in lp.runs:
+                self._set_font(r)
+            lp.paragraph_format.first_line_indent = Pt(24)
+            lp.paragraph_format.line_spacing = 1.25
 
-        thanks = doc.add_paragraph("感谢使用。")
-        for run in thanks.runs:
-            self._set_font(run)
+        doc.add_paragraph()
+        thanks = doc.add_paragraph("感谢使用长沙有色冶金设计研究院有限公司浆体管道水力计算软件。")
+        for r in thanks.runs:
+            self._set_font(r)
+        thanks.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     def _get_unit(self, param_name):
         """根据参数名获取单位（与前端/API 常用字段对齐）"""

@@ -13,24 +13,50 @@ const venvPython = os.platform() === 'win32'
 const requirementsTxt = path.join(projectRoot, 'requirements.txt')
 const systemPython = os.platform() === 'win32' ? 'python' : 'python3'
 
+/** Windows：py -3 可能指向已损坏或缺失的 Python313；依次尝试 3.11 / 3.10 / python */
+function createVenvWindows() {
+  const cmds = [
+    `py -3.11 -m venv "${buildEnvDir}"`,
+    `py -3.10 -m venv "${buildEnvDir}"`,
+    `python -m venv "${buildEnvDir}"`,
+  ]
+  let lastErr
+  for (const cmd of cmds) {
+    try {
+      execSync(cmd, {
+        stdio: 'inherit',
+        cwd: projectRoot,
+        windowsHide: true,
+        shell: true,
+      })
+      return
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr
+}
+
 function ensureBuildEnv() {
   if (fs.existsSync(venvPython)) {
     return venvPython
   }
   console.log('未检测到 build_env，正在创建专用虚拟环境（可避免 Anaconda pathlib 与 PyInstaller 冲突）...')
   try {
-    execSync(`"${systemPython}" -m venv "${buildEnvDir}"`, {
+    if (os.platform() === 'win32') {
+      createVenvWindows()
+    } else {
+      execSync(`"${systemPython}" -m venv "${buildEnvDir}"`, {
+        stdio: 'inherit',
+        cwd: projectRoot,
+        windowsHide: true,
+      })
+    }
+    // 使用 python -m pip，避免移动项目目录后 pip.exe 启动器仍指向旧路径
+    execSync(`"${venvPython}" -m pip install -r "${requirementsTxt}"`, {
       stdio: 'inherit',
       cwd: projectRoot,
-      windowsHide: true
-    })
-    const pip = os.platform() === 'win32'
-      ? path.join(buildEnvDir, 'Scripts', 'pip.exe')
-      : path.join(buildEnvDir, 'bin', 'pip')
-    execSync(`"${pip}" install -r "${requirementsTxt}"`, {
-      stdio: 'inherit',
-      cwd: projectRoot,
-      windowsHide: true
+      windowsHide: true,
     })
     console.log('build_env 已就绪。')
   } catch (e) {

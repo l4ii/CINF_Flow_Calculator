@@ -128,6 +128,7 @@ def main():
         '--hidden-import=export_markdown',
         '--collect-all=flask',
         '--collect-all=flask_cors',
+        '--collect-all=matplotlib',
     ]
     
     # 不排除 pathlib：Python 3.4+ 标准库的 pathlib 必须随包打包，否则 exe 启动报 "No module named 'pathlib'"

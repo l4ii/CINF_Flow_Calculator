@@ -36,8 +36,49 @@ function formatTick(n: number): string {
   return n.toFixed(3).replace(/\.?0+$/, '') || '0'
 }
 
+/** 水头轴刻度：按量程决定小数位，避免满屏长小数 */
+export function formatHydraulicHeadTick(value: number, yMin: number, yMax: number): string {
+  if (!Number.isFinite(value)) return ''
+  const span = Math.max(yMax - yMin, 1e-9)
+  let d = 0
+  if (span >= 200) d = 0
+  else if (span >= 20) d = 1
+  else if (span >= 2) d = 2
+  else d = 2
+  const t = Number(value.toFixed(d))
+  if (Math.abs(t) >= 10000) return t.toFixed(0)
+  return String(t)
+}
+
+/** 管长轴刻度：优先整数，便于与工程输入一致 */
+export function formatHydraulicLengthTick(n: number): string {
+  if (!Number.isFinite(n)) return ''
+  const a = Math.abs(n)
+  if (a >= 100) return String(Math.round(n))
+  const t = Number(n.toFixed(1))
+  return String(t)
+}
+
+/** 与界面一致：X 轴 0…L_max 共 divisions+1 个刻度 */
+function hydraulicGradeXTickValues(lMax: number, divisions: number): number[] {
+  if (!Number.isFinite(lMax) || lMax <= 0 || divisions < 1) return [0, lMax]
+  return Array.from({ length: divisions + 1 }, (_, i) => Number(((lMax * i) / divisions).toPrecision(12)))
+}
+
+export interface HydraulicLayoutOptions {
+  lMax: number
+  yMin: number
+  yMax: number
+  /** 与 HYDRAULIC_GRADE_TICK_DIVISIONS 一致，默认 10 */
+  xTickDivisions?: number
+}
+
 export interface ScientificHlChartOptions {
   curveData: HlCurvePoint[]
+  /** 第二条 L–H 曲线（如浆体图中间损失压力递减示意） */
+  secondCurve?: HlCurvePoint[]
+  secondLineColor?: string
+  secondLegendText?: string
   darkMode: boolean
   title: string
   subtitle?: string
@@ -46,10 +87,14 @@ export interface ScientificHlChartOptions {
   lineColor: string
   legendText: string
   filename: string
-  /** 画布宽度，默认 1600 */
+  /** 画布宽度，默认 1600；水力坡度默认 1280 */
   width?: number
-  /** 画布高度，默认 900 */
+  /** 画布高度，默认 900；水力坡度默认约 564（含底部图例与轴标题区） */
   height?: number
+  /** 与软件水力坡度图：固定 X/Y 域与 X 等分刻度 */
+  hydraulicLayout?: HydraulicLayoutOptions
+  /** 图下方小字（如 P_n、P_z 说明） */
+  footnote?: string
 }
 
 /**
@@ -59,6 +104,9 @@ export interface ScientificHlChartOptions {
 export function downloadScientificHlChartPng(options: ScientificHlChartOptions): void {
   const {
     curveData,
+    secondCurve,
+    secondLineColor = '#DC2626',
+    secondLegendText = '',
     darkMode,
     title,
     subtitle,
@@ -67,11 +115,24 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     lineColor,
     legendText,
     filename,
-    width = 1600,
-    height = 900,
+    width: widthOpt,
+    height: heightOpt,
+    hydraulicLayout,
+    footnote,
   } = options
 
   if (!curveData.length) return
+
+  const isHydraulic = !!hydraulicLayout
+  const hasBottomLegend = isHydraulic
+  /** 水力坡度图：为 X 轴刻度、底部图例、多行 X 轴标题预留空间，避免与曲线区重叠 */
+  const hydraulicBelowPlot =
+    hasBottomLegend
+      ? 26 /* X 刻度数字 */ + 28 /* 图例行 */ + 60 /* 轴标题多行（约 4 行×15px） */ + 10 /* 底边距 */
+      : 0
+  /** 水力坡度：宽约 1200px；总高度含底部图例区 */
+  const width = widthOpt ?? (isHydraulic ? 1200 : 1600)
+  const height = heightOpt ?? (isHydraulic ? (footnote ? 596 : 564) : 900)
 
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -87,7 +148,13 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   ctx.fillStyle = bg
   ctx.fillRect(0, 0, width, height)
 
-  const margin = { top: subtitle ? 88 : 72, right: 48, bottom: 72, left: 88 }
+  const bottomExtra = footnote ? 28 : 0
+  const margin = {
+    top: subtitle ? 86 : 68,
+    right: isHydraulic ? 40 : 48,
+    bottom: (isHydraulic ? hydraulicBelowPlot : 72) + bottomExtra,
+    left: isHydraulic ? 72 : 88,
+  }
   const plotW = width - margin.left - margin.right
   const plotH = height - margin.top - margin.bottom
   const left = margin.left
@@ -95,32 +162,54 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   const right = left + plotW
   const bottom = top + plotH
 
-  const Ls = curveData.map((d) => d.L)
-  const Hs = curveData.map((d) => d.H)
-  let Lmin = Math.min(...Ls)
-  let Lmax = Math.max(...Ls)
-  let Hmin = Math.min(...Hs)
-  let Hmax = Math.max(...Hs)
-  if (Lmax <= Lmin) {
-    Lmin = 0
-    Lmax = Lmax || 1
-  }
-  if (Hmax <= Hmin) {
-    const c = Hmin
-    Hmin = c - 1
-    Hmax = c + 1
-  }
-  const Lpad = (Lmax - Lmin) * 0.04 || 1
-  const Hpad = (Hmax - Hmin) * 0.06 || Math.max(1, Math.abs(Hmax) * 0.05)
-  Lmin = Math.max(0, Lmin - Lpad)
-  Lmax = Lmax + Lpad
-  Hmin = Math.max(0, Hmin - Hpad)
-  Hmax = Hmax + Hpad
+  let Lmin: number
+  let Lmax: number
+  let Hmin: number
+  let Hmax: number
+  let xTicks: number[]
+  let yTicks: number[]
 
-  const xStep = niceStep(Lmax - Lmin, 8)
-  const yStep = niceStep(Hmax - Hmin, 7)
-  const xTicks = linspaceTicks(Lmin, Lmax, xStep)
-  const yTicks = linspaceTicks(Hmin, Hmax, yStep)
+  if (hydraulicLayout) {
+    const { lMax, yMin, yMax, xTickDivisions = 10 } = hydraulicLayout
+    Lmin = 0
+    Lmax = lMax
+    Hmin = yMin
+    Hmax = yMax
+    xTicks = hydraulicGradeXTickValues(lMax, xTickDivisions)
+    const ySpan = Math.max(Hmax - Hmin, 1e-9)
+    const yStep = niceStep(ySpan, 7)
+    yTicks = linspaceTicks(Hmin, Hmax, yStep)
+  } else {
+    const Ls = curveData.map((d) => d.L)
+    const Hs = curveData.map((d) => d.H)
+    const Ls2 = secondCurve?.map((d) => d.L) ?? []
+    const Hs2 = secondCurve?.map((d) => d.H) ?? []
+    const allL = Ls2.length ? [...Ls, ...Ls2] : Ls
+    const allH = Hs2.length ? [...Hs, ...Hs2] : Hs
+    Lmin = Math.min(...allL)
+    Lmax = Math.max(...allL)
+    Hmin = Math.min(...allH)
+    Hmax = Math.max(...allH)
+    if (Lmax <= Lmin) {
+      Lmin = 0
+      Lmax = Lmax || 1
+    }
+    if (Hmax <= Hmin) {
+      const c = Hmin
+      Hmin = c - 1
+      Hmax = c + 1
+    }
+    const Lpad = (Lmax - Lmin) * 0.04 || 1
+    const Hpad = (Hmax - Hmin) * 0.06 || Math.max(1, Math.abs(Hmax) * 0.05)
+    Lmin = Math.max(0, Lmin - Lpad)
+    Lmax = Lmax + Lpad
+    Hmin = Math.max(0, Hmin - Hpad)
+    Hmax = Hmax + Hpad
+    const xStep = niceStep(Lmax - Lmin, 8)
+    const yStep = niceStep(Hmax - Hmin, 7)
+    xTicks = linspaceTicks(Lmin, Lmax, xStep)
+    yTicks = linspaceTicks(Hmin, Hmax, yStep)
+  }
 
   const xScale = (L: number) => left + ((L - Lmin) / (Lmax - Lmin)) * plotW
   const yScale = (h: number) => bottom - ((h - Hmin) / (Hmax - Hmin)) * plotH
@@ -151,7 +240,7 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   ctx.strokeRect(left, top, plotW, plotH)
 
   // 刻度与数字
-  ctx.font = '14px system-ui, "Segoe UI", sans-serif'
+  ctx.font = '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
   ctx.fillStyle = muted
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
@@ -161,7 +250,8 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     ctx.moveTo(x, bottom)
     ctx.lineTo(x, bottom + 6)
     ctx.stroke()
-    ctx.fillText(formatTick(xt), x, bottom + 10)
+    const lx = hydraulicLayout ? formatHydraulicLengthTick(xt) : formatTick(xt)
+    ctx.fillText(lx, x, bottom + 10)
   }
 
   ctx.textAlign = 'right'
@@ -172,14 +262,17 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     ctx.moveTo(left - 6, y)
     ctx.lineTo(left, y)
     ctx.stroke()
-    ctx.fillText(formatTick(yt), left - 10, y)
+    const hy = hydraulicLayout ? formatHydraulicHeadTick(yt, Hmin, Hmax) : formatTick(yt)
+    ctx.fillText(hy, left - 10, y)
   }
 
-  // 曲线
+  // 曲线（双线均为实线，靠颜色区分）
+  const lineW = 2.5
   ctx.strokeStyle = lineColor
-  ctx.lineWidth = 2.5
+  ctx.lineWidth = lineW
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
+  ctx.setLineDash([])
   ctx.beginPath()
   for (let i = 0; i < curveData.length; i++) {
     const p = curveData[i]
@@ -190,51 +283,187 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   }
   ctx.stroke()
 
-  // 标题
-  ctx.fillStyle = fg
-  ctx.font = 'bold 20px system-ui, "Segoe UI", sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'top'
-  ctx.fillText(title, width / 2, 20)
-  if (subtitle) {
-    ctx.font = '13px system-ui, "Segoe UI", sans-serif'
-    ctx.fillStyle = muted
-    ctx.fillText(subtitle, width / 2, 48)
+  if (secondCurve && secondCurve.length > 1) {
+    ctx.strokeStyle = secondLineColor
+    ctx.lineWidth = lineW
+    ctx.setLineDash([])
+    ctx.beginPath()
+    for (let i = 0; i < secondCurve.length; i++) {
+      const p = secondCurve[i]
+      const x = xScale(p.L)
+      const y = yScale(p.H)
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
   }
 
-  // 轴标题
-  ctx.fillStyle = muted
-  ctx.font = 'italic 15px system-ui, "Segoe UI", sans-serif'
-  ctx.textBaseline = 'top'
+  // 标题
+  ctx.fillStyle = fg
+  ctx.font = 'bold 18px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText(xAxisLabel, left + plotW / 2, height - 36)
+  ctx.textBaseline = 'top'
+  ctx.fillText(title, width / 2, 16)
+  if (subtitle) {
+    ctx.font = '12px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    ctx.fillStyle = muted
+    const subY = 42
+    const maxSubW = width - 48
+    wrapFillText(ctx, subtitle, width / 2, subY, maxSubW, 16, muted, '12px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif')
+  }
 
   ctx.save()
-  ctx.translate(28, top + plotH / 2)
+  ctx.translate(isHydraulic ? 22 : 28, top + plotH / 2)
   ctx.rotate(-Math.PI / 2)
   ctx.textAlign = 'center'
-  ctx.fillText(yAxisLabel, 0, 0)
+  ctx.fillStyle = muted
+  ctx.font = 'italic 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+  const yLines = yAxisLabel.split('\n')
+  const yLineH = 15
+  const yStart = (-(yLines.length - 1) * yLineH) / 2
+  yLines.forEach((line, i) => {
+    ctx.fillText(line.trim(), 0, yStart + i * yLineH)
+  })
   ctx.restore()
 
-  // 图例
-  const legY = top + 12
-  const legX = right - 8
-  ctx.textAlign = 'right'
-  ctx.textBaseline = 'middle'
-  ctx.strokeStyle = lineColor
-  ctx.lineWidth = 3
-  ctx.beginPath()
-  ctx.moveTo(legX - 120, legY)
-  ctx.lineTo(legX - 20, legY)
-  ctx.stroke()
-  ctx.fillStyle = fg
-  ctx.font = '13px system-ui, "Segoe UI", sans-serif'
-  const shortLegend =
-    legendText.length > 70 ? `${legendText.slice(0, 67)}…` : legendText
-  ctx.fillText(shortLegend, legX - 128, legY)
+  // 图例：在水力坡度图中置于 X 刻度下方、轴标题上方，避免压住横轴标签
+  const hydraulicTickBand = 26
+  const hydraulicLegendBand = 28
+  if (isHydraulic) {
+    const items: { color: string; text: string }[] = [{ color: lineColor, text: legendText }]
+    if (secondCurve && secondCurve.length > 1 && secondLegendText) {
+      items.push({ color: secondLineColor, text: secondLegendText })
+    }
+    const gap = 28
+    const sampleW = 36
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    const totalW = items.reduce((s, it) => s + sampleW + 8 + measureTextW(ctx, it.text, '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif') + gap, 0) - gap
+    let cx = left + (plotW - totalW) / 2
+    const legY = bottom + hydraulicTickBand + hydraulicLegendBand / 2
+    ctx.font = '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    for (const it of items) {
+      ctx.strokeStyle = it.color
+      ctx.lineWidth = 3
+      ctx.setLineDash([])
+      ctx.beginPath()
+      ctx.moveTo(cx, legY)
+      ctx.lineTo(cx + sampleW, legY)
+      ctx.stroke()
+      ctx.fillStyle = fg
+      const t = it.text.length > 36 ? `${it.text.slice(0, 33)}…` : it.text
+      ctx.fillText(t, cx + sampleW + 8, legY)
+      cx += sampleW + 8 + measureTextW(ctx, t, '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif') + gap
+    }
+  }
+
+  // X 轴标题（多行）：紧挨画布下沿之上，在图例下方区域
+  ctx.fillStyle = muted
+  ctx.font = 'italic 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
+  const xLabelY =
+    isHydraulic
+      ? bottom + hydraulicTickBand + hydraulicLegendBand + 4
+      : height - margin.bottom + 18
+  wrapFillText(ctx, xAxisLabel, left + plotW / 2, xLabelY, plotW - 8, 15, muted, 'italic 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif')
+
+  if (!isHydraulic) {
+    let legY = top + 12
+    const legX = right - 8
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'middle'
+    ctx.strokeStyle = lineColor
+    ctx.lineWidth = 3
+    ctx.setLineDash([])
+    ctx.beginPath()
+    ctx.moveTo(legX - 120, legY)
+    ctx.lineTo(legX - 20, legY)
+    ctx.stroke()
+    ctx.fillStyle = fg
+    ctx.font = '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    const shortLegend = legendText.length > 70 ? `${legendText.slice(0, 67)}…` : legendText
+    ctx.fillText(shortLegend, legX - 128, legY)
+
+    if (secondCurve && secondCurve.length > 1 && secondLegendText) {
+      legY += 22
+      ctx.strokeStyle = secondLineColor
+      ctx.lineWidth = 2
+      ctx.setLineDash([5, 4])
+      ctx.beginPath()
+      ctx.moveTo(legX - 120, legY)
+      ctx.lineTo(legX - 20, legY)
+      ctx.stroke()
+      ctx.setLineDash([])
+      const t2 = secondLegendText.length > 70 ? `${secondLegendText.slice(0, 67)}…` : secondLegendText
+      ctx.fillText(t2, legX - 128, legY)
+    }
+  }
+
+  if (footnote) {
+    ctx.save()
+    ctx.fillStyle = muted
+    ctx.font = '11px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    let t = footnote
+    const maxW = width - 48
+    while (t.length > 6 && ctx.measureText(`${t}…`).width > maxW) {
+      t = t.slice(0, -1)
+    }
+    if (t !== footnote) t += '…'
+    ctx.fillText(t, width / 2, height - 6)
+    ctx.restore()
+  }
 
   const a = document.createElement('a')
   a.download = filename
   a.href = canvas.toDataURL('image/png')
   a.click()
+}
+
+function measureTextW(ctx: CanvasRenderingContext2D, text: string, font: string): number {
+  ctx.save()
+  ctx.font = font
+  const w = ctx.measureText(text).width
+  ctx.restore()
+  return w
+}
+
+/** 多行居中文字：支持 \n；超长行按字符折行（中英文） */
+function wrapFillText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  startY: number,
+  maxWidth: number,
+  lineHeight: number,
+  color: string,
+  font: string
+): void {
+  ctx.save()
+  ctx.font = font
+  ctx.fillStyle = color
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  let y = startY
+  for (const para of text.split('\n')) {
+    let line = ''
+    for (let i = 0; i < para.length; i++) {
+      const ch = para[i]
+      const test = line + ch
+      if (ctx.measureText(test).width > maxWidth && line) {
+        ctx.fillText(line, cx, y)
+        y += lineHeight
+        line = ch
+      } else {
+        line = test
+      }
+    }
+    if (line) {
+      ctx.fillText(line, cx, y)
+      y += lineHeight
+    }
+  }
+  ctx.restore()
 }

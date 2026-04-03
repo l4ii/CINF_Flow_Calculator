@@ -119,15 +119,17 @@ def get_formulas():
                 "name": "浆体摩阻损失",
                 "formula": "i_k = \\lambda\\cdot\\frac{V^2\\rho_k}{2gD\\rho_s}；\\lambda=f(Re_B,\\varepsilon/D)；\\rho_k=f(C_w,\\rho_g,\\rho_s)",
                 "description": (
-                    "浆体沿程摩阻损失通常用单位管长水力坡降 $i_k$ 表示（本模块输出单位为米水柱/米）。"
-                    "达西–魏斯巴赫关系写为 $i_k = \\lambda \\cdot \\dfrac{V^2\\rho_k}{2gD\\rho_s}$，其中 $V$ 为断面平均流速，$D$ 为管道内径，$g$ 为重力加速度，"
-                    "$\\rho_k$ 为浆体当量密度，$\\rho_s$ 为固体颗粒密度，$\\lambda$ 为达西摩阻系数。"
-                    "式中 $\\lambda$ 需由混合物雷诺数 $Re_B$、管壁绝对粗糙度 $\\varepsilon$ 与管径 $D_n$ 等按工程手册给出的显式关系确定；"
-                    "$\\rho_g$、$\\rho_s$、$\\rho_1$ 均以 t/m³ 输入；$Re_B = (V D_n \\cdot 1000\\rho_1)/\\eta_1$（程序内将 $\\rho_1$ 换为 kg/m³）。$\\rho_1$ 亦可由 $\\rho_1 = \\rho_g C_{1v} + (1-C_{1v})\\rho_s$ 推算。"
-                    "浆体当量密度 $\\rho_k$ 也可由固体质量浓度 $C_w$ 与液相、固相密度按本页第 1 步公式另行求出。"
-                    "若已有可靠的 $\\rho_k$、$\\lambda$、$\\rho_1$ 或 $Re_B$ 等，可在各步输入区直接填写，不必逐项重算。"
-                    "计算成功时，仅在对应输入格仍为空时自动写入上一步结果，避免覆盖已改动的数。"
-                    "流动形态、浓度范围等与公式假定不符时，宜结合规范与试验资料复核。"
+                    "浆体管道沿程水头损失以单位管长水力坡降 $i_k$ 表征，本模块输出 $i_k$ 的单位为米水柱每米（mH₂O/m）。"
+                    "采用达西–魏斯巴赫形式 $i_k = \\lambda \\cdot \\dfrac{V^2\\rho_k}{2gD\\rho_s}$，"
+                    "其中 $V$ 为断面平均流速，$D$ 为管道内径，$g$ 为重力加速度，$\\rho_k$ 为浆体当量密度，$\\rho_s$ 为固体颗粒密度，$\\lambda$ 为达西摩阻系数。\n\n"
+                    "摩阻系数 $\\lambda$ 由混合物雷诺数 $Re_B$、管壁绝对粗糙度 $\\varepsilon$ 与管径 $D_n$ 等按步骤 4 所选显式关系确定；"
+                    "$\\rho_g$、$\\rho_s$、$\\rho_1$ 均以 t/m³ 计，雷诺数按 $Re_B = V D_n \\cdot 1000\\rho_1 / \\eta_1$ 计算，"
+                    "程序将 $\\rho_1$ 换为 SI 密度（kg/m³）后与动力粘度 $\\eta_1$（Pa·s）配套；"
+                    "混合物密度 $\\rho_1$ 亦可由 $\\rho_1 = \\rho_g C_{1v} + (1-C_{1v})\\rho_s$ 求得（步骤 2）；"
+                    "浆体当量密度 $\\rho_k$ 由固体质量浓度 $C_w$ 与液、固相密度按本页第一步关系确定。\n\n"
+                    "若设计、试验或文献已给出 $\\rho_k$、$\\lambda$、$\\rho_1$ 或 $Re_B$ 等可靠取值，可在对应步骤直接采用；"
+                    "程序仅在前序步骤完成且目标输入栏为空时写入结果，不覆盖用户已填或已改数值。"
+                    "当流态、固含率或颗粒沉降明显偏离公式假定时，应结合规范与试验资料另行校核。"
                 ),
                 "parameters": []
             }
@@ -145,14 +147,14 @@ def get_formulas():
                     "总和式将重力势能、管道沿程摩擦、局部阻力、泵站内设备阻力等能量耗散统一折算为泵站需提供的输送压力（表压）。"
                 ),
                 "parameters": [
-                    {"name": "rho_w", "label": "$\\rho_w$：清水密度，单位为 t/m³", "unit": "t/m³", "description": "清水密度（默认 1）", "default": 1},
-                    {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
-                    {"name": "H", "label": "$H$：扬送清水的几何高度，单位为 m", "unit": "m", "description": "扬送清水的几何高度"},
-                    {"name": "i_w", "label": "$i_w$：清水单位长度沿程摩阻损失系数（无量纲）", "unit": "", "description": "清水沿程摩阻损失系数"},
-                    {"name": "L", "label": "$L$：管道的总长度，单位为 m", "unit": "m", "description": "管道总长度"},
-                    {"name": "P_j", "label": "$P_j$：管道局部摩阻损失（按沿程摩阻 5%~10%），单位为 kPa", "unit": "kPa", "description": "管道局部摩阻损失"},
-                    {"name": "P_n", "label": "$P_n$：泵站内管道零件摩阻损失（30~50 kPa/座），单位为 kPa", "unit": "kPa", "description": "泵站内管道零件摩阻损失"},
-                    {"name": "P_z", "label": "$P_z$：出口余压及其他附加压力，单位为 kPa", "unit": "kPa", "description": "出口余压及其他附加压力"}
+                    {"name": "rho_w", "label": "$\\rho_w$：清水密度", "unit": "t/m³", "description": "清水密度（默认 1）", "default": 1},
+                    {"name": "g", "label": "$g$：重力加速度", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
+                    {"name": "H", "label": "$H$：扬送清水的几何高度", "unit": "m", "description": "扬送清水的几何高度（m）；与公式中终点断面几何项一致"},
+                    {"name": "i_w", "label": "$i_w$：清水单位管长沿程摩阻系数（无量纲）", "unit": "", "description": "清水沿程摩阻损失系数"},
+                    {"name": "L", "label": "$L$：管道总长度", "unit": "m", "description": "管道总长度"},
+                    {"name": "P_j", "label": "$P_j$：管道局部摩阻（常取沿程项的 5%~10%）", "unit": "kPa", "description": "管道局部摩阻损失"},
+                    {"name": "P_n", "label": "$P_n$：泵站内管道零件摩阻（约 30~50/座）", "unit": "kPa", "description": "泵站内管道零件摩阻损失"},
+                    {"name": "P_z", "label": "$P_z$：出口余压及其他附加压力", "unit": "kPa", "description": "出口余压及其他附加压力"}
                 ]
             },
             {
@@ -161,30 +163,64 @@ def get_formulas():
                 "formula": "P_k = ρ_k·g·H + ρ_s·g·i_k·L + P_j + P_n + P_z",
                 "description": "该公式用于计算浆体在管道输送系统中，泵站需提供的总压力 $P_k$（即浆体总扬程对应的压力形式）。它的本质是把提升浆体的重力势能、流体流动的摩擦损失、管道局部的阻力损失、泵站内设备的阻力等所有能量消耗，统一换算为泵站要输出的压力。",
                 "parameters": [
-                    {"name": "rho_k", "label": "$\\rho_k$：浆体的密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度"},
-                    {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
-                    {"name": "H", "label": "$H$：扬送浆体的几何高度，单位为 m", "unit": "m", "description": "扬送浆体的几何高度"},
-                    {"name": "rho_s", "label": "$\\rho_s$：固体颗粒的密度，单位为 t/m³", "unit": "t/m³", "description": "固体颗粒密度"},
-                    {"name": "i_k", "label": "$i_k$：单位长度的沿程摩阻损失系数（无量纲）", "unit": "", "description": "沿程摩阻损失系数"},
-                    {"name": "L", "label": "$L$：管道的总长度，单位为 m", "unit": "m", "description": "管道总长度"},
-                    {"name": "P_j", "label": "$P_j$：管道局部摩阻损失（按沿程摩阻 5%~10%），单位为 kPa", "unit": "kPa", "description": "管道局部摩阻损失"},
-                    {"name": "P_n", "label": "$P_n$：泵站内管道零件摩阻损失（30~50 kPa/座），单位为 kPa", "unit": "kPa", "description": "泵站内管道零件摩阻损失"},
-                    {"name": "P_z", "label": "$P_z$：出口余压及其他附加压力，单位为 kPa", "unit": "kPa", "description": "出口余压及其他附加压力"}
+                    {"name": "rho_k", "label": "$\\rho_k$：浆体密度", "unit": "t/m³", "description": "浆体密度"},
+                    {"name": "g", "label": "$g$：重力加速度", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
+                    {"name": "H", "label": "$H$：扬送浆体的几何高度", "unit": "m", "description": "扬送浆体的几何高度（m）；与公式中终点断面几何项一致"},
+                    {"name": "rho_s", "label": "$\\rho_s$：固体颗粒密度", "unit": "t/m³", "description": "固体颗粒密度"},
+                    {"name": "i_k", "label": "$i_k$：单位管长沿程摩阻系数（无量纲）", "unit": "", "description": "沿程摩阻损失系数"},
+                    {"name": "L", "label": "$L$：管道总长度", "unit": "m", "description": "管道总长度"},
+                    {"name": "P_j", "label": "$P_j$：管道局部摩阻（常取沿程项的 5%~10%）", "unit": "kPa", "description": "管道局部摩阻损失"},
+                    {"name": "P_n", "label": "$P_n$：泵站内管道零件摩阻（约 30~50/座）", "unit": "kPa", "description": "泵站内管道零件摩阻损失"},
+                    {"name": "P_z", "label": "$P_z$：出口余压及其他附加压力", "unit": "kPa", "description": "出口余压及其他附加压力"}
                 ]
             },
             {
                 "id": "centrifugal_pump_total_head",
                 "name": "离心泵总扬程",
-                "formula": "（公式待补充）",
-                "description": "离心泵装置总扬程（或装置扬程）相关计算。公式、参数定义与图示将在后续版本中补充。",
-                "parameters": []
+                "formula": "K_p=1-0.25C_w；H_b=\\sum H_s/(K_p K_m)（m）；N=K_1\\rho_k g Q_k H_b/(1000\\eta_j\\eta_b)",
+                "description": (
+                    "用于离心式浆体主泵在含固工况下的扬程折减与轴功率估算。步骤1 采用 $K_p=1-0.25C_w$（$C_w$ 为固相质量分数）；"
+                    "步骤2 中 $H_b$ 为主泵扬送清水的总扬程（液柱 m），满足 $H_b=\\sum H_s/(K_p K_m)$，其中 $\\sum H_s$ 为装置所需液柱扬程累计（m），"
+                    "$K_p$ 为主泵输送浆体的扬程降低率，$K_m$ 为主泵磨蚀后扬程折损率；"
+                    "步骤3 电机功率 $N=K_1\\rho_k g Q_k H_b/(1000\\eta_j\\eta_b)$（kW），其中 $H_b$ 与步骤2 一致（m）。表压/绝压基准须与工艺一致。\n\n"
+                    "若已在「清水总扬程」中算得 $P_w$（kPa），请按 $P_w/(\\rho_w g)$ 折算为液柱高度（m）后填入 $\\sum H_s$，或使用本页引用自动折算。"
+                ),
+                "parameters": [
+                    {"name": "C_w", "label": "$C_w$：固相质量分数（工程上常称浆体重量浓度）", "unit": "", "description": "固相在浆体中的质量分数"},
+                    {"name": "K_p", "label": "$K_p$：主泵输送浆体的扬程降低率", "unit": "", "description": ""},
+                    {"name": "Sigma_H_s", "label": "$\\sum H_s$：装置所需压力累计", "unit": "m", "description": ""},
+                    {"name": "K_m", "label": "$K_m$：主泵磨蚀后扬程折损率", "unit": "", "description": ""},
+                    {"name": "rho_k", "label": "$\\rho_k$：浆体密度", "unit": "t/m³", "description": ""},
+                    {"name": "g", "label": "$g$：重力加速度", "unit": "m/s²", "description": "", "default": 9.81},
+                    {"name": "H_b", "label": "$H_b$：主泵扬送清水的总扬程", "unit": "m", "description": ""},
+                    {"name": "Q_k", "label": "$Q_k$：泵输送浆体的计算流量", "unit": "m³/s", "description": "浆体体积流量"},
+                    {"name": "K_1", "label": "$K_1$：电机功率富余系数", "unit": "", "description": ""},
+                    {"name": "eta_j", "label": "$\\eta_j$：机组传动效率", "unit": "", "description": ""},
+                    {"name": "eta_b", "label": "$\\eta_b$：泵扬送清水时效率", "unit": "", "description": ""},
+                ]
             },
             {
                 "id": "positive_displacement_pump_outlet_pressure",
-                "name": "容积泵出口压力",
-                "formula": "（公式待补充）",
-                "description": "容积泵（往复泵、转子泵等）出口压力或系统压力核算。公式与参数将在后续版本中补充。",
-                "parameters": []
+                "name": "容积式泵总扬程",
+                "formula": "P_b = P_k / K_f；N=K_1 Q_k P_b/(\\eta_v \\eta_c)",
+                "description": (
+                    "容积式泵（往复泵、螺杆泵、隔膜泵等）出口总扬程的压力形式由 $P_b = P_k / K_f$ 给出："
+                    "$P_k$ 为浆体管道输送压力（kPa），$K_f$ 为泵的压力富余系数，$P_b$ 为出口侧总扬程压力（kPa）。\n\n"
+                    "泵所需电机功率（kW）由 $N = K_1 \\cdot Q_k \\cdot P_b / (\\eta_v \\cdot \\eta_c)$ 估算："
+                    "$Q_k$ 为浆体计算流量（m³/s），$P_b$ 为出口总扬程压力（kPa），$K_1$ 为电机功率富余系数（常取 $1.1\\sim 1.2$），"
+                    "$\\eta_v$ 为泵容积效率（厂家值或约 $0.90\\sim 0.95$），$\\eta_c$ 为总机械效率（约 $0.88\\sim 0.92$）。"
+                ),
+                "parameters": [
+                    {"name": "P_k", "label": "$P_k$：浆体管道输送压力", "unit": "kPa", "description": "可与浆体/清水总扬程等模块结果衔接"},
+                    {"name": "K_f", "label": "$K_f$：泵的压力富余系数", "unit": "", "description": "压力富余系数"},
+                    {"name": "rho_k", "label": "$\\rho_k$：浆体密度（Word 导出可选折算液柱用）", "unit": "t/m³", "description": "导出文档中 P_b 折算液柱时选用；步骤计算不依赖", "default": 1.0},
+                    {"name": "g", "label": "$g$：重力加速度", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
+                    {"name": "P_b", "label": "$P_b$：容积泵总扬程", "unit": "kPa", "description": ""},
+                    {"name": "Q_k", "label": "$Q_k$：泵输送浆体的计算流量", "unit": "m³/s", "description": "浆体体积流量"},
+                    {"name": "K_1", "label": "$K_1$：电机功率富余系数", "unit": "", "description": "常取 1.1～1.2"},
+                    {"name": "eta_v", "label": "$\\eta_v$：泵容积效率", "unit": "", "description": "厂家值或约 0.90～0.95"},
+                    {"name": "eta_c", "label": "$\\eta_c$：总机械效率", "unit": "", "description": "约 0.88～0.92"},
+                ]
             }
         ],
         "浆体加速流及消能": [
@@ -298,14 +334,19 @@ def export_word():
         result = data.get('result')
         formula_info = data.get('formula_info', {})
         save_path = data.get('save_path')  # 用户指定路径时（另存为），后端直接写入该路径并返回 JSON
-        
         if not formula_id or not formula_info or not result:
             return jsonify({
                 "success": False,
                 "error": "缺少必要的数据：formula_id, formula_info 或 result"
             }), 400
         
-        file_path = word_exporter.export(formula_id, formula_info, parameters, result, save_path=save_path)
+        file_path = word_exporter.export(
+            formula_id,
+            formula_info,
+            parameters,
+            result,
+            save_path=save_path,
+        )
         
         if save_path:
             # 已保存到用户指定路径，只返回成功

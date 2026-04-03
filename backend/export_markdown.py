@@ -176,6 +176,14 @@ def intermediate_label_md(key: str) -> str:
         "Q_squared": r"$Q^2$",
         "gravity_pressure": r"静压项（重力势能）$\rho g H$ 分量",
         "friction_pressure": r"沿程摩阻项 $\rho g i L$ 分量",
+        "term_0p25_Cw": r"项 $0.25\,C_w$",
+        "Sigma_H_s": r"装置所需压力累计 $\sum H_s$",
+        "K_p_K_m": r"分母 $K_p K_m$",
+        "K_p": r"扬程降低率 $K_p$",
+        "K_m": r"磨蚀后扬程折损率 $K_m$",
+        "C_w": r"浆体重量浓度 $C_w$",
+        "K_f": r"压力富余系数 $K_f$",
+        "P_k": r"浆体管道输送压力 $P_k$（输入）",
     }
     return labels.get(key, escape_table_cell(key))
 
@@ -255,7 +263,12 @@ def _md_result_section(formula_id: str, result: Dict[str, Any]) -> List[str]:
     lines = ["## 五、计算成果", ""]
     intermediate = result.get("intermediate") or {}
     unit_suffix = result.get("unit", "") or ""
-    if formula_id in ("slurry_total_head", "clear_water_total_head") and not unit_suffix:
+    if formula_id in (
+        "slurry_total_head",
+        "clear_water_total_head",
+        "centrifugal_pump_total_head",
+        "positive_displacement_pump_outlet_pressure",
+    ) and not unit_suffix:
         unit_suffix = "kPa"
     if formula_id == "friction_loss":
         item = r"沿程摩阻损失 $i_k$"
@@ -298,6 +311,12 @@ def _md_result_section(formula_id: str, result: Dict[str, Any]) -> List[str]:
     elif formula_id == "clear_water_total_head":
         item = r"清水管道输送压力 $P_w$"
         value = result.get("H_total", "N/A")
+    elif formula_id == "centrifugal_pump_total_head":
+        item = r"主泵扬送清水的总扬程 $H_b$"
+        value = result.get("H_total", "N/A")
+    elif formula_id == "positive_displacement_pump_outlet_pressure":
+        item = r"容积式泵总扬程 $P_b$"
+        value = result.get("P_b", result.get("H_total", "N/A"))
     else:
         item = r"临界流速 $V_c$"
         value = result.get("Vc", "N/A")
@@ -568,6 +587,36 @@ def _calc_process_md(
                 rf"2. $\rho_w g i_w L = {im.get('friction_pressure', 'N/A')}$ kPa",
                 rf"3. $P_j={P_j}$，$P_n={P_n}$，$P_z={P_z}$ kPa",
                 rf"4. $P_w = {result.get('H_total', 'N/A')}$ kPa",
+                "",
+            ]
+        )
+    elif formula_id == "centrifugal_pump_total_head":
+        im = result.get("intermediate") or {}
+        cw = parameters.get("C_w", im.get("C_w", "N/A"))
+        kp = im.get("K_p", parameters.get("K_p", "N/A"))
+        s_hs = im.get("Sigma_H_s", parameters.get("Sigma_H_s", "N/A"))
+        km = im.get("K_m", parameters.get("K_m", "N/A"))
+        denom = im.get("K_p_K_m", "N/A")
+        lines.extend(
+            [
+                r"**步骤1** $K_p = 1 - 0.25\,C_w$",
+                rf"- $C_w = {cw}$，$K_p = {kp}$",
+                r"**步骤2** $H_b = \sum H_s / (K_p K_m)$",
+                rf"- $\sum H_s = {s_hs}$ m，$K_m = {km}$，$K_p \cdot K_m = {denom}$",
+                rf"- $H_b = {result.get('H_total', 'N/A')}$ m",
+                "",
+            ]
+        )
+    elif formula_id == "positive_displacement_pump_outlet_pressure":
+        im = result.get("intermediate") or {}
+        pk = im.get("P_k", parameters.get("P_k", "N/A"))
+        kf = im.get("K_f", parameters.get("K_f", "N/A"))
+        pb = result.get("P_b", result.get("H_total", "N/A"))
+        lines.extend(
+            [
+                r"$P_b = P_k / K_f$",
+                rf"- $P_k = {pk}$ kPa，$K_f = {kf}$",
+                rf"- $P_b = {pb}$ kPa",
                 "",
             ]
         )

@@ -53,8 +53,26 @@ class CalculationEngine:
             return self._calculate_total_head(parameters, "slurry")
         elif formula_id == "clear_water_total_head":
             return self._calculate_clear_water_total_head(parameters)
-        elif formula_id in ("centrifugal_pump_total_head", "positive_displacement_pump_outlet_pressure"):
-            raise ValueError("该模块公式尚在建设中，将在后续版本中补充。")
+        elif formula_id == "centrifugal_pump_total_head":
+            step = parameters.get("calculation_step", 1)
+            try:
+                step = int(step)
+            except (TypeError, ValueError):
+                step = 1
+            if step == 3:
+                return self._calculate_centrifugal_pump_motor_power(parameters)
+            if step == 2:
+                return self._calculate_centrifugal_pump_hb(parameters)
+            return self._calculate_centrifugal_pump_kp(parameters)
+        elif formula_id == "positive_displacement_pump_outlet_pressure":
+            step = parameters.get("calculation_step", 1)
+            try:
+                step = int(step)
+            except (TypeError, ValueError):
+                step = 1
+            if step == 2:
+                return self._calculate_positive_displacement_motor_power(parameters)
+            return self._calculate_positive_displacement_pump_total_head(parameters)
         elif formula_id == "slurry_dissipation_orifice":
             return self._calculate_slurry_dissipation_orifice(parameters)
         elif formula_id == "slurry_friction_workflow":
@@ -423,7 +441,7 @@ class CalculationEngine:
         if rho_g == 0 or rho_s == 0:
             raise ValueError("ρ_g、ρ_s 不能为0")
         if C_w < 0 or C_w > 1:
-            raise ValueError("质量浓度 C_w 应在 0～1 之间")
+            raise ValueError("C_w 须在 0～1 之间（小数，如 0.35）")
         # ρ_k = 1 / (C_w/ρ_g + (1-C_w)/ρ_s)
         denom = C_w / rho_g + (1.0 - C_w) / rho_s
         if denom <= 0:
@@ -798,11 +816,11 @@ class CalculationEngine:
         friction_pressure = rho_s * g * i_k * L
         P_k = gravity_pressure + friction_pressure + P_j + P_n + P_z
 
-        num_points = min(max(int(L / 10), 20), 200)
-        step = L / num_points
+        # Pk–L 曲线与前端损失图一致：按管长 L 等分为 10 段，共 11 个采样点（步长 L/10）
+        num_segments = 10
         hl_curve = []
-        for idx in range(num_points + 1):
-            l_pt = idx * step
+        for idx in range(num_segments + 1):
+            l_pt = L * idx / num_segments
             fric_pt = rho_s * g * i_k * l_pt
             pj_pt = P_j * (l_pt / L) if L > 0 else 0
             pk_pt = gravity_pressure + fric_pt + pj_pt + P_n + P_z
@@ -865,4 +883,183 @@ class CalculationEngine:
                 "P_z": P_z,
             },
             "hl_curve": hl_curve
+        }
+
+    def _calculate_centrifugal_pump_kp(self, params):
+        """步骤1：K_p = 1 - 0.25·C_w（主泵输送浆体时的扬程降低率，无量纲）"""
+        cw_raw = params.get("C_w")
+        if cw_raw is None:
+            raise ValueError("步骤1 需要浆体重量浓度 C_w")
+        try:
+            cw = float(cw_raw)
+        except (TypeError, ValueError):
+            raise ValueError("C_w 无效")
+        if cw < 0 or cw > 1:
+            raise ValueError("C_w 须为 0～1 之间的小数（如 0.35）")
+        term = 0.25 * cw
+        kp = 1.0 - term
+        if kp <= 0:
+            raise ValueError("K_p = 1 - 0.25·C_w 须大于 0，请检查 C_w")
+        return {
+            "K_p": self._safe_round(kp, 12),
+            "unit": "无量纲",
+            "intermediate": {},
+        }
+
+    def _calculate_centrifugal_pump_hb(self, params):
+        """步骤2：H_b = ΣH_s / (K_p·K_m)，结果与输入均为液柱扬程（m）；Sigma_H_s 表示 ΣH_s（m）。"""
+        s = params.get("Sigma_H_s")
+        kp = params.get("K_p")
+        km = params.get("K_m")
+        if s is None:
+            raise ValueError("步骤2 需要 ΣH_s（装置所需压力累计，液柱高度 m）")
+        if kp is None:
+            raise ValueError("步骤2 需要 K_p")
+        if km is None:
+            raise ValueError("步骤2 需要 K_m")
+        s = float(s)
+        kp = float(kp)
+        km = float(km)
+        if s <= 0:
+            raise ValueError("ΣH_s 须大于 0")
+        if kp <= 0:
+            raise ValueError("K_p 须大于 0")
+        if km <= 0:
+            raise ValueError("K_m 须大于 0")
+        if km < 0.85 or km > 0.98:
+            raise ValueError("K_m 须在 0.85～0.98 之间")
+        denom = kp * km
+        hb = s / denom
+        im = {
+            "Sigma_H_s": self._safe_round(s, 12),
+            "K_p": self._safe_round(kp, 12),
+            "K_m": self._safe_round(km, 12),
+            "K_p_K_m": self._safe_round(denom, 12),
+            "H_b": self._safe_round(hb, 6),
+        }
+        return {
+            "H_total": self._safe_round(hb, 6),
+            "unit": "m",
+            "intermediate": im,
+        }
+
+    def _calculate_positive_displacement_pump_total_head(self, params):
+        """容积式泵：P_b = P_k / K_f（kPa）。P_k 为浆体管道输送压力；K_f 为压力富余系数。"""
+        pk = params.get("P_k")
+        kf = params.get("K_f")
+        if pk is None:
+            raise ValueError("需要浆体管道输送压力 P_k（kPa）")
+        if kf is None:
+            raise ValueError("需要泵的压力富余系数 K_f")
+        pk = float(pk)
+        kf = float(kf)
+        if pk <= 0:
+            raise ValueError("P_k 须大于 0")
+        if kf <= 0:
+            raise ValueError("K_f 须大于 0")
+        if kf > 1.0:
+            raise ValueError("K_f 宜不大于 1.0，请检查是否误填")
+        pb = pk / kf
+        return {
+            "P_b": self._safe_round(pb, 6),
+            "H_total": self._safe_round(pb, 6),
+            "unit": "kPa",
+            "intermediate": {
+                "P_k": self._safe_round(pk, 6),
+                "K_f": self._safe_round(kf, 12),
+            },
+        }
+
+    def _calculate_positive_displacement_motor_power(self, params):
+        """步骤2：N = K_1·Q_k·P_b / (η_v·η_c)，kW。Q_k：m³/s；P_b：kPa。"""
+        pb = params.get("P_b")
+        qk = params.get("Q_k")
+        k1 = params.get("K_1")
+        eta_v = params.get("eta_v")
+        eta_c = params.get("eta_c")
+        if pb is None:
+            raise ValueError("步骤2 需要 P_b（kPa）")
+        if qk is None:
+            raise ValueError("步骤2 需要浆体计算流量 Q_k（m³/s）")
+        if k1 is None:
+            raise ValueError("步骤2 需要电机功率富余系数 K_1")
+        if eta_v is None or eta_c is None:
+            raise ValueError("步骤2 需要容积效率 η_v 与总机械效率 η_c")
+        pb = float(pb)
+        qk = float(qk)
+        k1 = float(k1)
+        eta_v = float(eta_v)
+        eta_c = float(eta_c)
+        if pb <= 0 or qk <= 0:
+            raise ValueError("P_b、Q_k 须大于 0")
+        if k1 <= 0 or eta_v <= 0 or eta_c <= 0:
+            raise ValueError("K_1、η_v、η_c 须大于 0")
+        denom = eta_v * eta_c
+        n_kw = k1 * qk * pb / denom
+        return {
+            "N": self._safe_round(n_kw, 6),
+            "unit": "kW",
+            "intermediate": {
+                "P_b": self._safe_round(pb, 6),
+                "Q_k": self._safe_round(qk, 12),
+                "K_1": self._safe_round(k1, 12),
+                "eta_v": self._safe_round(eta_v, 12),
+                "eta_c": self._safe_round(eta_c, 12),
+                "numerator_K1_Q_Pb": self._safe_round(k1 * qk * pb, 12),
+                "denom_eta_v_eta_c": self._safe_round(denom, 12),
+            },
+        }
+
+    def _calculate_centrifugal_pump_motor_power(self, params):
+        """步骤3：N = K_1·ρ_k(kg/m³)·g·Q_k·H_b / (1000·η_j·η_b)，kW。
+        H_b 为步骤2 给出的主泵扬送清水总扬程（液柱 m）；程序内记 H_m = H_b 写入中间量。"""
+        hb_m = params.get("H_b")
+        if hb_m is None:
+            raise ValueError("步骤3 需要 H_b（液柱扬程 m）")
+        rho_t = params.get("rho_k")
+        if rho_t is None:
+            raise ValueError("步骤3 需要浆体密度 ρ_k（t/m³）")
+        g = float(params.get("g", 9.81))
+        qk = params.get("Q_k")
+        k1 = params.get("K_1")
+        eta_j = params.get("eta_j")
+        eta_b = params.get("eta_b")
+        if qk is None:
+            raise ValueError("步骤3 需要浆体计算流量 Q_k（m³/s）")
+        if k1 is None:
+            raise ValueError("步骤3 需要电机功率富余系数 K_1")
+        if eta_j is None or eta_b is None:
+            raise ValueError("步骤3 需要传动效率 η_j 与泵效率 η_b")
+        hb_m = float(hb_m)
+        rho_t = float(rho_t)
+        qk = float(qk)
+        k1 = float(k1)
+        eta_j = float(eta_j)
+        eta_b = float(eta_b)
+        if rho_t <= 0 or g <= 0:
+            raise ValueError("ρ_k、g 须大于 0")
+        if hb_m <= 0 or qk <= 0:
+            raise ValueError("H_b、Q_k 须大于 0")
+        if k1 < 1.1 or k1 > 1.2:
+            raise ValueError("K_1 须在 1.1～1.2 之间")
+        if eta_j <= 0 or eta_j > 1:
+            raise ValueError("η_j 须为大于 0 且不大于 1 的实数")
+        if eta_b <= 0 or eta_b > 1:
+            raise ValueError("η_b 须为大于 0 且不大于 1 的实数")
+        h_m = hb_m
+        rho_si = rho_t * 1000.0
+        n_kw = k1 * rho_si * g * qk * h_m / 1000.0 / eta_j / eta_b
+        return {
+            "N": self._safe_round(n_kw, 6),
+            "unit": "kW",
+            "intermediate": {
+                "H_b_m": self._safe_round(hb_m, 6),
+                "H_m": self._safe_round(h_m, 12),
+                "rho_k_t_m3": self._safe_round(rho_t, 12),
+                "Q_k": self._safe_round(qk, 12),
+                "K_1": self._safe_round(k1, 12),
+                "eta_j": self._safe_round(eta_j, 12),
+                "eta_b": self._safe_round(eta_b, 12),
+                "rho_si_kg_m3": self._safe_round(rho_si, 6),
+            },
         }

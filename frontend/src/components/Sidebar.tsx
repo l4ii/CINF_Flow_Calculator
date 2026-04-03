@@ -90,7 +90,7 @@ export default function Sidebar({
     slurry_total_head: 'Slurry total head / pressure',
     clear_water_total_head: 'Clear water total head / pressure',
     centrifugal_pump_total_head: 'Centrifugal pump total head',
-    positive_displacement_pump_outlet_pressure: 'Positive displacement pump outlet pressure',
+    positive_displacement_pump_outlet_pressure: 'Positive displacement pump total head',
     slurry_accel_energy: 'Slurry Accelerating Flow',
     slurry_dissipation: 'Reducer dissipation',
     slurry_dissipation_orifice: 'Orifice dissipation',

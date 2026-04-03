@@ -39,6 +39,12 @@ export interface CalculationResult {
     Re_B?: number
     lambda_coef?: number
     H_total?: number
+    /** 离心泵总扬程步骤1：扬程降低率 */
+    K_p?: number
+    /** 容积式泵总扬程（压力，kPa） */
+    P_b?: number
+    /** 泵所需电机功率（kW） */
+    N?: number
     /** 清水摩阻损失：单位长度水头损失 kPa/m */
     i?: number
     condition_met?: boolean
