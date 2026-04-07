@@ -3109,11 +3109,10 @@ export default function MainContent({
       )
     }
 
-    // 长沙有色冶金设计研究院公司介绍（版式与科研、市政「了解我们」页一致）
+    // 长沙有色冶金设计研究院公司介绍（首段 Hero + 数据条 + pic1 双段文案 + pic3 分界 + 紧凑联系信息）
     if (aboutDepartment === 'cinf') {
       const sectionTitleCls = `text-lg font-bold tracking-tight mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`
       const sectionKickerCls = `text-[11px] font-semibold uppercase tracking-[0.2em] mb-3 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
-      const bodyCls = `text-sm leading-relaxed space-y-3 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`
       const panelCls = `rounded-2xl border overflow-hidden shadow-sm ${darkMode ? 'border-gray-600 bg-gray-700/40' : 'border-slate-200 bg-white'}`
       const capCls = `px-3 py-2 text-[11px] shrink-0 ${darkMode ? 'text-gray-400 bg-gray-800/60' : 'text-slate-600 bg-slate-50'}`
       const dividerCls = darkMode ? 'border-gray-600' : 'border-slate-200'
@@ -3182,7 +3181,7 @@ export default function MainContent({
                         loading="lazy"
                       />
                     </div>
-                    <p className={capCls}>长沙有色冶金设计研究院大楼效果图</p>
+                    <p className={capCls}>中国铝业集团 · 长沙有色冶金设计研究院有限公司</p>
                   </div>
                 </div>
               </div>
@@ -3190,7 +3189,11 @@ export default function MainContent({
 
             {/* 核心数据条：4 等宽格子，无内边距，数字突出 */}
             <div className={`mb-10 ${panelCls}`}>
-              <div className={`grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 ${dividerCls} [&>*]:border-${dividerCls}`}>
+              <div
+                className={`grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 ${
+                  darkMode ? 'divide-gray-600' : 'divide-slate-200'
+                }`}
+              >
                 {cinfStats.map((s) => (
                   <div key={s.l} className="flex flex-col items-center justify-center py-8 px-4 text-center">
                     <div className={`text-2xl sm:text-3xl font-bold tabular-nums ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
@@ -3204,309 +3207,165 @@ export default function MainContent({
               </div>
             </div>
 
-            {/* 发展历程：左=企业文化横幅，右=文字 */}
-            <div className={`mb-10 ${panelCls}`}>
-              <div className="grid grid-cols-1 lg:grid-cols-2">
-                <div className={`flex flex-col border-b lg:border-b-0 lg:border-r ${dividerCls}`}>
-                  <div className="aspect-video w-full overflow-hidden bg-black/[0.03] dark:bg-black/20">
+            {/* 竖图 pic1 + 两段文案 */}
+            <div className={`mb-8 ${panelCls}`}>
+              <div className="grid grid-cols-1 gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,360px)_1fr] lg:items-start lg:gap-10 xl:grid-cols-[minmax(0,420px)_1fr] xl:gap-12">
+                <div className="mx-auto w-full max-w-[min(100%,360px)] shrink-0 sm:max-w-[380px] lg:mx-0 lg:max-w-none xl:max-w-[420px]">
+                  <div
+                    className={`overflow-hidden rounded-xl border shadow-sm ${
+                      darkMode ? 'border-gray-600 bg-black/20' : 'border-slate-200/90 bg-slate-100'
+                    }`}
+                  >
                     <img
-                      src="./about/cinf-culture-banner.png"
-                      alt="励精图治 创新求强"
-                      className="h-full w-full object-cover"
+                      src="./pic1.png"
+                      alt="长沙有色冶金设计研究院"
+                      className="mx-auto block h-auto w-full max-h-[min(620px,62vh)] object-contain object-top sm:max-h-[min(700px,66vh)] lg:max-h-[min(780px,70vh)] xl:max-h-[min(860px,72vh)]"
                       loading="lazy"
                     />
                   </div>
-                  <p className={capCls}>企业文化 · 励精图治　创新求强</p>
+                  <div
+                className={`flex flex-col items-stretch gap-2 border-t px-4 py-3 ${
+                  darkMode ? 'border-gray-600 bg-gray-900/35' : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <div className="flex flex-wrap justify-center gap-2">
+                  {['责任', '诚信', '开放', '卓越'].map((v) => (
+                    <span key={v} className={valueCls}>{v}</span>
+                  ))}
                 </div>
-                <div className="flex flex-col justify-center p-6 sm:p-8">
-                  <p className={sectionKickerCls}>历史沿革</p>
-                  <h3 className={sectionTitleCls}>发展历程</h3>
-                  <div className={bodyCls}>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {['AAA级信用企业', '国家高新技术企业'].map((c) => (
+                    <span key={c} className={chipCls}>{c}</span>
+                  ))}
+                </div>
+              </div>
+                </div>
+                <div className="min-w-0">
+                  <p className={sectionKickerCls}>历史沿革 · 创新实践</p>
+                  <h3 className={sectionTitleCls}>发展历程与组织沿革</h3>
+                  <div
+                    className={`mt-4 space-y-3 leading-relaxed text-[15px] sm:text-base ${
+                      darkMode ? 'text-gray-200' : 'text-slate-800'
+                    }`}
+                  >
                     <p>
-                      1954年，长沙有色院由赣州迁至长沙，先后隶属于重工业部、冶金工业部、中国有色金属工业总公司、国家有色金属工业局、中国稀有稀土集团。2000年7月由中央下放到湖南省管理，2007年6月加入中国铝业公司。
+                      1954年，长沙有色院由赣州迁至长沙，先后隶属于重工业部、冶金工业部、中国有色金属工业总公司、国家有色金属工业局、中国稀有稀土集团。2000年7月由中央下放到湖南省管理，2007年6月加入中国铝业公司。2011年3月改制为中铝国际出资设立的一人有限责任公司，名称变更为「长沙有色冶金设计研究院有限公司」。2015年3月，中铝国际将山东建设（后更名为南方工程）划转；2024年3月，将长勘院划转到长沙有色院。
                     </p>
                     <p>
-                      2011年3月改制为中铝国际出资设立的一人有限责任公司，名称变更为「长沙有色冶金设计研究院有限公司」。2015年3月，中铝国际将山东建设（后更名为南方工程）划转；2024年3月，将长勘院划转到长沙有色院。
+                      历经七十余年，长沙有色院已形成较强的综合技术实力与行业影响力：在册职工900余人，专业技术人员800余人，拥有全国工程勘察设计大师、行业勘察设计大师、享受政府特殊津贴专家及大批注册工程师；建有<strong className={darkMode ? 'text-gray-100' : 'text-slate-900'}>3个国家级、7个省级科技创新平台</strong>及多个研究生联合培养与中试基地。累计完成工程咨询设计项目万余项，获国家、省、部级科技进步奖与优秀工程设计咨询奖1300余项，有效专利500余件，服务足迹遍及40余个国家与地区。秉承<strong className={darkMode ? 'text-white' : 'text-slate-900'}>励精图治、创新求强</strong>的精神与<strong className={darkMode ? 'text-white' : 'text-slate-900'}>创新驱动，诚信服务，持续为客户创造价值</strong>的理念，持续强化科技供给、标准引领与工程转化能力，致力成为有色行业创新型领军企业。
                     </p>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {['责任', '诚信', '开放', '卓越'].map((v) => (
-                      <span key={v} className={valueCls}>{v}</span>
-                    ))}
+                    <p>
+                      <span className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-slate-900'}`}>科技创新</span>
+                      近年多点突破、赋能主业成效显著。以2025年为例：新签科研项目33项，涵盖欧盟「地平线欧洲」计划及马来西亚、安哥拉等国际科研合作，以及自然资源部部省合作、广西科技计划、湖南省科技成果转化示范、甘肃省创新联合攻关等，合同额约2209万元、合同收费约3204万元，项目数量与质量实现双提升。重大成果方面，获省部级科技进步特等奖1项、一等奖6项、二等奖5项、三等奖1项；全国优秀工程勘察设计奖一等奖1项、二等奖2项、三等奖1项；「固废高值化生态化梯级集成利用技术」等4项成果入选国家和省级绿色先进适用技术目录，填补近十年来国家级工程勘察设计一等奖空白；新增立项国家、行业及团体标准14部，创历年新高；获评长沙市「科技创新突出贡献企业」。公司落实「科研—设计—应用」闭环创新链，新疆美盛矿业非爆机械连续采矿方法研究、贵州铝业大竹园铝土矿采矿方法研究、湖北大冶大红山铜矿废弃露天坑生态修复、西部鑫兴稀贵金属钼氧压技术创新等课题取得阶段性成果，推动需求来自设计与现场、成果经设计回到应用。科研管理同步提质：完成2025年55项新立项项目开题与2026年42项新增立项，专项攻坚解决14项政府重大科研课题进度与质量管理难题，完成18项验收，涵盖国家重点研发计划、广西重大科技专项、湖南省发改委两业融合与知识产权战略推进专项、中铝集团重大专项及中铝国际重点科研项目等。
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 技术实力：左=文字，右=中国铝业标识配图 */}
-            <div className={`mb-10 ${panelCls}`}>
-              <div className="grid grid-cols-1 lg:grid-cols-2">
-                <div className="flex flex-col justify-center p-6 sm:p-8">
-                  <p className={sectionKickerCls}>人才与专业力量</p>
-                  <h3 className={sectionTitleCls}>技术实力</h3>
-                  <div className={bodyCls}>
-                    <p>
-                      现有在册职工900余人，专业技术人员800余人，其中全国工程勘察设计大师1人、全国有色金属行业勘察设计大师9人、湖南省科技创新领军人才1人、湖南省优秀青年工程勘察设计师16人、中铝集团首席工程师3人、享受政府特殊津贴专家14人、高级职称366人（含正高级工程师65人）、各类国家注册工程师500余人。
-                    </p>
-                    <p>
-                      已构建由<strong className={darkMode ? 'text-gray-100' : 'text-slate-900'}>3个国家级科技创新平台、7个省级科技创新平台</strong>和多个研究生联合培养基地、中试基地组成的高水平多层次科技创新平台体系。
-                    </p>
-                  </div>
-                </div>
-                <div className={`flex flex-col border-t lg:border-t-0 lg:border-l ${dividerCls}`}>
-                  <div className="aspect-video w-full overflow-hidden flex-1 bg-black/[0.03] dark:bg-black/20">
-                    <img
-                      src="./about/chinalco-signage.png"
-                      alt="中国铝业 · 长沙有色冶金设计研究院"
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                  <p className={capCls}>中国铝业集团 · 长沙有色冶金设计研究院</p>
-                </div>
+            {/* 长图 pic3：横向通栏 + 标签 + 下方文案作介绍与联系区分界 */}
+            <div className={`mb-8 overflow-hidden rounded-2xl border shadow-sm ${darkMode ? 'border-gray-600 bg-gray-800/30' : 'border-slate-200 bg-white'}`}>
+              <div className={darkMode ? 'bg-black/25' : 'bg-slate-100'}>
+                <img
+                  src="./pic3.jpg"
+                  alt="长沙有色院企业形象"
+                  className="mx-auto block h-auto w-full max-h-[280px] object-contain sm:max-h-[320px] md:max-h-[380px]"
+                  loading="lazy"
+                />
               </div>
+            
+              <p
+                className={`border-t px-4 py-2.5 text-center text-xs sm:text-sm ${
+                  darkMode ? 'border-gray-600 text-gray-400 bg-gray-900/40' : 'border-slate-200 text-slate-600 bg-slate-50'
+                }`}
+              >
+                企业精神
+              </p>
             </div>
 
-            {/* 成就与荣誉：左=中铝国际大楼，右=文字 */}
+            {/* 联系信息（紧凑排版） */}
             <div className={`mb-10 ${panelCls}`}>
-              <div className="grid grid-cols-1 lg:grid-cols-2">
-                <div className={`flex flex-col border-b lg:border-b-0 lg:border-r ${dividerCls}`}>
-                  <div className="aspect-video w-full overflow-hidden bg-black/[0.03] dark:bg-black/20">
-                    <img
-                      src="./about/zhonglv-tech-building.png"
-                      alt="中铝国际工程"
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                  <p className={capCls}>中铝国际工程股份有限公司 · 长沙有色院所属集团</p>
-                </div>
-                <div className="flex flex-col justify-center p-6 sm:p-8">
-                  <p className={sectionKickerCls}>成果与品牌</p>
-                  <h3 className={sectionTitleCls}>成就与荣誉</h3>
-                  <div className={bodyCls}>
-                    <p>
-                      建院70余年，为40余个国家提供技术服务，完成工程咨询设计项目万余项，其中国家大中型重点建设项目千余项。获国家、省、部级科技进步奖、优秀工程设计咨询奖1300余项，拥有有效专利500余件。
-                    </p>
-                    <p>
-                      在矿山、冶炼和环境保护方面处于国际领先水平；是非煤矿山领域先进技术领航者、贵重有色冶金行业产业迭代主导者、稀有稀土行业服务主力军、新能源材料全生命周期服务排头兵。
-                    </p>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {['AAA级信用企业', '优秀勘察设计企业', '百强企业'].map((c) => (
-                      <span key={c} className={chipCls}>{c}</span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 发展愿景：渐变底色 */}
-            <div className={`mb-10 ${panelCls}`}>
-              <div className={`p-6 sm:p-8 ${
-                darkMode
-                  ? 'bg-gradient-to-br from-gray-800/80 to-gray-900/40'
-                  : 'bg-gradient-to-br from-blue-50/60 to-slate-50/40'
-              }`}>
-                <p className={sectionKickerCls}>发展愿景</p>
-                <h3 className={sectionTitleCls}>使命与方向</h3>
-                <div className={`mt-3 text-sm leading-relaxed ${darkMode ? 'text-gray-200' : 'text-slate-800'}`}>
-                  <p>
-                    面对新的经济形势与竞争环境，长沙有色院将秉承
-                    <strong className={darkMode ? 'text-white' : 'text-slate-900'}>
-                      创新驱动，诚信服务，持续为客户创造价值
-                    </strong>
-                    的理念，致力成为有色行业创新型领军企业。
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* 联系信息 */}
-            <div className={`mb-10 ${panelCls}`}>
-              <div className="p-6 sm:p-8">
+              <div className="p-5 sm:p-6">
                 <p className={sectionKickerCls}>联系方式</p>
-                <h3 className={`text-lg font-bold tracking-tight mb-4 ${darkMode ? 'text-white' : 'text-slate-900'}`}>公司信息</h3>
+                <h3 className={`text-base font-bold tracking-tight sm:text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                  公司与业务联系
+                </h3>
+
                 <div
-                  className={`mb-8 flex flex-wrap gap-6 rounded-xl border p-5 sm:p-6 ${
-                    darkMode ? 'border-gray-600 bg-gray-800/35' : 'border-slate-200 bg-slate-50/80'
+                  className={`mt-3 grid gap-3 rounded-lg border p-4 sm:grid-cols-2 lg:grid-cols-6 lg:gap-x-4 lg:gap-y-2 ${
+                    darkMode ? 'border-gray-600 bg-gray-800/35' : 'border-slate-200 bg-slate-50/90'
                   }`}
                 >
-                    <div className="flex items-start min-w-0 flex-1 basis-40">
-                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
-                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                      }`}></div>
-                      <div className="min-w-0">
-                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                          darkMode ? 'text-gray-400' : 'text-gray-500'
-                        }`}>联系地址</div>
-                        <div className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>湖南省长沙市雨花区木莲东路299号</div>
+                  <div className="min-w-0 sm:col-span-2 lg:col-span-3">
+                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>联系地址</div>
+                    <div className={`mt-0.5 text-sm leading-snug ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>湖南省长沙市雨花区木莲东路299号</div>
+                  </div>
+                  <div className="min-w-0 lg:col-span-1">
+                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>邮政编码</div>
+                    <div className={`mt-0.5 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>410019</div>
+                  </div>
+                  <div className="min-w-0 lg:col-span-1">
+                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>办公室</div>
+                    <a
+                      href="tel:0731-84397032"
+                      className={`mt-0.5 inline-block text-sm hover:opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}
+                    >
+                      0731-84397032
+                    </a>
+                  </div>
+                  <div className="min-w-0 lg:col-span-1">
+                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>传真</div>
+                    <div className={`mt-0.5 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>0731-82228112</div>
+                  </div>
+                  <div className="min-w-0 sm:col-span-2 lg:col-span-6">
+                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>Email</div>
+                    <a
+                      href="mailto:cinf@chinalco.com.cn"
+                      className={`mt-0.5 inline-block text-sm hover:opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}
+                    >
+                      cinf@chinalco.com.cn
+                    </a>
+                  </div>
+                </div>
+
+                <div className={`mt-4 border-t pt-3 ${dividerCls}`}>
+                  <p className={`${sectionKickerCls} !mb-2`}>对外联络</p>
+                  <div className="grid gap-2.5 md:grid-cols-3">
+                    <div className={`rounded-lg border px-3 py-2.5 ${darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white'}`}>
+                      <div className={`text-xs font-semibold leading-tight ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>生产运营中心（市场开发部）</div>
+                      <div className="mt-1.5 space-y-0.5 text-sm leading-snug">
+                        <div>
+                          <span className={darkMode ? 'text-gray-500' : 'text-gray-500'}>电话 </span>
+                          <a href="tel:0731-84397070" className={`hover:opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>0731-84397070</a>
+                        </div>
+                        <div className="break-all">
+                          <span className={darkMode ? 'text-gray-500' : 'text-gray-500'}>Email </span>
+                          <a href="mailto:cinf_scjy@chinalco.com.cn" className={`hover:opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>cinf_scjy@chinalco.com.cn</a>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-start min-w-0 flex-1 basis-24">
-                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
-                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                      }`}></div>
-                      <div className="min-w-0">
-                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                          darkMode ? 'text-gray-400' : 'text-gray-500'
-                        }`}>邮政编码</div>
-                        <div className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>410019</div>
+                    <div className={`rounded-lg border px-3 py-2.5 ${darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white'}`}>
+                      <div className={`text-xs font-semibold leading-tight ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>海外业务中心（海外发展中心）</div>
+                      <div className="mt-1.5 space-y-0.5 text-sm leading-snug">
+                        <div>
+                          <span className={darkMode ? 'text-gray-500' : 'text-gray-500'}>电话 </span>
+                          <a href="tel:0086-731-84397078" className={`hover:opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>0086-731-84397078 / 84397079</a>
+                        </div>
+                        <div className="break-all">
+                          <span className={darkMode ? 'text-gray-500' : 'text-gray-500'}>Email </span>
+                          <a href="mailto:cinf_intl@chinalco.com.cn" className={`hover:opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>cinf_intl@chinalco.com.cn</a>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-start min-w-0 flex-1 basis-32">
-                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
-                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                      }`}></div>
-                      <div className="min-w-0">
-                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                          darkMode ? 'text-gray-400' : 'text-gray-500'
-                        }`}>办公室</div>
-                        <a href="tel:0731-84397032" className={`text-sm hover:opacity-80 transition-opacity ${
-                          darkMode ? 'text-blue-400' : 'text-blue-600'
-                        }`}>0731-84397032</a>
-                      </div>
-                    </div>
-                    <div className="flex items-start min-w-0 flex-1 basis-32">
-                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
-                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                      }`}></div>
-                      <div className="min-w-0">
-                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                          darkMode ? 'text-gray-400' : 'text-gray-500'
-                        }`}>传真</div>
-                        <div className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>0731-82228112</div>
-                      </div>
-                    </div>
-                    <div className="flex items-start min-w-0 flex-1 basis-48">
-                      <div className={`w-1 h-6 rounded-full mr-3 mt-1 shrink-0 ${
-                        darkMode ? 'bg-blue-500' : 'bg-blue-600'
-                      }`}></div>
-                      <div className="min-w-0">
-                        <div className={`text-xs font-medium mb-1 uppercase tracking-wide ${
-                          darkMode ? 'text-gray-400' : 'text-gray-500'
-                        }`}>Email</div>
-                        <a href="mailto:cinf@chinalco.com.cn" className={`text-sm hover:opacity-80 transition-opacity ${
-                          darkMode ? 'text-blue-400' : 'text-blue-600'
-                        }`}>cinf@chinalco.com.cn</a>
+                    <div className={`rounded-lg border px-3 py-2.5 ${darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white'}`}>
+                      <div className={`text-xs font-semibold leading-tight ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>人力资源部（党委组织部）</div>
+                      <div className="mt-1.5 text-sm">
+                        <span className={darkMode ? 'text-gray-500' : 'text-gray-500'}>电话 </span>
+                        <a href="tel:0731-84397022" className={`hover:opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>0731-84397022</a>
                       </div>
                     </div>
                   </div>
-
-                  <p className={`${sectionKickerCls} mt-2`}>对外联络</p>
-                  <h3 className={`${sectionTitleCls} mb-4 text-base sm:text-lg`}>业务联系</h3>
-                  <div className="space-y-4">
-                        <div className={`p-5 rounded-xl border ${
-                          darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white shadow-sm'
-                        }`}>
-                          <div className={`font-semibold mb-3 text-sm ${
-                            darkMode ? 'text-gray-200' : 'text-gray-900'
-                          }`}>
-                            生产运营中心（市场开发部）
-                          </div>
-                          <div className="space-y-2 ml-4">
-                            <div className="flex items-center">
-                              <span className={`text-xs font-medium w-16 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                电话：
-                              </span>
-                              <a 
-                                href="tel:0731-84397070"
-                                className={`text-sm hover:opacity-80 transition-opacity ${
-                                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                                }`}
-                              >
-                                0731-84397070
-                              </a>
-                            </div>
-                            <div className="flex items-center">
-                              <span className={`text-xs font-medium w-16 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                Email：
-                              </span>
-                              <a 
-                                href="mailto:cinf_scjy@chinalco.com.cn" 
-                                className={`text-sm hover:opacity-80 transition-opacity ${
-                                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                                }`}
-                              >
-                                cinf_scjy@chinalco.com.cn
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className={`p-5 rounded-xl border ${
-                          darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white shadow-sm'
-                        }`}>
-                          <div className={`font-semibold mb-3 text-sm ${
-                            darkMode ? 'text-gray-200' : 'text-gray-900'
-                          }`}>
-                            海外业务中心（海外发展中心）
-                          </div>
-                          <div className="space-y-2 ml-4">
-                            <div className="flex items-center">
-                              <span className={`text-xs font-medium w-16 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                电话：
-                              </span>
-                              <a 
-                                href="tel:0086-731-84397078"
-                                className={`text-sm hover:opacity-80 transition-opacity ${
-                                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                                }`}
-                              >
-                                0086-731-84397078 / 0086-731-84397079
-                              </a>
-                            </div>
-                            <div className="flex items-center">
-                              <span className={`text-xs font-medium w-16 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                Email：
-                              </span>
-                              <a 
-                                href="mailto:cinf_intl@chinalco.com.cn" 
-                                className={`text-sm hover:opacity-80 transition-opacity ${
-                                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                                }`}
-                              >
-                                cinf_intl@chinalco.com.cn
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className={`p-5 rounded-xl border ${
-                          darkMode ? 'border-gray-600 bg-gray-800/40' : 'border-slate-200 bg-white shadow-sm'
-                        }`}>
-                          <div className={`font-semibold mb-3 text-sm ${
-                            darkMode ? 'text-gray-200' : 'text-gray-900'
-                          }`}>
-                            人力资源部（党委组织部）
-                          </div>
-                          <div className="ml-4">
-                            <div className="flex items-center">
-                              <span className={`text-xs font-medium w-16 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
-                                电话：
-                              </span>
-                              <a 
-                                href="tel:0731-84397022"
-                                className={`text-sm hover:opacity-80 transition-opacity ${
-                                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                                }`}
-                              >
-                                0731-84397022
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                </div>
               </div>
             </div>
           </div>
