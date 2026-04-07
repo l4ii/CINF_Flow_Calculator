@@ -6143,32 +6143,44 @@ export default function MainContent({
                   })}
                 </div>
               </div>
-              {renderPrimaryResultCallout({
-                titleRow: (
-                  <>
-                    <InlineMath math="i" />
-                    <span>（清水单位管长水头损失，海澄–威廉）</span>：
-                  </>
-                ),
-                unitZh: 'kPa/m（千帕每米管长）',
-                bordered: true,
-                value: result?.success ? (
-                  <div className={`space-y-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                    <span className={`text-xl font-bold font-mono ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                      {result.result?.i != null ? String(result.result.i) : '—'}
-                    </span>
-                    {result.result?.intermediate &&
-                      renderIntermediateResultsBlock(
-                        Object.entries(result.result.intermediate),
-                        'clear_water_friction_loss'
-                      )}
-                  </div>
-                ) : result?.error ? (
-                  <span className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-600'}`}>{result.error}</span>
-                ) : (
-                  <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
-                ),
-              })}
+              {result?.success ? (
+                <>
+                  {renderPrimaryResultCallout({
+                    nameZh: '单位管长水头损失（清水，海澄–威廉）',
+                    symbolMath: 'i',
+                    unitZh: 'kPa/m（千帕每米管长）',
+                    bordered: true,
+                    value:
+                      result.result?.i != null ? (
+                        <span
+                          className={`text-xl font-bold font-mono ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}
+                        >
+                          {String(result.result.i)}
+                        </span>
+                      ) : (
+                        <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
+                      ),
+                  })}
+                  {result.result?.intermediate &&
+                    renderIntermediateResultsBlock(
+                      Object.entries(result.result.intermediate),
+                      'clear_water_friction_loss',
+                      'white'
+                    )}
+                </>
+              ) : (
+                renderPrimaryResultCallout({
+                  nameZh: '单位管长水头损失（清水，海澄–威廉）',
+                  symbolMath: 'i',
+                  unitZh: 'kPa/m（千帕每米管长）',
+                  bordered: true,
+                  value: result?.error ? (
+                    <span className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-600'}`}>{result.error}</span>
+                  ) : (
+                    <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
+                  ),
+                })
+              )}
             </>
           ) : isTotalHeadFormula ? (
             <>
