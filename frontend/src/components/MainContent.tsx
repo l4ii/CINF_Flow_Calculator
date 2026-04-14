@@ -11,7 +11,13 @@ import {
   formatHydraulicHeadTick,
   formatHydraulicLengthTick,
 } from '../utils/chartExportCanvas';
-import { APP_TAGLINE_EN, APP_TAGLINE_ZH } from '../constants/appCopy';
+import {
+  APP_EXPORT_FILENAME_PREFIX,
+  APP_NAME_EN,
+  APP_NAME_ZH,
+  APP_TAGLINE_EN,
+  APP_TAGLINE_ZH,
+} from '../constants/appCopy';
 
 /** API 中 unit 为 decimal 时表示无量纲小数：输入框后不再展示英文「decimal」 */
 function isApiDecimalUnit(unit: string | undefined | null): boolean {
@@ -2704,6 +2710,7 @@ export default function MainContent({
   const isSlurryFrictionWorkflow = formula?.id === 'slurry_friction_workflow'
   const isCentrifugalPumpTotalHead = formula?.id === 'centrifugal_pump_total_head'
   const isPositiveDisplacementPumpFormula = formula?.id === 'positive_displacement_pump_outlet_pressure'
+  const isKronodzeFormula = formula?.id === 'kronodze_pressure'
   const isTotalHeadFormula =
     formula?.id === 'slurry_total_head' || formula?.id === 'clear_water_total_head'
   
@@ -3770,7 +3777,7 @@ export default function MainContent({
 
   // 当参数改变且已锁定时，自动重新计算并比较
   useEffect(() => {
-    if (lockedVc !== null && formula && autoCalculateRef) {
+    if (lockedVc !== null && formula && autoCalculateRef && formula.id !== 'kronodze_pressure') {
       // 检查所有必填参数是否已填写
       const allParamsFilled = formula.parameters.every(param => {
         const value = parameters[param.name]
@@ -3799,7 +3806,7 @@ export default function MainContent({
     const electronAPI = (window as any).electronAPI
     if (electronAPI?.showAlert) {
       await electronAPI.showAlert({
-        title: 'CINF Flow Calculation Tool',
+        title: language === 'en' ? APP_NAME_EN : APP_NAME_ZH,
         message,
         detail: detail || ''
       })
@@ -4382,9 +4389,11 @@ export default function MainContent({
         <div ref={scrollContainerRef} className={mainScrollClassName}>
           <div className={contentWrapperClassName}>
             <div className="mb-5">
-              <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>长沙院浆体管道计算工具</h1>
+              <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
+              </h1>
               <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {APP_TAGLINE_ZH}
+                {language === 'en' ? APP_TAGLINE_EN : APP_TAGLINE_ZH}
               </p>
             </div>
 
@@ -4541,9 +4550,11 @@ export default function MainContent({
           <div className={contentWrapperClassName}>
             <div className="mb-5">
               <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                长沙院浆体管道计算工具
+                {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
               </h1>
-              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{APP_TAGLINE_ZH}</p>
+              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                {language === 'en' ? APP_TAGLINE_EN : APP_TAGLINE_ZH}
+              </p>
             </div>
 
             {/* Hero：渐变主视觉，左文右图（建筑效果图）*/}
@@ -4818,9 +4829,11 @@ export default function MainContent({
           <div ref={scrollContainerRef} className={mainScrollClassName}>
             <div className={contentWrapperClassName}>
               <div className="mb-5">
-                <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>长沙院浆体管道计算工具</h1>
+                <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                  {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
+                </h1>
                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {APP_TAGLINE_ZH}
+                  {language === 'en' ? APP_TAGLINE_EN : APP_TAGLINE_ZH}
                 </p>
               </div>
 
@@ -5090,12 +5103,12 @@ export default function MainContent({
             <h1 className={`text-2xl font-bold mb-2 ${
               darkMode ? 'text-gray-100' : 'text-gray-900'
             }`}>
-              长沙院浆体管道计算工具
+              {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
             </h1>
             <p className={`text-xs ${
               darkMode ? 'text-gray-400' : 'text-gray-500'
             }`}>
-              {APP_TAGLINE_ZH}
+              {language === 'en' ? APP_TAGLINE_EN : APP_TAGLINE_ZH}
             </p>
           </div>
 
@@ -5171,7 +5184,7 @@ export default function MainContent({
       ? {
           title: 'Settings',
           subtitle: 'Manage appearance and language, check for updates, view notices, and contact support.',
-          appName: 'Slurry Pipeline Calculator (CINF)',
+          appName: APP_NAME_EN,
           appOrg: 'China ENFI Engineering Corporation (CINF)',
           appearancePref: 'Appearance & Preferences',
           displayMode: 'Theme',
@@ -5184,9 +5197,9 @@ export default function MainContent({
           feedbackTitle: 'Feedback',
           feedbackDesc: 'Feature suggestions, issue reports, or collaboration inquiries—feel free to contact the team.',
           contactDev: 'Contact the Team',
-          mailSubject: '[Slurry Pipeline Calculator] Feedback',
+          mailSubject: `[${APP_NAME_EN}] Feedback`,
           mailBody:
-            'App: Slurry Pipeline Calculator (CINF)\n\nType: □ Feature request  □ Bug report  □ Other\n\nDetails:\n\n\n\n',
+            `App: ${APP_NAME_EN}\n\nType: □ Feature request  □ Bug report  □ Other\n\nDetails:\n\n\n\n`,
           updatesTitle: 'App Update',
           currentVersion: 'Current version',
           checkUpdates: 'Check for updates',
@@ -5213,7 +5226,7 @@ export default function MainContent({
       : {
           title: '设置',
           subtitle: '管理显示与语言、检查更新、查看声明与反馈方式',
-          appName: '长沙院浆体管道计算工具',
+          appName: APP_NAME_ZH,
           appOrg: '长沙有色冶金设计研究院有限公司',
           appearancePref: '外观与偏好',
           displayMode: '显示模式',
@@ -5226,8 +5239,8 @@ export default function MainContent({
           feedbackTitle: '建议与反馈',
           feedbackDesc: '功能建议、问题反馈或合作意向，欢迎联系开发团队。',
           contactDev: '联系开发团队',
-          mailSubject: '【长沙院浆体管道计算工具】软件建议与反馈',
-          mailBody: '软件名称：长沙院浆体管道计算工具\n\n建议/反馈类型：□ 功能建议  □ 问题反馈  □ 其他\n\n内容说明：\n\n\n\n',
+          mailSubject: `【${APP_NAME_ZH}】软件建议与反馈`,
+          mailBody: `软件名称：${APP_NAME_ZH}\n\n建议/反馈类型：□ 功能建议  □ 问题反馈  □ 其他\n\n内容说明：\n\n\n\n`,
           updatesTitle: '应用更新',
           currentVersion: '当前版本',
           checkUpdates: '检查更新',
@@ -6026,7 +6039,8 @@ export default function MainContent({
       const response = await axios.post(`${API_BASE_URL}/calculate`, {
         formula_id: effectiveFormulaId,
         parameters: validParameters,
-        locked_vc: lockedVc // 发送锁定的临界流速到后端
+        // B.C.克诺罗兹法不参与锁定反推
+        locked_vc: formula.id === 'kronodze_pressure' ? null : lockedVc
       }, {
         timeout: API_TIMEOUT
       })
@@ -6190,7 +6204,7 @@ export default function MainContent({
     try {
       let savePath: string | null = null
       if (useSaveDialog) {
-        const defaultName = `长沙院浆体计算_${formula.name.replace(/\s+/g, '')}_${new Date().toISOString().split('T')[0].replace(/-/g, '')}.docx`
+        const defaultName = `${APP_EXPORT_FILENAME_PREFIX}_${formula.name.replace(/\s+/g, '')}_${new Date().toISOString().split('T')[0].replace(/-/g, '')}.docx`
         savePath = await electronAPI.showSaveDialogForExport(defaultName)
         if (savePath == null) {
           setExporting(false)
@@ -6233,7 +6247,7 @@ export default function MainContent({
         const url = window.URL.createObjectURL(response.data)
         const link = document.createElement('a')
         link.href = url
-        let filename = `长沙院浆体计算_${formula.name.replace(/\s+/g, '')}_${new Date().toISOString().split('T')[0].replace(/-/g, '')}_001.docx`
+        let filename = `${APP_EXPORT_FILENAME_PREFIX}_${formula.name.replace(/\s+/g, '')}_${new Date().toISOString().split('T')[0].replace(/-/g, '')}_001.docx`
         const contentDisposition = response.headers['content-disposition']
         if (contentDisposition) {
           const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
@@ -6622,12 +6636,12 @@ export default function MainContent({
           <h1 className={`text-2xl font-bold mb-2 ${
             darkMode ? 'text-gray-100' : 'text-gray-900'
           }`}>
-            长沙院浆体管道计算工具
+            {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
           </h1>
           <p className={`text-xs ${
             darkMode ? 'text-gray-400' : 'text-gray-500'
           }`}>
-            {APP_TAGLINE_ZH}
+            {language === 'en' ? APP_TAGLINE_EN : APP_TAGLINE_ZH}
           </p>
         </div>
 
@@ -9276,29 +9290,91 @@ export default function MainContent({
                 })}
               </div>
 
-              {/* 3. 计算临界流速：公式 → 由步骤1、2结果计算，无额外参数 → 计算 → 结果 + 动画 */}
-              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-blue-900 bg-opacity-30 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
-                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>3. 计算临界流速</div>
-                <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('需先完成步骤1、2。由步骤1得到的 $C_d$（重量砂水比 $=W/G\\times100$）、步骤2得到的 $D_L$（临界管径 mm）及 $\\beta$，计算临界流速 $V_L$（m/s）。无需额外输入。')}
+              {/* 3. 计算临界流速：公式 + 参数输入（由步骤1、2自动导入，可微调） */}
+              <div className="rounded-xl border-2 p-5 mb-5 bg-white border-gray-300">
+                <div className="text-lg font-semibold mb-2 text-gray-800">3. 计算临界流速</div>
+                <p className="text-sm mb-3 text-gray-600">
+                  {renderDescriptionWithMath('需先完成步骤1、2。由步骤1得到的 $C_d$（重量砂水比 $=W/G\\times100$）、步骤2得到的 $D_L$（临界管径 mm）及 $\\beta$，计算临界流速 $V_L$（m/s）。')}
                 </p>
-                <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <div className="mb-3 text-gray-700">
                   <BlockMath math="V_L = 0.255\beta(1+2.48\sqrt[3]{C_d}\sqrt[4]{D_L})" />
                 </div>
-                {renderPrimaryResultCallout({
-                  nameZh: '临界流速',
-                  symbolMath: 'V_L',
-                  unitZh: 'm/s（米每秒，断面平均）',
-                  value: (
-                    <span
-                      className={`text-xl font-bold ${
-                        kronodzeStep3Visible ? (darkMode ? 'text-blue-400' : 'text-blue-600') : darkMode ? 'text-gray-500' : 'text-gray-400'
-                      }`}
-                    >
-                      {kronodzeStep3Visible && result?.success && result.result?.Vc !== undefined ? result.result.Vc : '—'}
-                    </span>
-                  ),
-                })}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">
+                      {renderDescriptionWithMath('$\\beta$：固体物料相对密度修正系数，单位为 无量纲')}
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={rawInputs['beta'] ?? (parameters['beta'] != null && !isNaN(parameters['beta']!) ? String(parameters['beta']) : '')}
+                        onChange={(e) => handleParameterChange('beta', e.target.value)}
+                        onBlur={() => handleParameterBlur('beta')}
+                        className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
+                        placeholder="固体物料相对密度修正系数，如1.20"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">
+                      {renderDescriptionWithMath('$W$：干尾矿重量，单位为 t/h')}
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={rawInputs['W'] ?? (parameters['W'] != null && !isNaN(parameters['W']!) ? String(parameters['W']) : '')}
+                        onChange={(e) => handleParameterChange('W', e.target.value)}
+                        onBlur={() => handleParameterBlur('W')}
+                        className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
+                        placeholder="干尾矿重量，如120"
+                      />
+                      <span className="text-sm shrink-0 text-gray-500">t/h</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">
+                      {renderDescriptionWithMath('$G$：矿浆中水重，单位为 t/h')}
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={rawInputs['G'] ?? (parameters['G'] != null && !isNaN(parameters['G']!) ? String(parameters['G']) : '')}
+                        onChange={(e) => handleParameterChange('G', e.target.value)}
+                        onBlur={() => handleParameterBlur('G')}
+                        className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
+                        placeholder="矿浆中水重，如240"
+                      />
+                      <span className="text-sm shrink-0 text-gray-500">t/h</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">
+                      {renderDescriptionWithMath('$D_L$：临界管径，单位为 mm')}
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={
+                          result?.success && result.result?.intermediate?.step_B_DL_mm != null
+                            ? String(result.result.intermediate.step_B_DL_mm)
+                            : ''
+                        }
+                        readOnly
+                        className="flex-1 px-3 py-2 border rounded-lg bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed"
+                        placeholder="完成步骤2后自动导入"
+                      />
+                      <span className="text-sm shrink-0 text-gray-500">mm</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* 克诺罗兹法中间计算结果（白底分区，与全站一致） */}
@@ -9461,7 +9537,7 @@ export default function MainContent({
           )}
         </div>
 
-        {/* Results Section：克诺罗兹法在完成步骤3得到 V_L 后与本区联动（锁定/对比）；步骤未完成时不显示本区以免与步骤内结果重复 */}
+        {/* Results Section：克诺罗兹法完成步骤3后联动显示结果与动画；步骤未完成时不显示本区以免与步骤内结果重复 */}
         {(formula?.id !== 'kronodze_pressure' || kronodzeStep3Visible) &&
           formula?.id !== 'slurry_friction_loss' &&
           formula?.id !== 'density_mixing' &&
@@ -9491,7 +9567,8 @@ export default function MainContent({
                 result?.success &&
                 result.result?.Vc !== undefined &&
                 !isSlurryAccelFormula &&
-                formula?.id !== 'friction_loss' ? (
+                formula?.id !== 'friction_loss' &&
+                !isKronodzeFormula ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -9566,7 +9643,79 @@ export default function MainContent({
                 return <span className={`text-xl font-bold ${tone}`}>{text}</span>
               })(),
               footer:
-                lockedVc !== null ? (
+                isKronodzeFormula &&
+                kronodzeStep3Visible &&
+                result?.success &&
+                result.result?.Vc !== undefined ? (
+                  (() => {
+                    const animationType = result.animation_type || 'still-flow'
+                    const statusText =
+                      animationType === 'settle-30'
+                        ? '⚠️ 严重沉降'
+                        : animationType === 'settle-20'
+                          ? '⚠️ 中度沉降'
+                          : animationType === 'settle-10-flow'
+                            ? '⚠️ 轻度沉降'
+                            : animationType === 'still-flow'
+                              ? '临界状态'
+                              : animationType === 'medium-flow'
+                                ? '✅ 正常流动'
+                                : '✅ 快速流动'
+                    const statusColor =
+                      animationType === 'settle-30'
+                        ? darkMode ? 'text-red-300' : 'text-red-700'
+                        : animationType === 'settle-20'
+                          ? darkMode ? 'text-orange-300' : 'text-orange-700'
+                          : animationType === 'settle-10-flow'
+                            ? darkMode ? 'text-yellow-300' : 'text-yellow-700'
+                            : animationType === 'still-flow'
+                              ? darkMode ? 'text-blue-300' : 'text-blue-700'
+                              : darkMode ? 'text-green-300' : 'text-green-700'
+                    return (
+                      <div
+                        className={`mt-2 pt-2 border-t ${
+                          darkMode ? 'border-blue-700' : 'border-blue-200'
+                        }`}
+                      >
+                        <div className={`mt-1 py-2 px-3 rounded text-xs border ${
+                          darkMode
+                            ? 'bg-blue-900 bg-opacity-30 text-gray-200 border-blue-600'
+                            : 'bg-blue-100 text-gray-800 border-blue-300'
+                        }`}>
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1 min-w-0" style={{ flex: '2', maxWidth: '66.666%' }}>
+                              <div className="flex items-center justify-between gap-2 mb-1.5">
+                                <div className={`font-semibold ${statusColor}`}>{statusText}</div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFullscreenAnimationType(animationType)
+                                    setFullscreenStatusText(statusText)
+                                    setFullscreenStatusColor(statusColor)
+                                    setIsAnimationFullscreen(true)
+                                  }}
+                                  className={`shrink-0 px-2 py-1 rounded text-[11px] border transition-colors ${
+                                    darkMode
+                                      ? 'bg-gray-800/50 border-gray-500 text-gray-200 hover:bg-gray-800'
+                                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  全屏展示
+                                </button>
+                              </div>
+                              <div className="text-xs leading-relaxed break-words">
+                                根据临界流速计算结果展示当前流态动画。
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0" style={{ flex: '1', minWidth: '120px', maxWidth: '33.333%' }}>
+                              {renderFlowAnimation(animationType, statusColor, 'small')}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()
+                ) : lockedVc !== null ? (
                   <div
                     className={`mt-2 pt-2 border-t ${
                       darkMode ? 'border-blue-700' : 'border-blue-200'
