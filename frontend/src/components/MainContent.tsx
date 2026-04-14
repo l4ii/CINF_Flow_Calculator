@@ -13,9 +13,85 @@ import {
 } from '../utils/chartExportCanvas';
 import { APP_TAGLINE_EN, APP_TAGLINE_ZH } from '../constants/appCopy';
 
+/** API 中 unit 为 decimal 时表示无量纲小数：输入框后不再展示英文「decimal」 */
+function isApiDecimalUnit(unit: string | undefined | null): boolean {
+  if (unit == null || String(unit).trim() === '') return false
+  return String(unit).trim().toLowerCase() === 'decimal'
+}
+
+/** 将标签里「单位为 decimal」改为中文填写说明（兼容未更新的后端文案） */
+function displayParamLabelFromApi(label: string, unit: string | undefined | null): string {
+  if (!label) return label
+  let s = label.trim()
+
+  if (isApiDecimalUnit(unit)) {
+    s = s.replace(/\s*，\s*单位为\s*decimal\s*$/i, '，0~1小数')
+    s = s.replace(/\s*单位为\s*decimal\s*$/i, '（请以小数填写）')
+    s = s.replace(/单位为\s*decimal/gi, '请以小数填写（含小数点）')
+    return s
+  }
+
+  // 统一输入参数命名样式：符号：中文名，单位为 xxx
+  const m = s.match(/^(\$[^$]+\$)\s*[：:]\s*(.+)$/)
+  if (!m) return s
+  const symbol = m[1]
+  let desc = m[2].trim()
+  desc = desc.replace(/\s*，?\s*单位为\s*[^，。；)]*/gi, '').trim()
+  desc = desc.replace(/[，,]\s*$/, '').trim()
+
+  const u = unit == null ? '' : String(unit).trim()
+  if (u) return `${symbol}：${desc}，单位为 ${u}`
+  return `${symbol}：${desc}`
+}
+
+function shouldShowParameterUnitSuffix(unit: string | undefined | null): boolean {
+  if (unit == null || String(unit).trim() === '') return false
+  if (isApiDecimalUnit(unit)) return false
+  return true
+}
+
+function paramUnitFromFormula(parameters: Parameter[] | undefined, name: string): string {
+  return parameters?.find((p) => p.name === name)?.unit ?? ''
+}
+
+/** 与后端参数定义对应的「输入框右侧单位」；decimal 类不展示后缀 */
+function paramUnitDisplaySuffix(parameters: Parameter[] | undefined, name: string): string {
+  const u = paramUnitFromFormula(parameters, name)
+  return shouldShowParameterUnitSuffix(u) ? u : ''
+}
+
+function decimalParameterPlaceholder(defaultVal: number | string | undefined): string {
+  const hint = '请以小数填写（含小数点）'
+  if (defaultVal !== undefined && defaultVal !== null && String(defaultVal).trim() !== '') {
+    return `${hint}，如 ${defaultVal}`
+  }
+  return hint
+}
+
+/** 临界流速公式中 $C_V$ 占位符：仅提示展开辅助计算（0～1、小数等见标签） */
+const CV_VOLUME_ASSIST_HINT = '点击输入框展开「体积浓度辅助计算」'
+
+function cvParameterPlaceholder(): string {
+  return CV_VOLUME_ASSIST_HINT
+}
+
 /** 与「浆体总扬程」页一致：参数行用侧栏 API 的 label（含符号+中文），占位符用中文提示 */
 function paramLabelFromFormula(parameters: Parameter[] | undefined, name: string): string {
-  return parameters?.find((p) => p.name === name)?.label ?? name
+  const p = parameters?.find((x) => x.name === name)
+  const raw = p?.label ?? name
+  return displayParamLabelFromApi(raw, p?.unit)
+}
+
+function suggestedNumericPlaceholder(
+  parameters: Parameter[] | undefined,
+  name: string,
+  fallbackExample = '0.05'
+): string {
+  const formattedLabel = paramLabelFromFormula(parameters, name)
+  const m = formattedLabel.match(/^[^：:]+[：:]\s*([^，,（(]+)/)
+  const zhName = (m?.[1] ?? '').trim()
+  if (zhName) return `${zhName}，如 ${fallbackExample}`
+  return `${name}，如 ${fallbackExample}`
 }
 
 function paramPlaceholderFromFormula(
@@ -24,13 +100,16 @@ function paramPlaceholderFromFormula(
   hintZh: Record<string, string>
 ): string {
   if (hintZh[name]) return hintZh[name]
-  const d = parameters?.find((p) => p.name === name)?.default
+  const p = parameters?.find((x) => x.name === name)
+  if (name === 'Cv') {
+    return cvParameterPlaceholder()
+  }
+  if (p && isApiDecimalUnit(p.unit)) {
+    return decimalParameterPlaceholder(p.default as number | undefined)
+  }
+  const d = p?.default
   if (d !== undefined) return String(d)
-  return '请输入数值'
-}
-
-function paramUnitFromFormula(parameters: Parameter[] | undefined, name: string): string {
-  return parameters?.find((p) => p.name === name)?.unit ?? ''
+  return suggestedNumericPlaceholder(parameters, name)
 }
 
 /** 离心泵分步输入：占位中文说明（label 来自 app.py） */
@@ -48,9 +127,13 @@ const CENTRIFUGAL_PARAM_PLACEHOLDER_ZH: Record<string, string> = {
   eta_b: '请填写泵扬送清水时的效率（小数）',
 }
 
-/** 离心泵步骤3：η_j 下拉与手填同步 */
-function inferCentrifugalEtaJPreset(eta: number | undefined): 'custom' | 'coupling' | 'belt' | 'gear' {
-  if (eta == null || isNaN(eta)) return 'custom'
+/** 离心泵步骤3：η_j 下拉与手填同步（空值且非用户显式选「自定义」时视为联轴器缺省） */
+function inferCentrifugalEtaJPreset(
+  eta: number | undefined,
+  userWantsCustom: boolean
+): 'custom' | 'coupling' | 'belt' | 'gear' {
+  if ((eta == null || isNaN(eta)) && userWantsCustom) return 'custom'
+  if (eta == null || isNaN(eta)) return 'coupling'
   if (Math.abs(eta - 1) < 1e-5) return 'coupling'
   if (eta >= 0.9 - 1e-9 && eta <= 0.94 + 1e-9) return 'belt'
   if (eta >= 0.97 - 1e-9 && eta <= 0.98 + 1e-9) return 'gear'
@@ -82,7 +165,7 @@ const SLURRY_FRICTION_CHAIN_IDS = [
 const SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS = [
   {
     name: 'rho_g' as const,
-    label: '$\\rho_g$：液相密度',
+    label: '$\\rho_g$：固体密度',
     unit: 't/m³',
     placeholder: '清水常取 1',
   },
@@ -94,7 +177,7 @@ const SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS = [
   },
   {
     name: 'C1v' as const,
-    label: '$C_{1v}$：液相体积浓度',
+    label: '$C_{1V}$：液相体积浓度',
     unit: '无量纲',
     placeholder: '液相体积分数 0～1，如 0.85',
   },
@@ -158,13 +241,13 @@ const SLURRY_FRICTION_WF_STEP1_FIELDS = [
   },
   {
     name: 'rho_g' as const,
-    label: '$\\rho_g$：载体（液相）密度',
+    label: '$\\rho_g$：固体密度',
     unit: 't/m³',
     placeholder: '清水常取 1',
   },
   {
     name: 'rho_s' as const,
-    label: '$\\rho_s$：固体颗粒密度',
+    label: '$\\rho_s$：固体密度',
     unit: 't/m³',
     placeholder: '如 2.65',
   },
@@ -197,7 +280,7 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
   },
   {
     name: 'rho_s' as const,
-    label: '$\\rho_s$：固体颗粒密度',
+    label: '$\\rho_s$：固体密度',
     unit: 't/m³',
     placeholder: '与步骤1 同单位，如 2.65',
   },
@@ -214,9 +297,9 @@ const SLURRY_FRICTION_WF_STEP_INTROS: Record<
   string
 > = {
   step1:
-    '依据固体质量浓度 $C_w$ 与液相密度 $\\rho_g$、固相密度 $\\rho_s$，按质量加权关系求浆体当量密度 $\\rho_k$（t/m³），供后续水力坡降计算使用。',
+    '依据固体质量浓度 $C_w$ 与固体密度 $\\rho_g$、固相密度 $\\rho_s$，按质量加权关系求浆体当量密度 $\\rho_k$（t/m³），供后续水力坡降计算使用。',
   darcy_rho1:
-    '依据液相密度 $\\rho_g$、固相密度 $\\rho_s$ 与液相体积浓度 $C_{1v}$，按体积加权求混合物密度 $\\rho_1$（t/m³）。计算结果写入后续雷诺数及摩阻系数求解所用参数集；若 $\\rho_1$ 已由设计或试验给定，可省略本步并于步骤 3 直接输入。',
+    '依据固体密度 $\\rho_g$、固相密度 $\\rho_s$ 与液相体积浓度 $C_{1V}$，按体积加权求混合物密度 $\\rho_1$（t/m³）。计算结果写入后续雷诺数及摩阻系数求解所用参数集；若 $\\rho_1$ 已由设计或试验给定，可省略本步并于步骤 3 直接输入。',
   darcy_re:
     '在已知 $\\rho_1$（t/m³）、断面平均流速 $V$、管道内径 $D_n$ 及混合物动力粘度 $\\eta_1$ 的前提下，按 $Re_B = V D_n \\cdot 1000\\rho_1 / \\eta_1$ 求混合物雷诺数（程序内将 $\\rho_1$ 换算为 kg/m³）。结果用于步骤 4 的 $\\lambda$ 求解；若 $Re_B$ 已由其他途径取得，可省略本步并于步骤 4 直接输入。',
   darcy_lambda:
@@ -307,6 +390,528 @@ function ClearWaterChPresetMenu({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  )
+}
+
+/** 临界流速三公式：$C_V$ 与「体积浓度辅助计算」（C/C_A→C_V）合一 */
+function CvVolumeConcentrationField({
+  darkMode,
+  inputValue,
+  onInputChange,
+  onInputBlur,
+  placeholder,
+  unit,
+  onApplyCvFromRatio,
+}: {
+  darkMode: boolean
+  inputValue: string
+  onInputChange: (value: string) => void
+  onInputBlur: () => void
+  placeholder: string
+  unit: ReactNode
+  onApplyCvFromRatio: (cvDecimalString: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [cStr, setCStr] = useState('')
+  const [caStr, setCaStr] = useState('')
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      const el = wrapRef.current
+      if (el && !el.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+  const c = parseFloat(norm(cStr))
+  const ca = parseFloat(norm(caStr))
+  const ratioOk = Number.isFinite(c) && Number.isFinite(ca) && Math.abs(ca) > 1e-15
+  const cvRaw = ratioOk ? c / ca : NaN
+  const cvRounded = Number.isFinite(cvRaw) ? Math.round(cvRaw * 1e6) / 1e6 : NaN
+  const outOfUnitRange = Number.isFinite(cvRounded) && (cvRounded < 0 || cvRounded > 1)
+
+  const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
+  const shellBg = darkMode ? 'bg-gray-600' : 'bg-white'
+  const shellFocus = open ? 'ring-2 ring-blue-500 ring-offset-0 border-blue-500' : ''
+  const innerInputCls = `min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-base focus:outline-none focus:ring-0 ${
+    darkMode ? 'text-gray-100 placeholder-gray-400' : 'text-gray-900'
+  }`
+  const chevronBtnCls = `flex h-full shrink-0 items-center justify-center border-l px-2.5 transition-colors ${
+    darkMode
+      ? `border-gray-500 text-gray-300 hover:bg-gray-500/40 ${open ? 'bg-gray-500/30' : ''}`
+      : `border-gray-300 text-gray-500 hover:bg-gray-50 ${open ? 'bg-gray-50' : ''}`
+  }`
+  const panelCls = `absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border shadow-lg ${
+    darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
+  }`
+  const panelInnerCls = darkMode ? 'border-gray-600' : 'border-gray-100'
+  const subInputCls = `mt-1 w-full rounded-lg border px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+    darkMode ? 'border-gray-500 bg-gray-700/80 text-gray-100' : 'border-gray-300 bg-gray-50 text-gray-900'
+  }`
+  const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
+  const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
+
+  return (
+    <div className="relative min-w-0 flex-1" ref={wrapRef}>
+      <div className="flex items-stretch space-x-2">
+        <div
+          className={`flex min-w-0 flex-1 overflow-hidden rounded-lg border ${shellBorder} ${shellBg} ${shellFocus}`}
+        >
+          <input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            spellCheck={false}
+            value={inputValue}
+            onChange={(e) => onInputChange(e.target.value)}
+            onBlur={onInputBlur}
+            onClick={() => setOpen(true)}
+            onFocus={() => setOpen(true)}
+            placeholder={placeholder}
+            className={innerInputCls}
+            aria-expanded={open}
+            aria-controls="cv-ratio-panel"
+            id="cv-volume-concentration-input"
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            className={chevronBtnCls}
+            aria-label={open ? '收起体积浓度辅助计算' : '展开体积浓度辅助计算'}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
+              ▼
+            </span>
+          </button>
+        </div>
+        {unit}
+      </div>
+
+      {open && (
+        <div
+          id="cv-ratio-panel"
+          className={panelCls}
+          role="region"
+          aria-labelledby="cv-volume-concentration-input"
+        >
+          <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
+            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>体积浓度辅助计算</div>
+            <p className={`mt-1 text-[11px] leading-relaxed ${hintMuted}`}>
+              本页 <InlineMath math="C_V" /> 为<strong className="font-medium">体积浓度（小数 0～1）</strong>
+              ，含义是<strong className="font-medium">固相所占体积</strong>与<strong className="font-medium">浆体混合物总体积</strong>
+              之比。若资料给出的是两个体积（或同一量纲下的计量），可用下式换算后再写入上方输入框。
+            </p>
+            <div className={`mt-2 overflow-x-auto rounded-md py-1 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+              <BlockMath math="C_V = \dfrac{C}{C_A}" />
+            </div>
+          </div>
+
+          <div className="space-y-3 px-3 py-3">
+            <div>
+              <div className={`text-xs font-medium ${hintStrong}`}>
+                <InlineMath math="C" />
+              </div>
+              <p className={`mt-0.5 text-[11px] leading-snug ${hintMuted}`}>
+                填<strong>固相体积</strong>：与 <InlineMath math="C_A" />{' '}
+                <strong>必须用同一单位</strong>（如均为 m³、mL、L）。可取量筒读数、析水/沉降后固体体积，或报告给出的固体体积当量。
+              </p>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                spellCheck={false}
+                value={cStr}
+                onChange={(e) => setCStr(e.target.value)}
+                className={subInputCls}
+                placeholder="例：与 C_A 同单位的固相体积"
+              />
+            </div>
+            <div>
+              <div className={`text-xs font-medium ${hintStrong}`}>
+                <InlineMath math="C_A" />
+              </div>
+              <p className={`mt-0.5 text-[11px] leading-snug ${hintMuted}`}>
+                填<strong>浆体混合物总体积</strong>（液相 + 固相在浆样中占据的总体积），与 <InlineMath math="C" />{' '}
+                同单位。<strong>不可为 0</strong>。
+              </p>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                spellCheck={false}
+                value={caStr}
+                onChange={(e) => setCaStr(e.target.value)}
+                className={subInputCls}
+                placeholder="例：浆样总体积（与 C 同单位）"
+              />
+            </div>
+
+            <div
+              className={`rounded-lg border px-2.5 py-2 text-xs ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
+            >
+              <InlineMath math="C_V" />
+              <span className={hintMuted}> = </span>
+              {ratioOk ? (
+                <span className="font-mono text-sm font-semibold">{String(cvRounded)}</span>
+              ) : (
+                <span className={hintMuted}>—（请填写有效数值且分母非零）</span>
+              )}
+            </div>
+
+            <p className={`text-[11px] leading-relaxed ${hintMuted}`}>
+              <span className="font-medium text-inherit">示例：</span>
+              量筒中浆样总体积 <InlineMath math="C_A=100\ \mathrm{mL}" />
+              ，固体体积 <InlineMath math="C=15\ \mathrm{mL}" />
+              ，则 <InlineMath math="C_V=0.15" />
+              （再点「填入」写入上方）。
+            </p>
+
+            {outOfUnitRange && (
+              <p className={`text-[11px] leading-snug ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
+                当前比值超出 0～1，临界流速计算通常要求 <InlineMath math="C_V" /> 为小数形式 0～1；请核对试验定义或单位是否一致。
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-0.5">
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                  darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setOpen(false)}
+              >
+                收起
+              </button>
+              <button
+                type="button"
+                disabled={!ratioOk}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+                  darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (!ratioOk) return
+                  onApplyCvFromRatio(String(cvRounded))
+                  setOpen(false)
+                }}
+              >
+                填入上方 <InlineMath math="C_V" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 刘德忠公式：宾汉体（η）辅助推算颗粒沉速，挂在本页 ω_s（沉降速度）输入栏；ρ_g/ρ_k/g 与主表同步 */
+/** 与规范 (C.0.3-1) 一致：N_ω = (4.53²/N_d)[√(1+N_d^{1.5}/(0.213^{0.5}×4.53²))−1]² */
+const LIU_BINGHAM_REF = 4.53
+const LIU_BINGHAM_NW_COEF = LIU_BINGHAM_REF ** 2
+const LIU_BINGHAM_NW_INNER_DENOM = Math.sqrt(0.213) * LIU_BINGHAM_NW_COEF
+
+function LiuDezhongOmegaSBinghamField({
+  darkMode,
+  inputValue,
+  onInputChange,
+  onInputBlur,
+  placeholder,
+  unit,
+  parameters,
+  onApplyOmegaS,
+}: {
+  darkMode: boolean
+  inputValue: string
+  onInputChange: (value: string) => void
+  onInputBlur: () => void
+  placeholder: string
+  unit: ReactNode
+  parameters: Record<string, number | undefined>
+  onApplyOmegaS: (omegaSStr: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [rhoGStr, setRhoGStr] = useState('')
+  const [rhoKStr, setRhoKStr] = useState('')
+  const [gStr, setGStr] = useState('9.81')
+  const [gbStr, setGbStr] = useState('')
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const rg = parameters.rho_g
+    const rk = parameters.rho_k
+    const g0 = parameters.g
+    if (rg != null && !isNaN(Number(rg))) setRhoGStr(String(rg))
+    if (rk != null && !isNaN(Number(rk))) setRhoKStr(String(rk))
+    if (g0 != null && !isNaN(Number(g0))) setGStr(String(g0))
+  }, [parameters.rho_g, parameters.rho_k, parameters.g])
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      const el = wrapRef.current
+      if (el && !el.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+  const rho_g = parseFloat(norm(rhoGStr))
+  const rho_k = parseFloat(norm(rhoKStr))
+  const gVal = parseFloat(norm(gStr))
+  const GB = parseFloat(norm(gbStr))
+
+  const deltaOk =
+    Number.isFinite(rho_g) &&
+    Number.isFinite(rho_k) &&
+    rho_k > 0 &&
+    rho_g > rho_k &&
+    Number.isFinite(GB) &&
+    GB > 0 &&
+    Number.isFinite(gVal) &&
+    gVal > 0
+
+  const delta = deltaOk ? rho_g / rho_k - 1 : NaN
+  const D_L =
+    deltaOk && delta > 0 ? (GB / rho_k) ** (2 / 3) / (gVal * delta) ** (1 / 3) : NaN
+  const W_L = deltaOk && delta > 0 ? (gVal * delta * (GB / rho_k)) ** (1 / 3) : NaN
+  /** 与文献一致：代表粒径取上式标准度量粒径 D_L，故 N_d 中 d_i = D_L */
+  const d_i = Number.isFinite(D_L) && D_L > 0 ? D_L : NaN
+
+  const ndOk =
+    Number.isFinite(D_L) &&
+    D_L > 0 &&
+    Number.isFinite(d_i) &&
+    d_i > 0 &&
+    Number.isFinite(W_L) &&
+    W_L > 0
+
+  const N_d = ndOk ? d_i / D_L : NaN
+  const innerRadicand = ndOk ? 1 + N_d ** 1.5 / LIU_BINGHAM_NW_INNER_DENOM : NaN
+  const nwOk =
+    ndOk &&
+    Number.isFinite(innerRadicand) &&
+    innerRadicand >= 0 &&
+    N_d > 0 &&
+    Number.isFinite(N_d)
+
+  const N_omega = nwOk ? (LIU_BINGHAM_NW_COEF / N_d) * (Math.sqrt(innerRadicand) - 1) ** 2 : NaN
+  const w_i = nwOk && Number.isFinite(W_L) ? N_omega * W_L : NaN
+  const wRounded = Number.isFinite(w_i) ? Math.round(w_i * 1e6) / 1e6 : NaN
+
+  const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
+  const shellBg = darkMode ? 'bg-gray-600' : 'bg-white'
+  const shellFocus = open ? 'ring-2 ring-blue-500 ring-offset-0 border-blue-500' : ''
+  const innerInputCls = `min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-base focus:outline-none focus:ring-0 ${
+    darkMode ? 'text-gray-100 placeholder-gray-400' : 'text-gray-900'
+  }`
+  const chevronBtnCls = `flex h-full shrink-0 items-center justify-center border-l px-2.5 transition-colors ${
+    darkMode
+      ? `border-gray-500 text-gray-300 hover:bg-gray-500/40 ${open ? 'bg-gray-500/30' : ''}`
+      : `border-gray-300 text-gray-500 hover:bg-gray-50 ${open ? 'bg-gray-50' : ''}`
+  }`
+  const panelCls = `absolute left-0 right-0 z-50 mt-1.5 max-h-[min(70vh,32rem)] overflow-y-auto overflow-x-hidden rounded-xl border shadow-lg ${
+    darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
+  }`
+  const panelInnerCls = darkMode ? 'border-gray-600' : 'border-gray-100'
+  const subInputCls = `mt-1 w-full rounded-lg border px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+    darkMode ? 'border-gray-500 bg-gray-700/80 text-gray-100' : 'border-gray-300 bg-gray-50 text-gray-900'
+  }`
+  const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
+  const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
+
+  return (
+    <div className="relative min-w-0 flex-1" ref={wrapRef}>
+      <div className="flex items-stretch space-x-2">
+        <div
+          className={`flex min-w-0 flex-1 overflow-hidden rounded-lg border ${shellBorder} ${shellBg} ${shellFocus}`}
+        >
+          <input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            spellCheck={false}
+            value={inputValue}
+            onChange={(e) => onInputChange(e.target.value)}
+            onBlur={onInputBlur}
+            onClick={() => setOpen(true)}
+            onFocus={() => setOpen(true)}
+            placeholder={placeholder}
+            className={innerInputCls}
+            aria-expanded={open}
+            aria-controls="liu-omega-s-bingham-panel"
+            id="liu-omega-s-bingham-input"
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            className={chevronBtnCls}
+            aria-label={open ? '收起宾汉体颗粒沉速辅助' : '展开宾汉体颗粒沉速辅助计算'}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
+              ▼
+            </span>
+          </button>
+        </div>
+        {unit}
+      </div>
+
+      {open && (
+        <div id="liu-omega-s-bingham-panel" className={panelCls} role="region" aria-labelledby="liu-omega-s-bingham-input">
+          <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
+            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>颗粒沉速辅助计算公式（ <InlineMath math="\omega_s" />）</div>
+            <div className={`mt-2 space-y-2 overflow-x-auto text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+              <BlockMath math="d_L=\dfrac{\left(\eta/\rho_k\right)^{2/3}}{\left[g\left(\rho_g/\rho_k-1\right)\right]^{1/3}}" />
+              <BlockMath math="\omega_L=\left[g\left(\dfrac{\rho_g}{\rho_k}-1\right)\dfrac{\eta}{\rho_k}\right]^{1/3}" />
+              <BlockMath math="N_d=\dfrac{d_i}{d_L}" />
+              <BlockMath math="N_w=\dfrac{\omega_i}{\omega_L}" />
+              <BlockMath math="N_{\omega}=\dfrac{20.5209}{N_d}\left[\left(1+\dfrac{N_d^{1.5}}{0.213^{0.5}\times 4.53^2}\right)^{0.5}-1\right]^2" />
+              <BlockMath math="\omega_i=N_{\omega}\omega_L" />
+            </div>
+          </div>
+
+          <div className="space-y-3 px-3 py-3">
+            <p className={`text-[10px] leading-snug ${hintMuted}`}>
+              <InlineMath math="\rho_g" />、<InlineMath math="\rho_k" />、<InlineMath math="g" /> 已与本页主表同步；可在此修改。
+            </p>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="\rho_g" />：固体密度 · t/m³
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={rhoGStr}
+                  onChange={(e) => setRhoGStr(e.target.value)}
+                  className={subInputCls}
+                />
+              </div>
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="\rho_k" />：浆体密度 · t/m³
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={rhoKStr}
+                  onChange={(e) => setRhoKStr(e.target.value)}
+                  className={subInputCls}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="\eta" />：宾汉体参数
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={gbStr}
+                  onChange={(e) => setGbStr(e.target.value)}
+                  className={subInputCls}
+                  placeholder="试验或手册给出的刚度系数"
+                />
+              </div>
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="g" />：重力加速度 · m/s²
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={gStr}
+                  onChange={(e) => setGStr(e.target.value)}
+                  className={subInputCls}
+                  placeholder="9.81"
+                />
+              </div>
+            </div>
+
+            <div
+              className={`rounded-lg border px-2.5 py-2 text-[11px] ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
+            >
+              <div className={hintMuted}>
+                <InlineMath math="D_L" /> ={' '}
+                {Number.isFinite(D_L) ? <span className="font-mono font-semibold text-inherit">{String(Math.round(D_L * 1e9) / 1e9)}</span> : '—'}{' '}
+                m；<InlineMath math="d_i" /> = <InlineMath math="D_L" />；<InlineMath math="\omega_L" /> ={' '}
+                {Number.isFinite(W_L) ? <span className="font-mono font-semibold text-inherit">{String(Math.round(W_L * 1e9) / 1e9)}</span> : '—'}{' '}
+                m/s
+              </div>
+              <div className={`mt-1 ${hintMuted}`}>
+                <InlineMath math="N_d" /> = {Number.isFinite(N_d) ? <span className="font-mono font-semibold">{String(Math.round(N_d * 1e6) / 1e6)}</span> : '—'}；<InlineMath math="N_{\omega}" /> ={' '}
+                {Number.isFinite(N_omega) ? <span className="font-mono font-semibold">{String(Math.round(N_omega * 1e6) / 1e6)}</span> : '—'}
+              </div>
+              <div className={`mt-1 ${hintStrong}`}>
+                <InlineMath math="\omega_i" />（供填入 <InlineMath math="\omega_s" />）={' '}
+                {Number.isFinite(wRounded) ? <span className="font-mono text-sm font-semibold">{String(wRounded)}</span> : '—'}{' '}
+                m/s
+              </div>
+            </div>
+
+            {!deltaOk && (rhoGStr || rhoKStr || gbStr) && (
+              <p className={`text-[11px] ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
+                需满足 <InlineMath math="\rho_g>\rho_k" />、<InlineMath math="\rho_k>0" />、<InlineMath math="\eta>0" />、<InlineMath math="g>0" />。
+              </p>
+            )}
+            {deltaOk && !nwOk && gbStr && (
+              <p className={`text-[11px] ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
+                请检查 <InlineMath math="D_L" />、<InlineMath math="W_L" /> 使 <InlineMath math="N_d" /> 有效，且根号内非负。
+              </p>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-0.5">
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                  darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setOpen(false)}
+              >
+                收起
+              </button>
+              <button
+                type="button"
+                disabled={!Number.isFinite(wRounded)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+                  darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (!Number.isFinite(wRounded)) return
+                  onApplyOmegaS(String(wRounded))
+                  setOpen(false)
+                }}
+              >
+                填入上方 <InlineMath math="\omega_s" />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -458,6 +1063,78 @@ function buildMergedSlurryClearHydraulicData(
   return { data, slurryOk, clearOk }
 }
 
+/** 地形折线顶点：L 为沿管距离，z 为高度 (m)；id 用于编辑区稳定挂载 */
+type TerrainVertex = { L: number; z: number; id?: string }
+
+function newTerrainMiddleId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `m-${Date.now()}-${Math.random()}`
+}
+
+function parseTerrainMiddleBulk(
+  text: string,
+  Lmax: number
+): { ok: true; pts: TerrainVertex[] } | { ok: false; err: string } {
+  const pts: TerrainVertex[] = []
+  const lines = text.split(/\r?\n/)
+  let skippedHeader = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line || line.startsWith('#')) continue
+    const parts = line.split(/[,，\s;；\t]+/).filter(Boolean)
+    if (parts.length < 2) continue
+    const L = Number(parts[0])
+    const z = Number(parts[1])
+    if (!Number.isFinite(L) || !Number.isFinite(z)) {
+      if (!skippedHeader && pts.length === 0) {
+        skippedHeader = true
+        continue
+      }
+      return { ok: false, err: `第 ${i + 1} 行无法解析为数字：${line}` }
+    }
+    if (L <= 0 || L >= Lmax) {
+      return { ok: false, err: `第 ${i + 1} 行：管长须满足 0 < L < L_max（当前 L_max=${Lmax}）：${L}` }
+    }
+    pts.push({ L, z, id: newTerrainMiddleId() })
+  }
+  pts.sort((a, b) => a.L - b.L)
+  const dedup: TerrainVertex[] = []
+  for (const p of pts) {
+    if (dedup.length && Math.abs(dedup[dedup.length - 1].L - p.L) < 1e-9) dedup[dedup.length - 1] = p
+    else dedup.push(p)
+  }
+  return { ok: true, pts: dedup }
+}
+
+function mergeTerrainVertices(Lmax: number, z0: number, z1: number, middles: TerrainVertex[]): TerrainVertex[] {
+  const interior = middles.filter((p) => p.L > 0 && p.L < Lmax)
+  const verts: TerrainVertex[] = [
+    { L: 0, z: z0 },
+    ...interior,
+    { L: Lmax, z: z1 },
+  ]
+  verts.sort((a, b) => a.L - b.L)
+  const out: TerrainVertex[] = []
+  for (const v of verts) {
+    if (out.length && Math.abs(out[out.length - 1].L - v.L) < 1e-9) out[out.length - 1] = v
+    else out.push(v)
+  }
+  return out
+}
+
+function interpolateTerrainZ(L: number, verts: TerrainVertex[]): number {
+  if (verts.length === 0) return NaN
+  const lo = verts[0].L
+  const hi = verts[verts.length - 1].L
+  const x = Math.min(Math.max(L, lo), hi)
+  let i = 0
+  while (i < verts.length - 1 && verts[i + 1].L < x - 1e-12) i++
+  const a = verts[i]
+  const b = verts[i + 1] ?? a
+  if (!b || Math.abs(a.L - b.L) < 1e-12) return a.z
+  const t = (x - a.L) / (b.L - a.L)
+  return a.z + t * (b.z - a.z)
+}
+
 function computeSlurryHydraulicDerivativeValues(
   params: Record<string, number | undefined>
 ): null | { H: number; deltaHk: number; H0_slurry: number } {
@@ -607,6 +1284,36 @@ function HydraulicDerivativeResultsSection({
 
 const SLURRY_HYDRAULIC_LINE = '#F59E0B'
 const CLEAR_HYDRAULIC_LINE = '#3B82F6'
+/** 地形线：普通绿色（主图 / 预览 / 导出一致） */
+const TERRAIN_EXPORT_LINE = '#22c55e'
+const MAX_PRESS_HYDRAULIC_LINE = '#DC2626'
+
+type SlurryHydraulicChartRow = MergedHydraulicRow & { terrainZ?: number; maxPressZ?: number }
+
+type AppliedTerrainState = {
+  z0Str: string
+  z1Str: string
+  middlePts: TerrainVertex[]
+}
+
+function TerrainPreviewHoverSync({
+  active,
+  payload,
+  onHover,
+}: {
+  active?: boolean
+  payload?: { payload: { L: number; terrainZ: number } }[]
+  onHover: (v: { L: number; z: number } | null) => void
+}) {
+  useEffect(() => {
+    if (active && payload?.[0]?.payload) {
+      const p = payload[0].payload
+      if (Number.isFinite(p.L) && Number.isFinite(p.terrainZ)) onHover({ L: p.L, z: p.terrainZ })
+      else onHover(null)
+    } else onHover(null)
+  }, [active, payload, onHover])
+  return null
+}
 
 function SlurryClearHydraulicGradeChartBlock({
   darkMode,
@@ -619,6 +1326,18 @@ function SlurryClearHydraulicGradeChartBlock({
 }) {
   const [showSlurry, setShowSlurry] = useState(true)
   const [showClear, setShowClear] = useState(true)
+  /** 主图上的地形数据：仅「应用到主图」后写入 */
+  const [appliedTerrain, setAppliedTerrain] = useState<AppliedTerrainState | null>(null)
+  /** 编辑区草稿（未应用前不影响主图） */
+  const [draftZ0Str, setDraftZ0Str] = useState('0')
+  const [draftZ1Str, setDraftZ1Str] = useState('0')
+  const [draftMiddlePts, setDraftMiddlePts] = useState<TerrainVertex[]>([])
+  const [bulkText, setBulkText] = useState('')
+  const [editorErr, setEditorErr] = useState<string | null>(null)
+  const [manualLStr, setManualLStr] = useState('')
+  const [manualZStr, setManualZStr] = useState('')
+  const [previewHover, setPreviewHover] = useState<{ L: number; z: number } | null>(null)
+  const [showTerrainLine, setShowTerrainLine] = useState(true)
 
   const { data: chartData, slurryOk, clearOk } = useMemo(
     () => buildMergedSlurryClearHydraulicData(Lmax, slurryParams, HYDRAULIC_GRADE_CURVE_POINTS),
@@ -627,6 +1346,47 @@ function SlurryClearHydraulicGradeChartBlock({
 
   const stepStr = formatHydraulicGradeStep(Lmax, HYDRAULIC_GRADE_TICK_DIVISIONS)
   const xTicks = useMemo(() => hydraulicGradeXTicks(Lmax, HYDRAULIC_GRADE_TICK_DIVISIONS), [Lmax])
+
+  const appZ0 = appliedTerrain ? Number(appliedTerrain.z0Str) : NaN
+  const appZ1 = appliedTerrain ? Number(appliedTerrain.z1Str) : NaN
+  const terrainVerts = useMemo(
+    () =>
+      appliedTerrain
+        ? mergeTerrainVertices(Lmax, appZ0, appZ1, appliedTerrain.middlePts)
+        : [],
+    [Lmax, appZ0, appZ1, appliedTerrain]
+  )
+  const terrainDrawOk =
+    appliedTerrain != null &&
+    Number.isFinite(Lmax) &&
+    Lmax > 0 &&
+    Number.isFinite(appZ0) &&
+    Number.isFinite(appZ1) &&
+    terrainVerts.length >= 2
+
+  const dz0 = Number(draftZ0Str)
+  const dz1 = Number(draftZ1Str)
+  const draftVerts = useMemo(
+    () => mergeTerrainVertices(Lmax, dz0, dz1, draftMiddlePts),
+    [Lmax, dz0, dz1, draftMiddlePts]
+  )
+  const draftPreviewOk =
+    Number.isFinite(Lmax) && Lmax > 0 && Number.isFinite(dz0) && Number.isFinite(dz1) && draftVerts.length >= 2
+
+  const chartRows: SlurryHydraulicChartRow[] = useMemo(() => {
+    if (!terrainDrawOk) return chartData.map((r) => ({ ...r }))
+    return chartData.map((r) => {
+      const tz = interpolateTerrainZ(r.L, terrainVerts)
+      return {
+        ...r,
+        terrainZ: tz,
+        maxPressZ: Number.isFinite(tz) ? tz * 2 : undefined,
+      }
+    })
+  }, [chartData, terrainDrawOk, terrainVerts])
+
+  const hasVisibleTerrain = terrainDrawOk && showTerrainLine
+  const hasVisibleMaxPress = terrainDrawOk
 
   const rho_k = Number(slurryParams.rho_k)
   const rho_w_clear = SLURRY_CHART_CLEAR_WATER_RHO
@@ -644,7 +1404,7 @@ function SlurryClearHydraulicGradeChartBlock({
   const { yMin, yMax } = useMemo(() => {
     let lo = Infinity
     let hi = -Infinity
-    for (const d of chartData) {
+    for (const d of chartRows) {
       if (showSlurry && slurryOk && Number.isFinite(d.headSlurry)) {
         lo = Math.min(lo, d.headSlurry)
         hi = Math.max(hi, d.headSlurry)
@@ -653,6 +1413,14 @@ function SlurryClearHydraulicGradeChartBlock({
         lo = Math.min(lo, d.headClear)
         hi = Math.max(hi, d.headClear)
       }
+      if (hasVisibleTerrain && d.terrainZ != null && Number.isFinite(d.terrainZ)) {
+        lo = Math.min(lo, d.terrainZ)
+        hi = Math.max(hi, d.terrainZ)
+      }
+      if (hasVisibleMaxPress && d.maxPressZ != null && Number.isFinite(d.maxPressZ)) {
+        lo = Math.min(lo, d.maxPressZ)
+        hi = Math.max(hi, d.maxPressZ)
+      }
     }
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
       return { yMin: 0, yMax: 1 }
@@ -660,9 +1428,8 @@ function SlurryClearHydraulicGradeChartBlock({
     const span = Math.max(hi - lo, 1e-6)
     const pad = Math.max(span * 0.06, 0.5)
     return { yMin: lo - pad, yMax: hi + pad }
-  }, [chartData, showSlurry, showClear, slurryOk, clearOk])
+  }, [chartRows, showSlurry, showClear, slurryOk, clearOk, hasVisibleTerrain, hasVisibleMaxPress])
 
-  /** 导出 PNG 时 Y 域与界面双线全开时一致（与软件主图对齐） */
   const hydraulicExportYDomain = useMemo(() => {
     let lo = Infinity
     let hi = -Infinity
@@ -676,11 +1443,120 @@ function SlurryClearHydraulicGradeChartBlock({
         hi = Math.max(hi, d.headClear)
       }
     }
+    if (terrainDrawOk) {
+      for (const v of terrainVerts) {
+        lo = Math.min(lo, v.z)
+        hi = Math.max(hi, v.z)
+        lo = Math.min(lo, v.z * 2)
+        hi = Math.max(hi, v.z * 2)
+      }
+    }
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null
     const span = Math.max(hi - lo, 1e-6)
     const pad = Math.max(span * 0.06, 0.5)
     return { yMin: lo - pad, yMax: hi + pad }
-  }, [chartData, slurryOk, clearOk])
+  }, [chartData, slurryOk, clearOk, terrainDrawOk, terrainVerts])
+
+  const minSepL = Math.max(Lmax * 0.008, 1e-6)
+
+  const handleApplyBulkTerrain = () => {
+    const r = parseTerrainMiddleBulk(bulkText, Lmax)
+    if (!r.ok) {
+      setEditorErr(r.err)
+      return
+    }
+    setEditorErr(null)
+    setDraftMiddlePts(r.pts)
+  }
+
+  const handleAddManualMiddle = () => {
+    const L = Number(manualLStr)
+    const z = Number(manualZStr)
+    if (!Number.isFinite(L) || !Number.isFinite(z)) {
+      setEditorErr('请输入有效的管长 L 与高度')
+      return
+    }
+    if (L <= 0 || L >= Lmax) {
+      setEditorErr(`管长须满足 0 < L < L_max（${Lmax}）`)
+      return
+    }
+    setEditorErr(null)
+    setDraftMiddlePts((prev) => {
+      const next = [...prev, { L, z, id: newTerrainMiddleId() }].sort((a, b) => a.L - b.L)
+      const dedup: TerrainVertex[] = []
+      for (const p of next) {
+        if (dedup.length && Math.abs(dedup[dedup.length - 1].L - p.L) < minSepL) dedup[dedup.length - 1] = p
+        else dedup.push(p)
+      }
+      return dedup
+    })
+  }
+
+  const handleApplyTerrainToMainChart = () => {
+    if (!draftPreviewOk) {
+      setEditorErr('请填写有效的起点、终点水头高度，且 L_max 有效。')
+      return
+    }
+    setEditorErr(null)
+    const middlesWithIds = draftMiddlePts.map((p) => ({
+      L: p.L,
+      z: p.z,
+      id: p.id ?? newTerrainMiddleId(),
+    }))
+    setAppliedTerrain({
+      z0Str: draftZ0Str,
+      z1Str: draftZ1Str,
+      middlePts: middlesWithIds,
+    })
+    setDraftMiddlePts(middlesWithIds)
+    setShowTerrainLine(true)
+  }
+
+  const handleUndoMainTerrain = () => {
+    setAppliedTerrain(null)
+    setShowTerrainLine(true)
+    setEditorErr(null)
+  }
+
+  const handleRemoveMiddle = (id: string | undefined) => {
+    if (!id) return
+    setDraftMiddlePts((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  const sortedDraftMiddles = useMemo(
+    () => [...draftMiddlePts].sort((a, b) => a.L - b.L),
+    [draftMiddlePts]
+  )
+
+  const terrainPreviewRows = useMemo(() => {
+    if (!draftPreviewOk) return []
+    const n = HYDRAULIC_GRADE_CURVE_POINTS
+    return Array.from({ length: n + 1 }, (_, i) => {
+      const L = (Lmax * i) / n
+      const terrainZ = interpolateTerrainZ(L, draftVerts)
+      const maxPressZ = Number.isFinite(terrainZ) ? terrainZ * 2 : undefined
+      return { L, terrainZ, maxPressZ }
+    })
+  }, [draftPreviewOk, Lmax, draftVerts])
+
+  const { previewYMin, previewYMax } = useMemo(() => {
+    let lo = Infinity
+    let hi = -Infinity
+    for (const r of terrainPreviewRows) {
+      if (Number.isFinite(r.terrainZ)) {
+        lo = Math.min(lo, r.terrainZ)
+        hi = Math.max(hi, r.terrainZ)
+      }
+      if (r.maxPressZ != null && Number.isFinite(r.maxPressZ)) {
+        lo = Math.min(lo, r.maxPressZ)
+        hi = Math.max(hi, r.maxPressZ)
+      }
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { previewYMin: 0, previewYMax: 1 }
+    const span = Math.max(hi - lo, 1e-6)
+    const pad = Math.max(span * 0.06, 0.5)
+    return { previewYMin: lo - pad, previewYMax: hi + pad }
+  }, [terrainPreviewRows])
 
   const handleExportChartPNG = () => {
     if (!hydraulicExportYDomain) return
@@ -690,11 +1566,27 @@ function SlurryClearHydraulicGradeChartBlock({
       clearOk && chartData.every((r: MergedHydraulicRow) => r.headClear != null)
         ? chartData.map((r: MergedHydraulicRow) => ({ L: r.L, H: r.headClear as number }))
         : []
+    const extra: { curve: { L: number; H: number }[]; color: string; legend: string }[] = []
+    if (terrainDrawOk && showTerrainLine) {
+      extra.push({
+        curve: chartData.map((r) => ({ L: r.L, H: interpolateTerrainZ(r.L, terrainVerts) })),
+        color: TERRAIN_EXPORT_LINE,
+        legend: '地形线（高度）',
+      })
+    }
+    if (terrainDrawOk) {
+      extra.push({
+        curve: chartData.map((r) => ({ L: r.L, H: interpolateTerrainZ(r.L, terrainVerts) * 2 })),
+        color: MAX_PRESS_HYDRAULIC_LINE,
+        legend: '最大允许运行压力线（暂×2）',
+      })
+    }
     downloadScientificHlChartPng({
       curveData: slurryPts,
       secondCurve: clearPts.length > 1 ? clearPts : undefined,
       secondLineColor: CLEAR_HYDRAULIC_LINE,
       secondLegendText: '清水对比水力坡度线',
+      extraHydraulicCurves: extra.length ? extra : undefined,
       darkMode,
       title: '浆体与清水对比 · 管道水力坡度线',
       subtitle: `几何扬程与沿程水头分布：L_max = ${Lmax} m，主刻度间隔 ${stepStr} m（${HYDRAULIC_GRADE_TICK_DIVISIONS} 等分）`,
@@ -735,7 +1627,10 @@ function SlurryClearHydraulicGradeChartBlock({
         等分计算，为 <span className="font-mono">{stepStr}</span> m。横轴 <InlineMath math="[0,L_{\max}]" />，悬停可读水头与折算压力。
         <strong className="text-amber-600 dark:text-amber-400"> 浆体</strong>线按浆体总扬程（<InlineMath math="\rho_s,\rho_k,i_k" />
         ）；<strong className="text-blue-600 dark:text-blue-400"> 清水对比线</strong>按与当前页相同的 <InlineMath math="H,L,P_j,g" />，取{' '}
-        <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />、<InlineMath math="i_w=i_k" />，与清水总扬程模块同一水力坡度模型（不引用清水页输入）。
+        <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />、<InlineMath math="i_w=i_k" />，与清水总扬程模块同一水力坡度模型。
+        <strong className="text-emerald-700 dark:text-emerald-400"> 地形线</strong>与
+        <strong className="text-red-700 dark:text-red-400"> 最大允许压力线</strong>
+        在<strong>图注下方编辑区</strong>配置起终点水头与中间点后点击「应用到主图」；预览区可悬停读数。
       </div>
       <div className={`flex flex-wrap gap-x-5 gap-y-1 text-xs mb-3 px-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
         <span>
@@ -753,10 +1648,11 @@ function SlurryClearHydraulicGradeChartBlock({
           </span>
         ) : null}
       </div>
+
       <div className="flex flex-col gap-3">
         <div id="slurry-hydraulic-grade-chart" className="min-h-[380px] min-w-0 w-full">
           <ResponsiveContainer width="100%" height={380}>
-            <LineChart data={chartData} margin={{ top: 8, right: 12, left: 8, bottom: 20 }}>
+            <LineChart data={chartRows} margin={{ top: 8, right: 12, left: 8, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
               <XAxis
                 type="number"
@@ -832,6 +1728,28 @@ function SlurryClearHydraulicGradeChartBlock({
                               </div>
                             )
                           })}
+                      {hasVisibleTerrain &&
+                        payload
+                          .filter((p) => p.dataKey === 'terrainZ')
+                          .map((p) => {
+                            const zv = Number(p.value)
+                            return (
+                              <div key="t" className="text-emerald-600 dark:text-emerald-400">
+                                地形高度： {Number.isFinite(zv) ? zv.toFixed(3) : '—'} m
+                              </div>
+                            )
+                          })}
+                      {hasVisibleMaxPress &&
+                        payload
+                          .filter((p) => p.dataKey === 'maxPressZ')
+                          .map((p) => {
+                            const mv = Number(p.value)
+                            return (
+                              <div key="m" className="text-red-600 dark:text-red-400">
+                                最大允许压力线：{Number.isFinite(mv) ? mv.toFixed(3) : '—'} m
+                              </div>
+                            )
+                          })}
                     </div>
                   )
                 }}
@@ -860,6 +1778,31 @@ function SlurryClearHydraulicGradeChartBlock({
                   isAnimationActive={false}
                 />
               ) : null}
+              {terrainDrawOk ? (
+                <Line
+                  type="linear"
+                  dataKey="terrainZ"
+                  name="地形线"
+                  stroke={TERRAIN_EXPORT_LINE}
+                  strokeWidth={2.5}
+                  dot={false}
+                  connectNulls
+                  hide={!showTerrainLine}
+                  isAnimationActive={false}
+                />
+              ) : null}
+              {terrainDrawOk ? (
+                <Line
+                  type="linear"
+                  dataKey="maxPressZ"
+                  name="最大允许运行压力线（暂×2）"
+                  stroke={MAX_PRESS_HYDRAULIC_LINE}
+                  strokeWidth={2.2}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ) : null}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -879,8 +1822,11 @@ function SlurryClearHydraulicGradeChartBlock({
               checked={showSlurry}
               onChange={() => {
                 setShowSlurry((s) => {
-                  if (s && !showClear) return s
-                  return !s
+                  if (!s) return true
+                  const otherVisible =
+                    (showClear && clearOk) || (terrainDrawOk && showTerrainLine) || terrainDrawOk
+                  if (!otherVisible) return s
+                  return false
                 })
               }}
             />
@@ -900,22 +1846,429 @@ function SlurryClearHydraulicGradeChartBlock({
               onChange={() => {
                 if (!clearOk) return
                 setShowClear((c) => {
-                  if (c && !showSlurry) return c
-                  return !c
+                  if (!c) return true
+                  const otherVisible = showSlurry || (terrainDrawOk && showTerrainLine) || terrainDrawOk
+                  if (!otherVisible) return c
+                  return false
                 })
               }}
             />
             <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: CLEAR_HYDRAULIC_LINE }} />
             清水对比水力坡度线
           </label>
+          {terrainDrawOk ? (
+            <>
+              <label
+                className={`flex cursor-pointer items-center gap-2 text-sm ${
+                  darkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="rounded border-gray-400"
+                  checked={showTerrainLine}
+                  onChange={() => {
+                    setShowTerrainLine((t) => {
+                      if (!t) return true
+                      const otherVisible = showSlurry || (showClear && clearOk) || terrainDrawOk
+                      if (!otherVisible) return t
+                      return false
+                    })
+                  }}
+                />
+                <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: TERRAIN_EXPORT_LINE }} />
+                地形线
+              </label>
+              <div className={`flex items-center gap-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: MAX_PRESS_HYDRAULIC_LINE }} />
+                最大允许运行压力线（暂×2）
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
+
+
       <div className={`mt-3 pt-3 border-t text-xs leading-relaxed ${darkMode ? 'border-gray-500 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
         <span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>图注：</span>
         <HydraulicSlopeScopeNote /> 浆体进口端总水头约{' '}
         <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
         {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m（含 <InlineMath math="P_j" /> 分摊损失水头{' '}
         {totalLossHeadM.toFixed(1)} m）。悬停折算压力按 <InlineMath math="\rho_k g H" />（浆体）、<InlineMath math="\rho_w g H" />（清水对比）换算。
+        {terrainDrawOk ? (
+          <>
+            {' '}
+            地形线与红线为工程示意，纵轴暂与水头同刻度；红线为地形×2 占位。
+          </>
+        ) : null}
+      </div>
+
+      <div
+        className={`mt-4 overflow-hidden rounded-xl border ${
+          darkMode ? 'border-gray-500 bg-gray-800/90' : 'border-gray-200 bg-white'
+        }`}
+      >
+        <div
+          className={`border-b px-4 py-3 ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
+        >
+          <h3 className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+            添加地形线与最大允许压力线
+          </h3>
+        </div>
+        <div className="space-y-4 px-4 py-4">
+          <ul className={`grid gap-2 text-xs sm:grid-cols-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+            <li className="flex gap-2">
+              <span
+                className="mt-0.5 h-3 w-8 shrink-0 rounded-sm"
+                style={{ background: TERRAIN_EXPORT_LINE }}
+                aria-hidden
+              />
+              <span>
+                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>地形线</strong>
+                ：地面高度沿管长折线；端点对应 <InlineMath math="L=0" /> 与 <InlineMath math="L=L_{\max}" />。
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="mt-0.5 h-3 w-8 shrink-0 rounded-sm bg-red-600" aria-hidden />
+              <span>
+                <strong className={darkMode ? 'text-red-300' : 'text-red-800'}>最大允许运行压力线</strong>
+                ：与地形同一沿程采样；暂为高度×2（占位）。
+              </span>
+            </li>
+          </ul>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block min-w-0">
+              <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                起点水头高度：
+              </span>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={draftZ0Str}
+                  onChange={(e) => setDraftZ0Str(e.target.value)}
+                  placeholder="起点水头高度"
+                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                    darkMode
+                      ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
+                      : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
+                  }`}
+                />
+                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+              </div>
+            </label>
+            <label className="block min-w-0">
+              <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                终点水头高度：
+              </span>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={draftZ1Str}
+                  onChange={(e) => setDraftZ1Str(e.target.value)}
+                  placeholder="终点水头高度"
+                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                    darkMode
+                      ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
+                      : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
+                  }`}
+                />
+                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+              </div>
+            </label>
+          </div>
+
+          <div className={`rounded-lg border ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+            <div
+              className={`border-b px-3 py-2 text-xs font-medium ${darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-600'}`}
+            >
+              预览
+            </div>
+            <div className="p-2 sm:p-3">
+              <div
+                className={`mb-2 flex min-h-[1.25rem] flex-col gap-1 text-xs sm:flex-row sm:items-center sm:justify-between ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+              >
+                <p className={`tabular-nums ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {appliedTerrain ? (
+                    <>主图已叠加（{appliedTerrain.middlePts.length} 个中间点）。</>
+                  ) : (
+                    <>未叠加到主图。</>
+                  )}
+                </p>
+                <div className={`text-right text-xs tabular-nums sm:shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  {previewHover ? (
+                    <span>
+                      L = {previewHover.L.toFixed(3)} m，高度 = {previewHover.z.toFixed(3)} m
+                    </span>
+                  ) : (
+                    <span className="opacity-60">悬停预览</span>
+                  )}
+                </div>
+              </div>
+              {draftPreviewOk ? (
+                <div className="h-[280px] w-full min-h-[220px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={terrainPreviewRows}
+                      margin={{ top: 8, right: 14, left: 12, bottom: 28 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
+                      <XAxis
+                        type="number"
+                        dataKey="L"
+                        domain={[0, Lmax]}
+                        ticks={xTicks}
+                        allowDecimals
+                        label={{
+                          value: '管长 L (m)',
+                          position: 'insideBottom',
+                          offset: -14,
+                          style: {
+                            fill: darkMode ? '#9CA3AF' : '#6B7280',
+                            fontSize: 12,
+                            fontStyle: 'italic',
+                          },
+                        }}
+                        tick={{ fill: darkMode ? '#9CA3AF' : '#6B7280', fontSize: 11 }}
+                        tickFormatter={(v) => formatHydraulicLengthTick(Number(v))}
+                        stroke={darkMode ? '#6B7280' : '#9CA3AF'}
+                      />
+                      <YAxis
+                        domain={[previewYMin, previewYMax]}
+                        label={{
+                          value: '高度 (m)',
+                          angle: -90,
+                          position: 'insideLeft',
+                          offset: 2,
+                          style: {
+                            fill: darkMode ? '#9CA3AF' : '#6B7280',
+                            fontSize: 12,
+                            fontStyle: 'italic',
+                          },
+                        }}
+                        tick={{ fill: darkMode ? '#9CA3AF' : '#6B7280', fontSize: 11 }}
+                        tickFormatter={(v) =>
+                          formatHydraulicHeadTick(Number(v), previewYMin, previewYMax)
+                        }
+                        stroke={darkMode ? '#6B7280' : '#9CA3AF'}
+                      />
+                      <Tooltip
+                        cursor={{ stroke: darkMode ? '#9CA3AF' : '#6B7280', strokeWidth: 1 }}
+                        content={(tipProps) => {
+                          const { active, payload } = tipProps
+                          return (
+                            <div>
+                              <TerrainPreviewHoverSync
+                                active={active}
+                                payload={
+                                  payload as unknown as
+                                    | { payload: { L: number; terrainZ: number } }[]
+                                    | undefined
+                                }
+                                onHover={setPreviewHover}
+                              />
+                              {active && payload?.[0] ? (
+                                <div
+                                  className={`rounded-lg border px-2 py-1.5 text-xs shadow ${
+                                    darkMode
+                                      ? 'border-gray-600 bg-gray-800 text-gray-100'
+                                      : 'border-gray-200 bg-white text-gray-900'
+                                  }`}
+                                >
+                                  <div>
+                                    L ={' '}
+                                    {Number((payload[0].payload as { L: number }).L).toFixed(3)} m
+                                  </div>
+                                  <div>
+                                    高度 ={' '}
+                                    {Number((payload[0].payload as { terrainZ: number }).terrainZ).toFixed(
+                                      3
+                                    )}{' '}
+                                    m
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          )
+                        }}
+                      />
+                      <Line
+                        type="linear"
+                        dataKey="terrainZ"
+                        name="地形"
+                        stroke={TERRAIN_EXPORT_LINE}
+                        strokeWidth={2.5}
+                        dot={false}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="linear"
+                        dataKey="maxPressZ"
+                        name="最大允许运行压力线（暂×2）"
+                        stroke={MAX_PRESS_HYDRAULIC_LINE}
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className={`py-8 text-center text-xs ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                  请输入有效的起点、终点水头高度。
+                </p>
+              )}
+              {draftPreviewOk ? (
+                <div
+                  className={`mt-2 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 border-t pt-2 ${
+                    darkMode ? 'border-gray-600' : 'border-gray-200'
+                  }`}
+                >
+                  <div className={`flex items-center gap-2 text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: TERRAIN_EXPORT_LINE }} />
+                    地形线
+                  </div>
+                  <div className={`flex items-center gap-2 text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: MAX_PRESS_HYDRAULIC_LINE }} />
+                    最大允许运行压力线（暂×2）
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="block min-w-0 flex-1">
+              <span className={`mb-1 block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>管长 L</span>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={manualLStr}
+                  onChange={(e) => setManualLStr(e.target.value)}
+                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                    darkMode
+                      ? 'border-gray-500 bg-gray-900 text-gray-100'
+                      : 'border-gray-200 bg-white text-gray-900'
+                  }`}
+                />
+                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+              </div>
+            </label>
+            <label className="block min-w-0 flex-1">
+              <span className={`mb-1 block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>高度</span>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={manualZStr}
+                  onChange={(e) => setManualZStr(e.target.value)}
+                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                    darkMode
+                      ? 'border-gray-500 bg-gray-900 text-gray-100'
+                      : 'border-gray-200 bg-white text-gray-900'
+                  }`}
+                />
+                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+              </div>
+            </label>
+            <button
+              type="button"
+              onClick={handleAddManualMiddle}
+              className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              添加中间点
+            </button>
+          </div>
+
+          {sortedDraftMiddles.length > 0 ? (
+            <ul
+              className={`divide-y overflow-hidden rounded-lg border text-xs ${
+                darkMode ? 'divide-gray-600 border-gray-600' : 'divide-gray-200 border-gray-200'
+              }`}
+            >
+              {sortedDraftMiddles.map((p) => (
+                <li
+                  key={p.id ?? `${p.L}-${p.z}`}
+                  className="flex items-center justify-between gap-2 px-3 py-2"
+                >
+                  <span className={`tabular-nums ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    L = {p.L.toFixed(2)} m，高度 = {p.z.toFixed(3)} m
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMiddle(p.id)}
+                    className="shrink-0 text-red-500 hover:underline"
+                  >
+                    删除
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {editorErr ? <p className="text-sm text-red-500 dark:text-red-400">{editorErr}</p> : null}
+
+          <details
+            className={`rounded-lg border text-sm ${darkMode ? 'border-gray-600 bg-gray-900/30' : 'border-gray-200 bg-gray-50'}`}
+          >
+            <summary
+              className={`cursor-pointer select-none px-3 py-2 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+            >
+              批量粘贴
+            </summary>
+            <div className={`space-y-2 border-t px-3 py-3 ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+              <p className={`text-[11px] leading-relaxed ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                每行两列，管长 L、高度；可从表格直接复制粘贴；首行若为文字表头会自动跳过；
+              </p>
+              <textarea
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                rows={3}
+                placeholder={'L\tz\n500\t12.5\n1200\t11.8'}
+                className={`w-full rounded-md border px-2 py-2 font-mono text-xs ${
+                  darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-300 bg-white'
+                }`}
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleApplyBulkTerrain}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  添加
+                </button>
+              </div>
+            </div>
+          </details>
+
+          <div className="flex flex-col items-end gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            {appliedTerrain ? (
+              <button
+                type="button"
+                onClick={handleUndoMainTerrain}
+                className={`rounded-lg border px-4 py-2 text-sm ${
+                  darkMode
+                    ? 'border-gray-500 text-gray-300 hover:bg-gray-700'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                撤回
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleApplyTerrainToMainChart}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              应用到主图
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1375,9 +2728,11 @@ export default function MainContent({
   const [centrifugalSigmaHsSuggestOpen, setCentrifugalSigmaHsSuggestOpen] = useState(false)
   /** 离心泵步骤3：$\rho_k$ 引用「密度混合 / 浆体摩阻」结果 */
   const [centrifugalRhoKSuggestOpen, setCentrifugalRhoKSuggestOpen] = useState(false)
-  /** 离心泵步骤3：$\eta_j$ 自定义下拉（选项内用 KaTeX） */
+  /** 离心泵步骤3：$\eta_j$ 传动方式下拉（须用 KaTeX 渲染选项，不能用原生 select） */
   const [centrifugalEtaJSelectOpen, setCentrifugalEtaJSelectOpen] = useState(false)
   const centrifugalEtaJSelectRef = useRef<HTMLDivElement | null>(null)
+  /** 用户是否显式点了「自定义」；未点选时空 η_j 仍按联轴器缺省展示并写入 1 */
+  const [centrifugalEtaJWantsCustom, setCentrifugalEtaJWantsCustom] = useState(false)
   const [isAnimationFullscreen, setIsAnimationFullscreen] = useState(false) // 动画全屏展示（弹层）
   const [fullscreenAnimationType, setFullscreenAnimationType] = useState<string | null>(null)
   const [fullscreenStatusText, setFullscreenStatusText] = useState<string>('')
@@ -1630,7 +2985,7 @@ export default function MainContent({
       'denom': '浓度与密度加权倒数项',
 
       // 浆体摩阻工作流（达西分步）中间量
-      'term_rho_g_C1v': '液相体积项',
+      'term_rho_g_C1v': '固相体积项',
       'term_1minusC1v_rho_s': '固相体积项',
       'rho_1_kg_m3': 'SI 密度',
       're_numerator_V_D_rho_kg': '雷诺分子项',
@@ -1678,7 +3033,7 @@ export default function MainContent({
     const bracketFormula = formulaId === 'kronodze_pressure'
       ? '1+2.48\\sqrt[3]{C_d}\\sqrt[4]{D_L}'
       : formulaId === 'fei_xiangjun'
-        ? '[g \\cdot D \\cdot \\frac{\\Delta\\rho}{\\rho} \\cdot \\omega]^{1/2}'  // 费祥俊：含 ω
+        ? '[g \\cdot D \\cdot \\frac{\\Delta\\rho}{\\rho}]^{1/2}'
         : '[2 \\cdot g \\cdot D \\cdot \\frac{\\Delta\\rho}{\\rho}]^{1/2}';       // E.J.瓦斯普
     const mathFormulas: Record<string, string> = {
       'delta_rho_ratio': '\\frac{\\Delta\\rho}{\\rho}',
@@ -1686,11 +3041,11 @@ export default function MainContent({
       'g': 'g',
       'core_term': '[g \\cdot D \\cdot \\frac{\\Delta\\rho}{\\rho} \\cdot \\omega]^{1/3}',
       // E.J.瓦斯普公式：浓度修正项为 Cv^0.1858（根据后端计算）
-      'concentration_term': 'C_v^{0.1858}',
+      'concentration_term': 'C_V^{0.1858}',
       'velocity_ratio_term': '(\\frac{\\omega_s}{\\omega})^{1/6}',
       'bracket_term': bracketFormula,
       'size_ratio_term': '(\\frac{d_{85}}{D})^{1/6}',
-      'conc_term': 'C_v^{0.25}',
+      'conc_term': 'C_V^{0.25}',
       'size_term': '(\\frac{d_{90}}{D})^{1/3}',
       'leading_coef': '\\frac{2.26}{\\sqrt{\\lambda}}',
       'coefficient_2_26': '2.26',
@@ -1745,9 +3100,9 @@ export default function MainContent({
     }
     
     let mathFormula = mathFormulas[key]
-    // 刘德忠公式的浓度修正项为 C_v^{1/6}，瓦斯普公式为 C_v^{0.1858}
+    // 刘德忠公式的浓度修正项为 C_V^{1/6}，瓦斯普公式为 C_V^{0.1858}
     if (key === 'concentration_term') {
-      mathFormula = formulaId === 'liu_dezhong' ? 'C_v^{1/6}' : 'C_v^{0.1858}'
+      mathFormula = formulaId === 'liu_dezhong' ? 'C_V^{1/6}' : 'C_V^{0.1858}'
     }
     
     if (mathFormula) {
@@ -1791,8 +3146,8 @@ export default function MainContent({
       .replace(/\^(\d+\.\d+)/g, '^{$1}')
       // 处理整数次方（如 ^2, ^3）
       .replace(/\^(\d+)/g, '^{$1}')
-      // 替换 Cv（必须在次方处理之后，避免影响 Cv^0.1858）
-      .replace(/Cv/g, 'C_v')
+      // 替换 Cv（必须在次方处理之后，避免影响 Cv^0.1858）；体积浓度下标用大写 V
+      .replace(/Cv/g, 'C_V')
       // 替换 d85, d90（必须在次方处理之后）
       .replace(/d85/g, 'd_{85}')
       .replace(/d90/g, 'd_{90}')
@@ -2230,6 +3585,9 @@ export default function MainContent({
               newParams['K_hw'] = 105
             }
           }
+          if (formulaId === 'fei_xiangjun') {
+            delete newParams['omega']
+          }
           return { ...prev, [formulaId]: newParams }
         } else {
           // 如果没有记录，初始化所有默认值
@@ -2247,6 +3605,9 @@ export default function MainContent({
             if (initialParams['K_hw'] === undefined || initialParams['K_hw'] === null) {
               initialParams['K_hw'] = 105
             }
+          }
+          if (formulaId === 'fei_xiangjun') {
+            delete initialParams['omega']
           }
           return { ...prev, [formulaId]: initialParams }
         }
@@ -2271,6 +3632,9 @@ export default function MainContent({
             if (!newRaw['ch_preset']) newRaw['ch_preset'] = 'steel100'
             if (!newRaw['C_h']) newRaw['C_h'] = '100'
             if (!newRaw['K_hw']) newRaw['K_hw'] = '105'
+          }
+          if (formulaId === 'fei_xiangjun') {
+            delete newRaw['omega']
           }
           return { ...prev, [formulaId]: newRaw }
         } else {
@@ -2306,14 +3670,10 @@ export default function MainContent({
     // 仅随公式 id 变化初始化，避免父组件传入的 formula 对象引用变化时误清锁定状态
   }, [formula?.id])
 
-  useEffect(() => {
-    setCentrifugalEtaJSelectOpen(false)
-  }, [formula?.id])
-
-  /** 离心泵步骤3：清除可能被误合并的 K_1、ρ_k、η_b、η_j（每浏览器会话首次进入本公式时执行一次） */
+  /** 离心泵步骤3：清除可能被误合并的 K_1、ρ_k、η_b；η_j 默认联轴器 1.0（每浏览器会话首次进入本公式时执行一次） */
   useEffect(() => {
     if (formula?.id !== 'centrifugal_pump_total_head') return
-    const k = 'flow_calc_cen_step3_autofill_scrub_v1'
+    const k = 'flow_calc_cen_step3_autofill_scrub_v2'
     try {
       if (sessionStorage.getItem(k)) return
       sessionStorage.setItem(k, '1')
@@ -2321,25 +3681,61 @@ export default function MainContent({
       return
     }
     const id = 'centrifugal_pump_total_head'
+    setCentrifugalEtaJWantsCustom(false)
     setFormulaParameters((prev) => {
       const cur = prev[id]
       if (!cur) return prev
       const next = { ...cur }
-      for (const name of ['K_1', 'rho_k', 'eta_b', 'eta_j'] as const) {
+      for (const name of ['K_1', 'rho_k', 'eta_b'] as const) {
         delete next[name]
       }
+      next['eta_j'] = 1
       return { ...prev, [id]: next }
     })
     setFormulaRawInputs((prev) => {
       const cur = prev[id]
       if (!cur) return prev
       const next = { ...cur }
-      for (const name of ['K_1', 'rho_k', 'eta_b', 'eta_j'] as const) {
+      for (const name of ['K_1', 'rho_k', 'eta_b'] as const) {
         next[name] = ''
       }
+      next['eta_j'] = '1'
       return { ...prev, [id]: next }
     })
   }, [formula?.id])
+
+  useEffect(() => {
+    setCentrifugalEtaJSelectOpen(false)
+    if (formula?.id !== 'centrifugal_pump_total_head') {
+      setCentrifugalEtaJWantsCustom(false)
+    }
+  }, [formula?.id])
+
+  /** 步骤3：未选「自定义」且 η_j 为空时写入联轴器 1.0（解决 scrub 只执行一次导致仍显示自定义） */
+  useEffect(() => {
+    if (formula?.id !== 'centrifugal_pump_total_head') return
+    if (centrifugalEtaJWantsCustom) return
+    const ej = parameters['eta_j']
+    if (ej != null && !isNaN(ej)) return
+    setFormulaParameters((prev) => ({
+      ...prev,
+      centrifugal_pump_total_head: { ...(prev.centrifugal_pump_total_head || {}), eta_j: 1 },
+    }))
+    setFormulaRawInputs((prev) => ({
+      ...prev,
+      centrifugal_pump_total_head: { ...(prev.centrifugal_pump_total_head || {}), eta_j: '1' },
+    }))
+  }, [formula?.id, centrifugalEtaJWantsCustom, parameters['eta_j']])
+
+  useEffect(() => {
+    if (!centrifugalEtaJSelectOpen) return
+    const onDown = (e: MouseEvent) => {
+      const el = centrifugalEtaJSelectRef.current
+      if (el && !el.contains(e.target as Node)) setCentrifugalEtaJSelectOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [centrifugalEtaJSelectOpen])
 
   /** 容积式泵：去掉后端默认后，清除本会话内可能残留的 K_f、K_1、η_v、η_c（每会话首次进入本公式一次） */
   useEffect(() => {
@@ -2371,16 +3767,6 @@ export default function MainContent({
       return { ...prev, [id]: next }
     })
   }, [formula?.id])
-
-  useEffect(() => {
-    if (!centrifugalEtaJSelectOpen) return
-    const onDown = (e: MouseEvent) => {
-      const el = centrifugalEtaJSelectRef.current
-      if (el && !el.contains(e.target as Node)) setCentrifugalEtaJSelectOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [centrifugalEtaJSelectOpen])
 
   // 当参数改变且已锁定时，自动重新计算并比较
   useEffect(() => {
@@ -2519,6 +3905,22 @@ export default function MainContent({
     setFormulaParameters((prev) => ({
       ...prev,
       [subId]: { ...(prev[subId] || {}), [name]: rounded }
+    }))
+  }
+
+  /** 浆体摩阻损失（工作流步骤5或单页）算得的 i_k 写入「浆体总扬程」同名字段，便于衔接 */
+  const syncSlurryFrictionIkToTotalHead = (ikRaw: unknown) => {
+    const ik = Number(ikRaw)
+    if (!Number.isFinite(ik)) return
+    const v = Math.round(ik * 1e6) / 1e6
+    const s = String(v)
+    setFormulaParameters((prev) => ({
+      ...prev,
+      slurry_total_head: { ...(prev.slurry_total_head || {}), i_k: v },
+    }))
+    setFormulaRawInputs((prev) => ({
+      ...prev,
+      slurry_total_head: { ...(prev.slurry_total_head || {}), i_k: s },
     }))
   }
 
@@ -2669,6 +4071,10 @@ export default function MainContent({
 
       if (!data.success) return
       const res = data.result
+
+      if (subId === 'slurry_friction_loss' && res?.i_k != null) {
+        syncSlurryFrictionIkToTotalHead(res.i_k)
+      }
 
       if (subId === 'density_mixing' && res?.rho_k != null) {
         const rk = Number(res.rho_k)
@@ -4204,7 +5610,7 @@ export default function MainContent({
         }
         // Cv体积浓度应该在0-1之间
         if (param.name === 'Cv' && (value < 0 || value > 1)) {
-          return '体积浓度Cv应该在0-1之间'
+          return '体积浓度 $C_V$ 应在 0～1 之间'
         }
         // C_w质量浓度应该在0-1之间（浆体摩阻损失）
         if (param.name === 'C_w' && (value < 0 || value > 1)) {
@@ -4223,10 +5629,10 @@ export default function MainContent({
     const rhoG = parameters['rho_g']
     if (G == null || isNaN(G)) return '步骤1 需要填写 G（矿浆中水重）'
     if (W == null || isNaN(W)) return '步骤1 需要填写 W（干尾矿重量）'
-    if (rhoG == null || isNaN(rhoG)) return '步骤1 需要填写 ρg（尾矿相对密度）'
+    if (rhoG == null || isNaN(rhoG)) return '步骤1 需要填写 ρg（固体密度）'
     if (W <= 0) return '干尾矿重量 W 必须大于 0'
     if (G <= 0) return '矿浆中水重 G 必须大于 0'
-    if (rhoG <= 0) return '尾矿相对密度 ρg 必须大于 0'
+    if (rhoG <= 0) return '固体密度 ρg 必须大于 0'
 
     if (step === 2) {
       const dp = parameters['dp']
@@ -4624,8 +6030,12 @@ export default function MainContent({
       }, {
         timeout: API_TIMEOUT
       })
-      updateResult(response.data)
-      return response.data as CalculationResult
+      const calcPayload = response.data as CalculationResult
+      updateResult(calcPayload)
+      if (formula.id === 'slurry_friction_loss' && calcPayload.success && calcPayload.result?.i_k != null) {
+        syncSlurryFrictionIkToTotalHead(calcPayload.result.i_k)
+      }
+      return calcPayload
     } catch (error: any) {
       if (!preserveResultOnError) {
         updateResult({
@@ -5289,9 +6699,9 @@ export default function MainContent({
                           darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
                         }`}
                       />
-                      {paramUnitFromFormula(formula.parameters, 'P_k') !== '' && (
+                      {paramUnitDisplaySuffix(formula.parameters, 'P_k') !== '' && (
                         <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {paramUnitFromFormula(formula.parameters, 'P_k')}
+                          {paramUnitDisplaySuffix(formula.parameters, 'P_k')}
                         </span>
                       )}
                     </div>
@@ -5438,7 +6848,7 @@ export default function MainContent({
                       darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
                     }`
                     const field = (name: 'P_b' | 'Q_k' | 'K_1' | 'eta_v' | 'eta_c', colSpan2?: boolean) => {
-                      const unit = paramUnitFromFormula(formula.parameters, name)
+                      const unit = paramUnitDisplaySuffix(formula.parameters, name)
                       return (
                         <div key={name} className={`min-w-0 ${colSpan2 ? 'md:col-span-2' : ''}`}>
                           <label
@@ -6107,13 +7517,13 @@ export default function MainContent({
                     const suffixText =
                       name === 'K_hw'
                         ? '经验参数'
-                        : param?.unit != null && param.unit !== ''
+                        : param?.unit != null && shouldShowParameterUnitSuffix(param.unit)
                           ? param.unit
                           : null
                     return (
                       <div key={name}>
                         <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                          {param ? renderDescriptionWithMath(param.label || name) : name}
+                          {param ? renderDescriptionWithMath(displayParamLabelFromApi(param.label || name, param.unit)) : name}
                         </label>
                         <div className="flex items-center space-x-2">
                           <input
@@ -6202,7 +7612,7 @@ export default function MainContent({
                           rho_k: '浆体密度',
                           g: '9.81',
                           H: '扬送浆体的几何高度（m）',
-                          rho_s: '固体颗粒密度',
+                          rho_s: '固体密度',
                           i_k: '沿程摩阻系数',
                           L: '管道总长度',
                           P_j: '约为沿程项的 5%~10%',
@@ -6212,7 +7622,7 @@ export default function MainContent({
                         return (
                           <div key={param.name}>
                             <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                              {renderDescriptionWithMath(param.label || param.name)}
+                              {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                             </label>
                             <div className="flex items-center space-x-2">
                               <input
@@ -6223,9 +7633,9 @@ export default function MainContent({
                                 onChange={(e) => handleParameterChange(param.name, e.target.value)}
                                 onBlur={() => handleParameterBlur(param.name)}
                                 className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                                placeholder={param.default !== undefined ? String(param.default) : (placeholders[param.name] || '请输入数值')}
+                                placeholder={param.default !== undefined ? String(param.default) : (placeholders[param.name] || suggestedNumericPlaceholder(formula?.parameters, param.name))}
                               />
-                              {param.unit != null && param.unit !== '' && (
+                              {shouldShowParameterUnitSuffix(param.unit) && (
                                 <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
                               )}
                             </div>
@@ -6347,7 +7757,7 @@ export default function MainContent({
                         return (
                           <div key={param.name}>
                             <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                              {renderDescriptionWithMath(param.label || param.name)}
+                              {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                             </label>
                             <div className="flex items-center space-x-2">
                               <input
@@ -6358,9 +7768,9 @@ export default function MainContent({
                                 onChange={(e) => handleParameterChange(param.name, e.target.value)}
                                 onBlur={() => handleParameterBlur(param.name)}
                                 className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                                placeholder={param.default !== undefined ? String(param.default) : (placeholders[param.name] || '请输入数值')}
+                                placeholder={param.default !== undefined ? String(param.default) : (placeholders[param.name] || suggestedNumericPlaceholder(formula?.parameters, param.name))}
                               />
-                              {param.unit != null && param.unit !== '' && (
+                              {shouldShowParameterUnitSuffix(param.unit) && (
                                 <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
                               )}
                             </div>
@@ -6593,9 +8003,9 @@ export default function MainContent({
                           darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
                         }`}
                       />
-                      {paramUnitFromFormula(formula.parameters, 'Sigma_H_s') !== '' && (
+                      {paramUnitDisplaySuffix(formula.parameters, 'Sigma_H_s') !== '' && (
                         <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {paramUnitFromFormula(formula.parameters, 'Sigma_H_s')}
+                          {paramUnitDisplaySuffix(formula.parameters, 'Sigma_H_s')}
                         </span>
                       )}
                     </div>
@@ -6651,7 +8061,7 @@ export default function MainContent({
                     )}
                   </div>
                   {(['K_p', 'K_m'] as const).map((name) => {
-                    const unit = paramUnitFromFormula(formula.parameters, name)
+                    const unit = paramUnitDisplaySuffix(formula.parameters, name)
                     return (
                       <div key={name}>
                         <label
@@ -6769,15 +8179,17 @@ export default function MainContent({
                     const inputCls = `flex-1 min-w-0 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
                       darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
                     }`
-                    const etaJTriggerCls = `flex flex-1 min-w-0 items-center justify-between gap-2 px-3 py-2 border rounded-lg text-base text-left focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                    }`
-                    const etaJPreset = inferCentrifugalEtaJPreset(parameters['eta_j'] as number | undefined)
+                    const etaJPreset = inferCentrifugalEtaJPreset(
+                      parameters['eta_j'] as number | undefined,
+                      centrifugalEtaJWantsCustom
+                    )
                     const applyEtaJ = (num: number) => {
+                      setCentrifugalEtaJWantsCustom(false)
                       updateParameters((prev) => ({ ...prev, eta_j: num }))
                       updateRawInputs((prev) => ({ ...prev, eta_j: String(num) }))
                     }
                     const clearCentrifugalEtaJ = () => {
+                      setCentrifugalEtaJWantsCustom(true)
                       updateParameters((prev) => ({ ...prev, eta_j: undefined }))
                       updateRawInputs((prev) => ({ ...prev, eta_j: '' }))
                     }
@@ -6791,7 +8203,7 @@ export default function MainContent({
                             : renderDescriptionWithMath('齿轮，$0.97\\leq\\eta_j\\leq0.98$（取 $0.975$）')
                     const field = (name: 'K_1' | 'rho_k' | 'g' | 'Q_k' | 'H_b' | 'eta_b') => {
                       const unit =
-                        name === 'H_b' ? 'm' : paramUnitFromFormula(formula.parameters, name)
+                        name === 'H_b' ? 'm' : paramUnitDisplaySuffix(formula.parameters, name)
                       return (
                         <div key={name} className="min-w-0">
                           <label
@@ -6861,9 +8273,9 @@ export default function MainContent({
                               )}
                               className={inputCls}
                             />
-                            {paramUnitFromFormula(formula.parameters, 'rho_k') !== '' && (
+                            {paramUnitDisplaySuffix(formula.parameters, 'rho_k') !== '' && (
                               <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                {paramUnitFromFormula(formula.parameters, 'rho_k')}
+                                {paramUnitDisplaySuffix(formula.parameters, 'rho_k')}
                               </span>
                             )}
                           </div>
@@ -6921,128 +8333,134 @@ export default function MainContent({
                         {field('Q_k')}
                         {field('H_b')}
                         {field('eta_b')}
-                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-                          <div ref={centrifugalEtaJSelectRef} className="relative min-w-0">
-                            <label
-                              className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
-                            >
-                              {renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, 'eta_j'))}
-                            </label>
+                        <div ref={centrifugalEtaJSelectRef} className="min-w-0 md:col-span-2">
+                          <label
+                            className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
+                          >
+                            {renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, 'eta_j'))}
+                          </label>
+                          <div className="relative">
                             <div className="flex items-center space-x-2">
                               <button
                                 type="button"
                                 aria-expanded={centrifugalEtaJSelectOpen}
                                 aria-haspopup="listbox"
                                 onClick={() => setCentrifugalEtaJSelectOpen((o) => !o)}
-                                className={etaJTriggerCls}
+                                className={`${inputCls} flex w-full min-w-0 cursor-pointer items-center justify-between gap-2 text-left appearance-none`}
                               >
-                                <span className="min-w-0 flex-1 overflow-x-auto param-label-math param-label-math--prose">
+                                {/* 不用 overflow-x-auto：在 Windows/Electron 下易出现滚动条箭头，被误认为「数字步进」 */}
+                                <span className="min-w-0 flex-1 overflow-hidden param-label-math param-label-math--prose text-left">
                                   {etaJDropdownFace}
                                 </span>
-                                <span className="shrink-0 text-gray-400" aria-hidden>
-                                  ▾
+                                <span
+                                  className={`shrink-0 select-none inline-flex items-center justify-center w-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
+                                  aria-hidden
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className="opacity-80">
+                                    <path d="M6 8L1.5 3.5h9L6 8z" />
+                                  </svg>
                                 </span>
                               </button>
                             </div>
                             {centrifugalEtaJSelectOpen && (
                               <div
                                 role="listbox"
-                                className={`absolute z-40 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border shadow-lg ${
+                                className={`absolute left-0 right-0 z-40 mt-1 max-h-72 overflow-y-auto rounded-lg border shadow-lg ${
                                   darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'
                                 }`}
                               >
-                                <button
-                                  type="button"
-                                  role="option"
-                                  className={`w-full text-left px-3 py-2.5 text-sm border-b transition-colors ${
-                                    darkMode
-                                      ? 'border-gray-700 hover:bg-gray-700/80 text-gray-100'
-                                      : 'border-gray-100 hover:bg-blue-50 text-gray-800'
-                                  }`}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault()
-                                    clearCentrifugalEtaJ()
-                                    setCentrifugalEtaJSelectOpen(false)
-                                  }}
-                                >
-                                  {renderDescriptionWithMath('自定义（手填 $\\eta_j$）')}
-                                </button>
-                                <button
-                                  type="button"
-                                  role="option"
-                                  className={`w-full text-left px-3 py-2.5 text-sm border-b transition-colors ${
-                                    darkMode
-                                      ? 'border-gray-700 hover:bg-gray-700/80 text-gray-100'
-                                      : 'border-gray-100 hover:bg-blue-50 text-gray-800'
-                                  }`}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault()
-                                    applyEtaJ(1)
-                                    setCentrifugalEtaJSelectOpen(false)
-                                  }}
-                                >
-                                  {renderDescriptionWithMath('联轴器，$\\eta_j=1.0$')}
-                                </button>
-                                <button
-                                  type="button"
-                                  role="option"
-                                  className={`w-full text-left px-3 py-2.5 text-sm border-b transition-colors ${
-                                    darkMode
-                                      ? 'border-gray-700 hover:bg-gray-700/80 text-gray-100'
-                                      : 'border-gray-100 hover:bg-blue-50 text-gray-800'
-                                  }`}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault()
-                                    applyEtaJ(0.92)
-                                    setCentrifugalEtaJSelectOpen(false)
-                                  }}
-                                >
-                                  {renderDescriptionWithMath('三角皮带，$0.90\\leq\\eta_j\\leq0.94$（取 $0.92$）')}
-                                </button>
-                                <button
-                                  type="button"
-                                  role="option"
-                                  className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
-                                    darkMode
-                                      ? 'hover:bg-gray-700/80 text-gray-100'
-                                      : 'hover:bg-blue-50 text-gray-800'
-                                  }`}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault()
-                                    applyEtaJ(0.975)
-                                    setCentrifugalEtaJSelectOpen(false)
-                                  }}
-                                >
-                                  {renderDescriptionWithMath('齿轮，$0.97\\leq\\eta_j\\leq0.98$（取 $0.975$）')}
-                                </button>
+                              <button
+                                type="button"
+                                role="option"
+                                className={`w-full text-left px-3 py-2.5 text-sm border-b transition-colors param-label-math param-label-math--prose ${
+                                  darkMode
+                                    ? 'border-gray-700 hover:bg-gray-700/80 text-gray-100'
+                                    : 'border-gray-100 hover:bg-blue-50 text-gray-800'
+                                }`}
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
+                                  applyEtaJ(1)
+                                  setCentrifugalEtaJSelectOpen(false)
+                                }}
+                              >
+                                {renderDescriptionWithMath('联轴器，$\\eta_j=1.0$')}
+                              </button>
+                              <button
+                                type="button"
+                                role="option"
+                                className={`w-full text-left px-3 py-2.5 text-sm border-b transition-colors param-label-math param-label-math--prose ${
+                                  darkMode
+                                    ? 'border-gray-700 hover:bg-gray-700/80 text-gray-100'
+                                    : 'border-gray-100 hover:bg-blue-50 text-gray-800'
+                                }`}
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
+                                  applyEtaJ(0.92)
+                                  setCentrifugalEtaJSelectOpen(false)
+                                }}
+                              >
+                                {renderDescriptionWithMath('三角皮带，$0.90\\leq\\eta_j\\leq0.94$（取 $0.92$）')}
+                              </button>
+                              <button
+                                type="button"
+                                role="option"
+                                className={`w-full text-left px-3 py-2.5 text-sm border-b transition-colors param-label-math param-label-math--prose ${
+                                  darkMode
+                                    ? 'border-gray-700 hover:bg-gray-700/80 text-gray-100'
+                                    : 'border-gray-100 hover:bg-blue-50 text-gray-800'
+                                }`}
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
+                                  applyEtaJ(0.975)
+                                  setCentrifugalEtaJSelectOpen(false)
+                                }}
+                              >
+                                {renderDescriptionWithMath('齿轮，$0.97\\leq\\eta_j\\leq0.98$（取 $0.975$）')}
+                              </button>
+                              <button
+                                type="button"
+                                role="option"
+                                className={`w-full text-left px-3 py-2.5 text-sm transition-colors param-label-math param-label-math--prose ${
+                                  darkMode ? 'hover:bg-gray-700/80 text-gray-100' : 'hover:bg-blue-50 text-gray-800'
+                                }`}
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
+                                  clearCentrifugalEtaJ()
+                                  setCentrifugalEtaJSelectOpen(false)
+                                }}
+                              >
+                                {renderDescriptionWithMath('自定义（手填 $\\eta_j$）')}
+                              </button>
                               </div>
                             )}
                           </div>
-                          <div className="min-w-0">
-                            <label
-                              className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
-                            >
-                              {renderDescriptionWithMath('$\\eta_j$ 数值')}
-                            </label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                autoComplete="off"
-                                spellCheck={false}
-                                value={
-                                  rawInputs['eta_j'] ??
-                                  (parameters['eta_j'] != null && !isNaN(parameters['eta_j']!)
-                                    ? String(parameters['eta_j'])
-                                    : '')
-                                }
-                                onChange={(e) => handleParameterChange('eta_j', e.target.value)}
-                                onBlur={() => handleParameterBlur('eta_j')}
-                                placeholder={CENTRIFUGAL_PARAM_PLACEHOLDER_ZH['eta_j']}
-                                className={inputCls}
-                              />
+                          {etaJPreset === 'custom' && (
+                            <div className="mt-3 min-w-0">
+                              <label
+                                className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
+                              >
+                                {renderDescriptionWithMath('$\\eta_j$ 手填数值')}
+                              </label>
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                  value={
+                                    rawInputs['eta_j'] ??
+                                    (parameters['eta_j'] != null && !isNaN(parameters['eta_j']!)
+                                      ? String(parameters['eta_j'])
+                                      : '')
+                                  }
+                                  onChange={(e) => handleParameterChange('eta_j', e.target.value)}
+                                  onBlur={() => handleParameterBlur('eta_j')}
+                                  placeholder="小数，如 0.95"
+                                  className={inputCls}
+                                />
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </div>
                       </>
                     )
@@ -7105,7 +8523,7 @@ export default function MainContent({
                   ].map((param) => (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
+                        {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -7125,7 +8543,7 @@ export default function MainContent({
                           }`}
                           placeholder={param.name === 'lambda_d' ? '如 0.025' : param.name === 'L_s' ? '管段长度' : '内径 m'}
                         />
-                        {param.unit != null && param.unit !== '' && (
+                        {shouldShowParameterUnitSuffix(param.unit) && (
                           <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
                         )}
                       </div>
@@ -7245,7 +8663,7 @@ export default function MainContent({
                   ].map((param) => (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
+                        {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -7266,7 +8684,7 @@ export default function MainContent({
                           }`}
                           placeholder={param.name === 'Q' ? '流量 m³/h' : '系数或等待步骤1填入'}
                         />
-                        {param.unit != null && param.unit !== '' && (
+                        {shouldShowParameterUnitSuffix(param.unit) && (
                           <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
                         )}
                       </div>
@@ -7568,7 +8986,7 @@ export default function MainContent({
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>计算浆体当量密度</div>
                 <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('依据固体质量浓度 $C_w$ 及液相密度 $\\rho_g$、固相密度 $\\rho_s$，按质量加权关系计算浆体当量密度 $\\rho_k$（t/m³），供达西–魏斯巴赫型沿程损失公式使用。')}
+                  {renderDescriptionWithMath('依据固体质量浓度 $C_w$ 及固体密度 $\\rho_g$、固相密度 $\\rho_s$，按质量加权关系计算浆体当量密度 $\\rho_k$（t/m³），供达西–魏斯巴赫型沿程损失公式使用。')}
                 </p>
                 <div className={`mb-4 text-xl ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                   <BlockMath math="\rho_k = \frac{1}{\frac{C_w}{\rho_g} + \frac{1-C_w}{\rho_s}}" />
@@ -7577,13 +8995,13 @@ export default function MainContent({
                   {formula.parameters.map((param) => {
                     const placeholders: Record<string, string> = {
                       C_w: '0～1 小数，如 0.35',
-                      rho_g: '载体/液相密度 t/m³',
-                      rho_s: '固体颗粒密度 t/m³',
+                      rho_g: '固体密度 t/m³',
+                      rho_s: '固体密度 t/m³',
                     }
                     return (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
+                        {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -7596,7 +9014,7 @@ export default function MainContent({
                           className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
                           placeholder={placeholders[param.name] || ''}
                         />
-                        {param.unit != null && param.unit !== '' && (
+                        {shouldShowParameterUnitSuffix(param.unit) && (
                           <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
                         )}
                       </div>
@@ -7642,13 +9060,13 @@ export default function MainContent({
                       lambda_coef: '浆体摩阻分步流程步骤 4 结果可导入，或直接输入',
                       V: '断面平均流速',
                       D: '管道内径',
-                      rho_s: '固体颗粒密度',
+                      rho_s: '固体密度',
                       g: '9.81',
                     }
                     return (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
+                        {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -7661,7 +9079,7 @@ export default function MainContent({
                           className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
                           placeholder={param.default !== undefined ? String(param.default) : placeholders[param.name] || ''}
                         />
-                        {param.unit != null && param.unit !== '' && (
+                        {shouldShowParameterUnitSuffix(param.unit) && (
                           <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
                         )}
                       </div>
@@ -7690,14 +9108,14 @@ export default function MainContent({
           ) : formula?.id === 'kronodze_pressure' ? (
             <>
               <p className={`text-sm leading-relaxed mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {renderDescriptionWithMath('本模型主要用于计算流体输送系统中压力管道的临界流速和摩阻损失，其计算结果可运用于管材和泵选型。该模型适用于：1、有压隧洞泥沙运输，管道内悬浮液处于第一、第二临界流速情况下；2、适用于固体密度小于 $3$、颗粒粒径小于 $0.4$ mm 的浆体。在重力流管道情况下，该模型的应用价值有限。当体积浓度 $C_v>30\\%$ 时，该模型计算得出的数据与实际情况偏差较大。本方法采用三步顺序计算，每步可独立执行，结果将作为下一步的输入。')}
+                {renderDescriptionWithMath('本模型主要用于计算流体输送系统中压力管道的临界流速和摩阻损失，其计算结果可运用于管材和泵选型。该模型适用于：1、有压隧洞泥沙运输，管道内悬浮液处于第一、第二临界流速情况下；2、适用于固体密度小于 $3$、颗粒粒径小于 $0.4$ mm 的浆体。在重力流管道情况下，该模型的应用价值有限。当体积浓度 $C_V>30\\%$ 时，该模型计算得出的数据与实际情况偏差较大。本方法采用三步顺序计算，每步可独立执行，结果将作为下一步的输入。')}
               </p>
 
               {/* 1. 计算矿浆流量：公式 → 本步参数 → 计算 → 结果 */}
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>1. 计算矿浆流量</div>
                 <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('根据干尾矿重量 $W$、矿浆中水重 $G$、尾矿相对密度 $\\rho_g$ 及波动系数 $K$，计算矿浆流量 $Q_k$。$Q_k$ 为后续步骤的基础，单位 m^3/s。')}
+                  {renderDescriptionWithMath('根据干尾矿重量 $W$、矿浆中水重 $G$、固体密度 $\\rho_g$ 及波动系数 $K$，计算矿浆流量 $Q_k$。$Q_k$ 为后续步骤的基础，单位 m^3/s。')}
                 </p>
                 <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   <BlockMath math="Q_k = K \cdot W \cdot \left(\frac{1}{\rho_g}+\frac{G}{W}\right)" />
@@ -7708,12 +9126,12 @@ export default function MainContent({
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                         {renderDescriptionWithMath(
                           param.name === 'K'
-                            ? 'K：波动系数（默认 1.1，无量纲）'
+                            ? 'K：波动系数，单位为 无量纲'
                             : param.name === 'W'
-                            ? 'W：干尾矿重量'
+                            ? 'W：干尾矿重量，单位为 t/h'
                             : param.name === 'G'
-                            ? 'G：矿浆中水重'
-                            : '$\\rho_g$：尾矿相对密度'
+                            ? 'G：矿浆中水重，单位为 t/h'
+                            : '$\\rho_g$：固体密度，单位为 t/m³'
                         )}
                       </label>
                       <div className="flex items-center space-x-2">
@@ -7725,7 +9143,7 @@ export default function MainContent({
                           onChange={(e) => handleParameterChange(param.name, e.target.value)}
                           onBlur={() => handleParameterBlur(param.name)}
                           className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                          placeholder={param.default !== undefined ? String(param.default) : '请输入数值'}
+                          placeholder={param.default !== undefined ? String(param.default) : suggestedNumericPlaceholder(formula?.parameters, param.name)}
                         />
                         {param.name !== 'K' && (
                           <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -7814,7 +9232,7 @@ export default function MainContent({
                   {formula.parameters.filter((p) => p.name === 'beta').map((param) => (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(param.label || param.name)}
+                        {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -7825,9 +9243,9 @@ export default function MainContent({
                           onChange={(e) => handleParameterChange(param.name, e.target.value)}
                           onBlur={() => handleParameterBlur(param.name)}
                           className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                          placeholder={param.default !== undefined ? String(param.default) : '请输入数值'}
+                          placeholder={param.default !== undefined ? String(param.default) : suggestedNumericPlaceholder(formula?.parameters, param.name)}
                         />
-                        {param.unit != null && param.unit !== '' && (
+                        {shouldShowParameterUnitSuffix(param.unit) && (
                           <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{param.unit}</span>
                         )}
                       </div>
@@ -7937,46 +9355,107 @@ export default function MainContent({
               参数输入
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {formula.parameters.map((param) => (
-                <div key={param.name}>
-                  <label className={`block text-sm font-medium mb-1 ${
-                    darkMode ? 'text-gray-200' : 'text-gray-700'
-                  }`}>
-                    {renderDescriptionWithMath(param.label || param.name)}
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      autoComplete="off"
-                      spellCheck={false}
-                      min={param.name === 'Cv' ? 0 : undefined}
-                      max={param.name === 'Cv' ? 1 : undefined}
-                      value={(() => {
-                        const raw = rawInputs[param.name]
-                        if (raw !== undefined) return raw
-                        const val = parameters[param.name]
-                        return val !== undefined && val !== null && !isNaN(val) ? String(val) : ''
-                      })()}
-                      onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                      onBlur={() => handleParameterBlur(param.name)}
-                      className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        darkMode 
-                          ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400' 
-                          : 'bg-white border-gray-300 text-gray-900'
+              {formula.parameters.map((param) => {
+                const displayValue = (() => {
+                  const raw = rawInputs[param.name]
+                  if (raw !== undefined) return raw
+                  const val = parameters[param.name]
+                  return val !== undefined && val !== null && !isNaN(val) ? String(val) : ''
+                })()
+                const ph = (() => {
+                  if (param.name === 'Cv') {
+                    return cvParameterPlaceholder()
+                  }
+                  if (param.name === 'omega_s' && formula?.id === 'liu_dezhong') {
+                    return param.default !== undefined
+                      ? `${param.default}（点击展开颗粒沉速辅助计算公式）`
+                      : '点击输入框展开「颗粒沉速」辅助计算公式'
+                  }
+                  if (isApiDecimalUnit(param.unit)) {
+                    return decimalParameterPlaceholder(param.default as number | undefined)
+                  }
+                  if (param.default !== undefined) return String(param.default)
+                  return suggestedNumericPlaceholder(formula?.parameters, param.name)
+                })()
+                return (
+                  <div key={param.name}>
+                    <label
+                      className={`mb-1 block text-sm font-medium ${
+                        darkMode ? 'text-gray-200' : 'text-gray-700'
                       }`}
-                      placeholder={param.default !== undefined ? String(param.default) : "请输入数值"}
-                    />
-                    {param.unit != null && param.unit !== '' && (
-                      <span className={`text-sm shrink-0 ${
-                        darkMode ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        {param.unit}
-                      </span>
+                    >
+                      {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
+                    </label>
+                    {param.name === 'Cv' ? (
+                      <CvVolumeConcentrationField
+                        darkMode={darkMode}
+                        inputValue={displayValue}
+                        onInputChange={(v) => handleParameterChange('Cv', v)}
+                        onInputBlur={() => handleParameterBlur('Cv')}
+                        placeholder={ph}
+                        unit={
+                          shouldShowParameterUnitSuffix(param.unit) ? (
+                            <span
+                              className={`self-center text-sm shrink-0 ${
+                                darkMode ? 'text-gray-400' : 'text-gray-500'
+                              }`}
+                            >
+                              {param.unit}
+                            </span>
+                          ) : null
+                        }
+                        onApplyCvFromRatio={(s) => handleParameterChange('Cv', s)}
+                      />
+                    ) : formula?.id === 'liu_dezhong' && param.name === 'omega_s' ? (
+                      <LiuDezhongOmegaSBinghamField
+                        darkMode={darkMode}
+                        inputValue={displayValue}
+                        onInputChange={(v) => handleParameterChange('omega_s', v)}
+                        onInputBlur={() => handleParameterBlur('omega_s')}
+                        placeholder={ph}
+                        unit={
+                          shouldShowParameterUnitSuffix(param.unit) ? (
+                            <span
+                              className={`self-center text-sm shrink-0 ${
+                                darkMode ? 'text-gray-400' : 'text-gray-500'
+                              }`}
+                            >
+                              {param.unit}
+                            </span>
+                          ) : null
+                        }
+                        parameters={parameters}
+                        onApplyOmegaS={(s) => handleParameterChange('omega_s', s)}
+                      />
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={displayValue}
+                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
+                          onBlur={() => handleParameterBlur(param.name)}
+                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            darkMode
+                              ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400'
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
+                          placeholder={ph}
+                        />
+                        {shouldShowParameterUnitSuffix(param.unit) && (
+                          <span
+                            className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
+                          >
+                            {param.unit}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
           )}

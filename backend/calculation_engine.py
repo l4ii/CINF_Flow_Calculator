@@ -83,8 +83,8 @@ class CalculationEngine:
     def _calculate_liu_dezhong(self, params, g):
         """刘德忠公式: Vc = 9.5 * [g*D*(Δρ/ρ)*ω]^(1/3) * Cv^(1/6) * (ω_s/ω)^(1/6)"""
         D = params.get('D')
-        rho_g = params.get('rho_g')  # 固体颗粒密度
-        rho_k = params.get('rho_k')  # 载体液体密度
+        rho_g = params.get('rho_g')  # 固体密度
+        rho_k = params.get('rho_k')  # 浆体密度
         omega = params.get('omega')
         Cv = params.get('Cv')  # 体积浓度
         omega_s = params.get('omega_s')  # 沉降速度
@@ -100,10 +100,10 @@ class CalculationEngine:
             raise ValueError("omega不能为0")
         
         if rho_k == 0:
-            raise ValueError("载体液体密度rho_k不能为0")
+            raise ValueError("浆体密度rho_k不能为0")
         
         if rho_g < rho_k:
-            raise ValueError("固体颗粒密度rho_g必须大于载体液体密度rho_k")
+            raise ValueError("固体密度rho_g必须大于浆体密度rho_k")
         
         if Cv < 0 or Cv > 1:
             raise ValueError("体积浓度Cv必须在0-1之间")
@@ -145,8 +145,8 @@ class CalculationEngine:
     def _calculate_wasp(self, params, g):
         """E.J.瓦斯普公式: Vc = 3.113 * Cv^0.1858 * [2*g*D*(Δρ/ρ)]^(1/2) * (d85/D)^(1/6)"""
         D = params.get('D')
-        rho_g = params.get('rho_g')  # 固体颗粒密度
-        rho_k = params.get('rho_k')  # 载体液体密度
+        rho_g = params.get('rho_g')  # 固体密度
+        rho_k = params.get('rho_k')  # 浆体密度
         Cv = params.get('Cv')  # 体积浓度
         d85 = params.get('d85')  # d85粒径
         
@@ -161,10 +161,10 @@ class CalculationEngine:
             raise ValueError("D不能为0")
         
         if rho_k == 0:
-            raise ValueError("载体液体密度rho_k不能为0")
+            raise ValueError("浆体密度rho_k不能为0")
         
         if rho_g < rho_k:
-            raise ValueError("固体颗粒密度rho_g必须大于载体液体密度rho_k")
+            raise ValueError("固体密度rho_g必须大于浆体密度rho_k")
         
         if Cv < 0 or Cv > 1:
             raise ValueError("体积浓度Cv必须在0-1之间")
@@ -205,12 +205,11 @@ class CalculationEngine:
         }
     
     def _calculate_fei_xiangjun(self, params, g):
-        """费祥俊公式: Vc = (2.26/√λ) * [gD*(Δρ/ρ)*ω]^(1/2) * Cv^0.25 * (d90/D)^(1/3)"""
+        """费祥俊公式: Vc = (2.26/√λ) * [g·D·(Δρ/ρ)]^(1/2) * Cv^0.25 * (d90/D)^(1/3)（无 ω 速度参量）"""
         D = params.get('D')
-        rho_g = params.get('rho_g')  # 固体颗粒密度
-        rho_k = params.get('rho_k')  # 载体液体密度
+        rho_g = params.get('rho_g')  # 固体密度
+        rho_k = params.get('rho_k')  # 浆体密度
         Cv = params.get('Cv')  # 体积浓度
-        omega = params.get('omega')
         d90 = params.get('d90')  # d90粒径
         lambda_coef = params.get('lambda_coef')  # λ系数
         
@@ -218,8 +217,8 @@ class CalculationEngine:
         g = params.get('g', g)  # 重力加速度，优先使用前端传入的值，否则使用传入的默认值
         coefficient_2_26 = params.get('coefficient_2_26', 2.26)  # 经验系数，默认2.26
         
-        if None in [D, rho_g, rho_k, Cv, omega, d90, lambda_coef]:
-            raise ValueError("费祥俊公式需要所有参数：D, rho_g, rho_k, Cv, omega, d90, lambda_coef")
+        if None in [D, rho_g, rho_k, Cv, d90, lambda_coef]:
+            raise ValueError("费祥俊公式需要所有参数：D, rho_g, rho_k, Cv, d90, lambda_coef")
         
         if D == 0:
             raise ValueError("D不能为0")
@@ -228,16 +227,13 @@ class CalculationEngine:
             raise ValueError("lambda_coef必须大于0")
         
         if rho_k == 0:
-            raise ValueError("载体液体密度rho_k不能为0")
+            raise ValueError("浆体密度rho_k不能为0")
         
         if rho_g < rho_k:
-            raise ValueError("固体颗粒密度rho_g必须大于载体液体密度rho_k")
+            raise ValueError("固体密度rho_g必须大于浆体密度rho_k")
         
         if Cv < 0 or Cv > 1:
             raise ValueError("体积浓度Cv必须在0-1之间")
-        
-        if omega < 0:
-            raise ValueError("速度参数omega不能为负数")
         
         if d90 < 0:
             raise ValueError("d90粒径不能为负数")
@@ -245,10 +241,10 @@ class CalculationEngine:
         # 1.计算相对密度差
         delta_rho_ratio = (rho_g - rho_k) / rho_k
         
-        # 2.计算中括号内部分 [gD*(Δρ/ρ)*ω]，然后开方（1/2次方）
-        bracket_value = g * D * delta_rho_ratio * omega
+        # 2.计算中括号内部分 [g·D·(Δρ/ρ)]，然后开方（1/2次方）
+        bracket_value = g * D * delta_rho_ratio
         if bracket_value < 0:
-            raise ValueError(f"核心项计算结果为负数: {bracket_value}，请检查输入参数（D、g、omega必须为正数，且rho_g > rho_k）")
+            raise ValueError(f"核心项计算结果为负数: {bracket_value}，请检查输入参数（D、g 必须为正数，且 rho_g > rho_k）")
         bracket_term = bracket_value ** 0.5
         
         # 3.计算浓度修正项
@@ -287,19 +283,19 @@ class CalculationEngine:
         K = params.get('K', 1.1)  # 波动系数
         G = params.get('G')       # 矿浆中水重
         W = params.get('W')       # 干尾矿重量
-        rho_g = params.get('rho_g')  # 尾矿相对密度
+        rho_g = params.get('rho_g')  # 固体密度
         dp_raw = params.get('dp')    # 尾矿加权平均粒径，mm（步骤2 才需要）
         beta = params.get('beta', 1.0)  # 固体物料相对密度修正系数
 
         # 步骤 A 仅需 G、W、ρg（K 有默认值）
         if G is None or W is None or rho_g is None:
-            raise ValueError("步骤1 需要参数：G（矿浆中水重）、W（干尾矿重量）、ρg（尾矿相对密度）")
+            raise ValueError("步骤1 需要参数：G（矿浆中水重）、W（干尾矿重量）、ρg（固体密度）")
         if W == 0:
             raise ValueError("干尾矿重量 W 不能为0")
         if G == 0:
             raise ValueError("矿浆中水重 G 不能为0")
         if rho_g <= 0:
-            raise ValueError("尾矿相对密度 ρg 必须大于0")
+            raise ValueError("固体密度 ρg 必须大于0")
 
         # ---------- Step A: 矿浆流量 Qk = K*W*(1/ρg + G/W) ----------
         Qk = K * W * (1.0 / rho_g + G / W)
@@ -434,8 +430,8 @@ class CalculationEngine:
     def _calculate_density_mixing(self, params, g):
         """4.3.1-2 浆体密度混合公式: ρ_k = 1/(C_w/ρ_g + (1-C_w)/ρ_s)，单位 t/m³"""
         C_w = params.get('C_w')
-        rho_g = params.get('rho_g')  # 载体流体密度（如水）
-        rho_s = params.get('rho_s')  # 固体颗粒密度
+        rho_g = params.get('rho_g')  # 固体密度
+        rho_s = params.get('rho_s')  # 固体密度
         if None in [C_w, rho_g, rho_s]:
             raise ValueError("密度混合公式需要参数：C_w、ρ_g、ρ_s")
         if rho_g == 0 or rho_s == 0:
@@ -807,7 +803,7 @@ class CalculationEngine:
         if rho_k <= 0:
             raise ValueError("浆体密度 ρ_k 必须大于 0")
         if rho_s <= 0:
-            raise ValueError("固体颗粒密度 ρ_s 必须大于 0")
+            raise ValueError("固体密度 ρ_s 必须大于 0")
         if L <= 0:
             raise ValueError("管道总长度 L 必须大于 0")
 

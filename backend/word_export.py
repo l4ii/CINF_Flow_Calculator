@@ -493,9 +493,9 @@ class WordExporter:
         # 解析公式并转换为OMML格式
         # 这是一个简化的转换，可以根据样本文档进一步优化
         
-        # 处理变量下标：Vc -> V_c, Cv -> C_v, d85 -> d_85, d90 -> d_90
+        # 处理变量下标：Vc -> V_c, Cv -> C_V（体积浓度下标大写 V）, d85 -> d_85, d90 -> d_90
         formula = re.sub(r'Vc', 'V_c', formula)
-        formula = re.sub(r'Cv', 'C_v', formula)
+        formula = re.sub(r'Cv', 'C_V', formula)
         formula = re.sub(r'd85', 'd_85', formula)
         formula = re.sub(r'd90', 'd_90', formula)
         formula = re.sub(r'ω_s', 'ω_s', formula)
@@ -654,11 +654,11 @@ class WordExporter:
             'delta_rho_ratio': '相对密度差 Δρ/ρ',
             'density_ratio': '密度比 (ps-pl)/pl',
             'core_term': '核心项 [g·D·(Δρ/ρ)·ω]^(1/3)',
-            'concentration_term': '浓度修正项 Cv^(1/6)',
+            'concentration_term': '浓度修正项 C_V^(1/6)',
             'velocity_ratio_term': '速度比修正项 (ω_s/ω)^(1/6)',
             'bracket_term': '核心项 [2·g·D·(Δρ/ρ)]^(1/2)',
             'size_ratio_term': '粒径比修正项 (d85/D)^(1/6)',
-            'conc_term': '浓度修正项 Cv^0.25',
+            'conc_term': '浓度修正项 C_V^0.25',
             'size_term': '粒径比修正项 (d90/D)^(1/3)',
             'leading_coef': '核心系数 2.26/√λ',
             'sqrt_term': '平方根项',
@@ -934,7 +934,7 @@ class WordExporter:
         process_texts = [
             f"1. 计算相对密度差: Δρ/ρ = ({rho_g} - {rho_k})/{rho_k} = {intermediate.get('delta_rho_ratio', 'N/A')}",
             f"2. 计算核心项: [g·D·(Δρ/ρ)·ω]^(1/3) = {intermediate.get('core_term', 'N/A')}",
-            f"3. 计算浓度修正项: Cv^(1/6) = {intermediate.get('concentration_term', 'N/A')}",
+            f"3. 计算浓度修正项: C_V^(1/6) = {intermediate.get('concentration_term', 'N/A')}",
             f"4. 计算速度比修正项: (ω_s/ω)^(1/6) = {intermediate.get('velocity_ratio_term', 'N/A')}",
             f"5. 计算临界流速: Vc = {coefficient} × {intermediate.get('core_term', 'N/A')} × {intermediate.get('concentration_term', 'N/A')} × {intermediate.get('velocity_ratio_term', 'N/A')}",
             f"   Vc = {result.get('Vc', 'N/A')} m/s"
@@ -954,7 +954,7 @@ class WordExporter:
         process_texts = [
             f"1. 计算相对密度差: Δρ/ρ = ({rho_g} - {rho_k})/{rho_k} = {intermediate.get('delta_rho_ratio', 'N/A')}",
             f"2. 计算核心项: [2·g·D·(Δρ/ρ)]^(1/2) = {intermediate.get('bracket_term', 'N/A')}",
-            f"3. 计算浓度修正项: Cv^0.1858 = {intermediate.get('concentration_term', 'N/A')}",
+            f"3. 计算浓度修正项: C_V^0.1858 = {intermediate.get('concentration_term', 'N/A')}",
             f"4. 计算粒径比修正项: (d85/D)^(1/6) = {intermediate.get('size_ratio_term', 'N/A')}",
             f"5. 计算临界流速: Vc = {coefficient} × {intermediate.get('concentration_term', 'N/A')} × {intermediate.get('bracket_term', 'N/A')} × {intermediate.get('size_ratio_term', 'N/A')}",
             f"   Vc = {result.get('Vc', 'N/A')} m/s"
@@ -975,8 +975,8 @@ class WordExporter:
         process_texts = [
             f"1. 计算相对密度差: Δρ/ρ = ({rho_g} - {rho_k})/{rho_k} = {intermediate.get('delta_rho_ratio', 'N/A')}",
             f"2. 计算核心系数: 2.26/√λ = {coefficient}/√{lambda_coef} = {intermediate.get('leading_coef', 'N/A')}",
-            f"3. 计算核心项: [g·D·(Δρ/ρ)·ω]^(1/2) = {intermediate.get('bracket_term', 'N/A')}",
-            f"4. 计算浓度修正项: Cv^0.25 = {intermediate.get('conc_term', 'N/A')}",
+            f"3. 计算核心项: [g·D·(Δρ/ρ)]^(1/2) = {intermediate.get('bracket_term', 'N/A')}",
+            f"4. 计算浓度修正项: C_V^0.25 = {intermediate.get('conc_term', 'N/A')}",
             f"5. 计算粒径比修正项: (d90/D)^(1/3) = {intermediate.get('size_term', 'N/A')}",
             f"6. 计算临界流速: Vc = {intermediate.get('leading_coef', 'N/A')} × {intermediate.get('bracket_term', 'N/A')} × {intermediate.get('conc_term', 'N/A')} × {intermediate.get('size_term', 'N/A')}",
             f"   Vc = {result.get('Vc', 'N/A')} m/s"

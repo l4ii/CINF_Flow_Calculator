@@ -73,12 +73,20 @@ export interface HydraulicLayoutOptions {
   xTickDivisions?: number
 }
 
+export interface ScientificHlChartExtraCurve {
+  curve: HlCurvePoint[]
+  color: string
+  legend: string
+}
+
 export interface ScientificHlChartOptions {
   curveData: HlCurvePoint[]
   /** 第二条 L–H 曲线（如浆体图中间损失压力递减示意） */
   secondCurve?: HlCurvePoint[]
   secondLineColor?: string
   secondLegendText?: string
+  /** 水力坡度图：第三条及以后的曲线（如地形线、最大允许压力线） */
+  extraHydraulicCurves?: ScientificHlChartExtraCurve[]
   darkMode: boolean
   title: string
   subtitle?: string
@@ -107,6 +115,7 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     secondCurve,
     secondLineColor = '#DC2626',
     secondLegendText = '',
+    extraHydraulicCurves,
     darkMode,
     title,
     subtitle,
@@ -298,6 +307,24 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     ctx.stroke()
   }
 
+  if (extraHydraulicCurves?.length) {
+    for (const ex of extraHydraulicCurves) {
+      if (!ex.curve || ex.curve.length < 2) continue
+      ctx.strokeStyle = ex.color
+      ctx.lineWidth = lineW
+      ctx.setLineDash([])
+      ctx.beginPath()
+      for (let i = 0; i < ex.curve.length; i++) {
+        const p = ex.curve[i]
+        const x = xScale(p.L)
+        const y = yScale(p.H)
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      ctx.stroke()
+    }
+  }
+
   // 标题
   ctx.fillStyle = fg
   ctx.font = 'bold 18px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
@@ -333,6 +360,13 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     const items: { color: string; text: string }[] = [{ color: lineColor, text: legendText }]
     if (secondCurve && secondCurve.length > 1 && secondLegendText) {
       items.push({ color: secondLineColor, text: secondLegendText })
+    }
+    if (extraHydraulicCurves?.length) {
+      for (const ex of extraHydraulicCurves) {
+        if (ex.curve.length > 1 && ex.legend) {
+          items.push({ color: ex.color, text: ex.legend })
+        }
+      }
     }
     const gap = 28
     const sampleW = 36

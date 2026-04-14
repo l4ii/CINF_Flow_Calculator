@@ -38,10 +38,10 @@ def get_formulas():
                 "description": "本模型由刘德忠教授提出，是中国浆体管道设计中的主流经验公式之一。其核心思想基于浆体的整体沉降特性，通过引入加权平均沉速（$\\omega$）与静态界面沉速（$\\omega_s$）这两个关键实验参数，来综合反映固体颗粒群的干涉沉降行为。该公式尤其适用于细颗粒（如$d<2\\text{mm}$）含量较高、级配相对均匀的浆体，计算结果与中国工程实践贴合紧密。使用本公式的前提是需通过静态沉降柱试验获取可靠的$\\omega$与$\\omega_s$值。",
                 "parameters": [
                     {"name": "D", "label": "$D$：管道内径，单位为 m", "unit": "m", "description": "管道内径", },
-                    {"name": "rho_g", "label": "$\\rho_g$：固体颗粒密度，单位为 t/m³", "unit": "t/m³", "description": "固体颗粒密度", },
-                    {"name": "rho_k", "label": "$\\rho_k$：载体液体密度，单位为 t/m³", "unit": "t/m³", "description": "载体液体密度", },
+                    {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
+                    {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
                     {"name": "omega", "label": "$\\omega$：速度参数，单位为 m/s", "unit": "m/s", "description": "速度参数", },
-                    {"name": "Cv", "label": "$C_v$：体积浓度，单位为 decimal", "unit": "decimal", "description": "体积浓度", },
+                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，请以小数填写；点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
                     {"name": "omega_s", "label": "$\\omega_s$：沉降速度，单位为 m/s", "unit": "m/s", "description": "沉降速度", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "coefficient_9_5", "label": "经验系数：默认值 9.5（无量纲）", "unit": "", "description": "经验系数", "default": 9.5}
@@ -51,12 +51,12 @@ def get_formulas():
                 "id": "wasp",
                 "name": "E.J.瓦斯普公式",
                 "formula": "Vc = 3.113 * Cv^0.1858 * [2*g*D*(Δρ/ρ)]^(1/2) * (d85/D)^(1/6)",
-                "description": "本模型由E.J.Wasp等人提出，是国际上分析宽级配、非均质流临界流速的经典理论公式。其理论基础为两相流扩散模型，公式结构清晰体现了悬浮能量消耗与颗粒沉降间的平衡。它通过体积浓度（$C_v$）和相对密度差（$\\frac{\\Delta\\rho}{\\rho}$）来表征输送难度，并首次引入特征粒径（$d_{85}$）来量化粗颗粒对床层形成的影响。该公式特别适合粒径分布范围广、存在显著非均质输送特性的浆体。",
+                "description": "本模型由E.J.Wasp等人提出，是国际上分析宽级配、非均质流临界流速的经典理论公式。其理论基础为两相流扩散模型，公式结构清晰体现了悬浮能量消耗与颗粒沉降间的平衡。它通过体积浓度（$C_V$）和相对密度差（$\\frac{\\Delta\\rho}{\\rho}$）来表征输送难度，并首次引入特征粒径（$d_{85}$）来量化粗颗粒对床层形成的影响。该公式特别适合粒径分布范围广、存在显著非均质输送特性的浆体。",
                 "parameters": [
                     {"name": "D", "label": "$D$：管道内径，单位为 m", "unit": "m", "description": "管道内径", },
-                    {"name": "rho_g", "label": "$\\rho_g$：固体颗粒密度，单位为 t/m³", "unit": "t/m³", "description": "固体颗粒密度", },
-                    {"name": "rho_k", "label": "$\\rho_k$：载体液体密度，单位为 t/m³", "unit": "t/m³", "description": "载体液体密度", },
-                    {"name": "Cv", "label": "$C_v$：体积浓度，单位为 decimal", "unit": "decimal", "description": "体积浓度", },
+                    {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
+                    {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
+                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，请以小数填写；点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
                     {"name": "d85", "label": "$d_{85}$：特征粒径，单位为 m", "unit": "m", "description": "d85特征粒径", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "coefficient_3_113", "label": "经验系数：默认值 3.113（无量纲）", "unit": "", "description": "经验系数", "default": 3.113}
@@ -65,14 +65,13 @@ def get_formulas():
             {
                 "id": "fei_xiangjun",
                 "name": "费祥俊公式",
-                "formula": "Vc = (2.26/√λ) * [gD*(Δρ/ρ)*ω]^(1/2) * Cv^0.25 * (d90/D)^(1/3)",
-                "description": "本模型由费祥俊教授建立，其显著特点是首次将管道沿程阻力系数（$\\lambda$）引入临界流速的计算，在理论上将输送能耗与维持颗粒悬浮的能耗进行了统一。公式采用特征粒径（$d_{90}$）来表征浆体颗粒群的粗细程度，并对浆体浓度（$C_v$）影响的刻画较为显著。该公式在理论上更为全面，尤其适合于长距离输送管道的水力坡降与系统设计。应用时，需根据管道材质、内壁状况及流态等条件合理确定或计算沿程阻力系数（$\\lambda$），此参数对计算结果有重要影响。",
+                "formula": "Vc = (2.26/√λ) * [g·D·(Δρ/ρ)]^(1/2) * Cv^0.25 * (d90/D)^(1/3)",
+                "description": "本模型由费祥俊教授建立，其显著特点是首次将管道沿程阻力系数（$\\lambda$）引入临界流速的计算，在理论上将输送能耗与维持颗粒悬浮的能耗进行了统一。公式采用特征粒径（$d_{90}$）来表征浆体颗粒群的粗细程度，并对浆体浓度（$C_V$）影响的刻画较为显著。该公式在理论上更为全面，尤其适合于长距离输送管道的水力坡降与系统设计。应用时，需根据管道材质、内壁状况及流态等条件合理确定或计算沿程阻力系数（$\\lambda$），此参数对计算结果有重要影响。",
                 "parameters": [
                     {"name": "D", "label": "$D$：管道内径，单位为 m", "unit": "m", "description": "管道内径", },
-                    {"name": "rho_g", "label": "$\\rho_g$：固体颗粒密度，单位为 t/m³", "unit": "t/m³", "description": "固体颗粒密度", },
-                    {"name": "rho_k", "label": "$\\rho_k$：载体液体密度，单位为 t/m³", "unit": "t/m³", "description": "载体液体密度", },
-                    {"name": "Cv", "label": "$C_v$：体积浓度，单位为 decimal", "unit": "decimal", "description": "体积浓度", },
-                    {"name": "omega", "label": "$\\omega$：速度参数，单位为 m/s", "unit": "m/s", "description": "速度参数", },
+                    {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
+                    {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
+                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，请以小数填写；点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
                     {"name": "d90", "label": "$d_{90}$：特征粒径，单位为 m", "unit": "m", "description": "d90特征粒径", },
                     {"name": "lambda_coef", "label": "$\\lambda$：达西摩阻系数，无量纲", "unit": "", "description": "摩擦阻力系数", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
@@ -83,12 +82,12 @@ def get_formulas():
                 "id": "kronodze_pressure",
                 "name": "B.C.克诺罗兹法",
                 "formula": "A) Qk=K·W·(1/ρg+G/W)；B) 按dp求DL；C) V_L=0.255β(1+2.48·³√(Cd)·⁴√(DL))",
-                "description": "A) 计算矿浆流量。其中：【输出结果】Qk 矿浆流量，单位为 m³/s；K 波动系数：默认值 1.1；【用户输入】W 干尾矿重量，单位为 t/h；$\\rho_g$ 尾矿相对密度，单位为 t/m³；G 矿浆中水重，单位为 t/h。B) 计算临界管径。当 dp≤0.07 mm 与 0.07<dp≤0.15 mm 分别采用不同公式，由 Qk 反解。【用户选择】dp 尾矿加权平均粒径，单位为 mm；$\\beta$ 固体物料相对密度修正系数：默认值 1；【输出结果】DL 临界管径，单位为 mm；Cd 重量砂水比 = W/G×100。C) 计算临界流速。【输出结果】V_L 临界流速，单位为 m/s。适用于有压隧洞泥沙运输、固体密度<3、粒径<0.4 mm 的浆体；体积浓度>30% 时偏差较大。",
+                "description": "A) 计算矿浆流量。其中：【输出结果】Qk 矿浆流量，单位为 m³/s；K 波动系数：默认值 1.1；【用户输入】W 干尾矿重量，单位为 t/h；$\\rho_g$ 固体密度，单位为 t/m³；G 矿浆中水重，单位为 t/h。B) 计算临界管径。当 dp≤0.07 mm 与 0.07<dp≤0.15 mm 分别采用不同公式，由 Qk 反解。【用户选择】dp 尾矿加权平均粒径，单位为 mm；$\\beta$ 固体物料相对密度修正系数：默认值 1；【输出结果】DL 临界管径，单位为 mm；Cd 重量砂水比 = W/G×100。C) 计算临界流速。【输出结果】V_L 临界流速，单位为 m/s。适用于有压隧洞泥沙运输、固体密度<3、粒径<0.4 mm 的浆体；体积浓度 $C_V$>30% 时偏差较大。",
                 "parameters": [
                     {"name": "K", "label": "$K$：波动系数，默认 1.1（无量纲）", "unit": "", "description": "波动系数", "default": 1.1},
                     {"name": "G", "label": "$G$：矿浆中水重，单位为 t/h", "unit": "t/h", "description": "矿浆中水重", },
                     {"name": "W", "label": "$W$：干尾矿重量，单位为 t/h", "unit": "t/h", "description": "干尾矿重量", },
-                    {"name": "rho_g", "label": "$\\rho_g$：尾矿相对密度，单位为 t/m³", "unit": "t/m³", "description": "尾矿相对密度", },
+                    {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
                     {"name": "dp", "label": "$d_p$：尾矿加权平均粒径，单位为 mm", "unit": "mm", "description": "尾矿加权平均粒径；≤0.07 与 0.07～0.15 对应不同公式", },
                     {"name": "beta", "label": "$\\beta$：固体物料相对密度修正系数：默认值 1（无量纲）", "unit": "", "description": "固体物料相对密度修正系数", "default": 1.0}
                 ]
@@ -121,11 +120,11 @@ def get_formulas():
                 "description": (
                     "浆体管道沿程水头损失以单位管长水力坡降 $i_k$ 表征，本模块输出 $i_k$ 的单位为米水柱每米（mH₂O/m）。"
                     "采用达西–魏斯巴赫形式 $i_k = \\lambda \\cdot \\dfrac{V^2\\rho_k}{2gD\\rho_s}$，"
-                    "其中 $V$ 为断面平均流速，$D$ 为管道内径，$g$ 为重力加速度，$\\rho_k$ 为浆体当量密度，$\\rho_s$ 为固体颗粒密度，$\\lambda$ 为达西摩阻系数。\n\n"
+                    "其中 $V$ 为断面平均流速，$D$ 为管道内径，$g$ 为重力加速度，$\\rho_k$ 为浆体当量密度，$\\rho_s$ 为固体密度，$\\lambda$ 为达西摩阻系数。\n\n"
                     "摩阻系数 $\\lambda$ 由混合物雷诺数 $Re_B$、管壁绝对粗糙度 $\\varepsilon$ 与管径 $D_n$ 等按步骤 4 所选显式关系确定；"
                     "$\\rho_g$、$\\rho_s$、$\\rho_1$ 均以 t/m³ 计，雷诺数按 $Re_B = V D_n \\cdot 1000\\rho_1 / \\eta_1$ 计算，"
                     "程序将 $\\rho_1$ 换为 SI 密度（kg/m³）后与动力粘度 $\\eta_1$（Pa·s）配套；"
-                    "混合物密度 $\\rho_1$ 亦可由 $\\rho_1 = \\rho_g C_{1v} + (1-C_{1v})\\rho_s$ 求得（步骤 2）；"
+                    "混合物密度 $\\rho_1$ 亦可由 $\\rho_1 = \\rho_g C_{1V} + (1-C_{1V})\\rho_s$ 求得（步骤 2）；"
                     "浆体当量密度 $\\rho_k$ 由固体质量浓度 $C_w$ 与液、固相密度按本页第一步关系确定。\n\n"
                     "若设计、试验或文献已给出 $\\rho_k$、$\\lambda$、$\\rho_1$ 或 $Re_B$ 等可靠取值，可在对应步骤直接采用；"
                     "程序仅在前序步骤完成且目标输入栏为空时写入结果，不覆盖用户已填或已改数值。"
@@ -141,7 +140,7 @@ def get_formulas():
                 "formula": "P_w = rho_w * g * (H + i_w * L) + P_j + P_n + P_z",
                 "description": (
                     "本式与浆体总扬程在结构上对应，区别仅在于输送介质为清水（不含固体颗粒）。"
-                    "因而原浆体公式中的浆体密度 $\\rho_k$、固体颗粒密度 $\\rho_s$，在清水工况下均取为清水密度 $\\rho_w$；工程上常取 $\\rho_w \\approx 1\\ \\mathrm{t/m^3}$（约 $1000\\ \\mathrm{kg/m^3}$），具体取值应与本项目介质条件一致。\n\n"
+                    "因而原浆体公式中的浆体密度 $\\rho_k$、固体密度 $\\rho_s$，在清水工况下均取为清水密度 $\\rho_w$；工程上常取 $\\rho_w \\approx 1\\ \\mathrm{t/m^3}$（约 $1000\\ \\mathrm{kg/m^3}$），具体取值应与本项目介质条件一致。\n\n"
                     "沿程水头损失采用清水条件下的单位长度摩阻系数 $i_w$ 描述。\n\n"
                     "静压项 $\\rho_w g H$ 与沿程项 $\\rho_w g i_w L$ 可提取公因子，写为 $\\rho_w g (H + i_w L)$，与分项展开完全等价。\n\n"
                     "总和式将重力势能、管道沿程摩擦、局部阻力、泵站内设备阻力等能量耗散统一折算为泵站需提供的输送压力（表压）。"
@@ -166,7 +165,7 @@ def get_formulas():
                     {"name": "rho_k", "label": "$\\rho_k$：浆体密度", "unit": "t/m³", "description": "浆体密度"},
                     {"name": "g", "label": "$g$：重力加速度", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "H", "label": "$H$：扬送浆体的几何高度", "unit": "m", "description": "扬送浆体的几何高度（m）；与公式中终点断面几何项一致"},
-                    {"name": "rho_s", "label": "$\\rho_s$：固体颗粒密度", "unit": "t/m³", "description": "固体颗粒密度"},
+                    {"name": "rho_s", "label": "$\\rho_s$：固体密度", "unit": "t/m³", "description": "固体密度"},
                     {"name": "i_k", "label": "$i_k$：单位管长沿程摩阻系数（无量纲）", "unit": "", "description": "沿程摩阻损失系数"},
                     {"name": "L", "label": "$L$：管道总长度", "unit": "m", "description": "管道总长度"},
                     {"name": "P_j", "label": "$P_j$：管道局部摩阻（常取沿程项的 5%~10%）", "unit": "kPa", "description": "管道局部摩阻损失"},
