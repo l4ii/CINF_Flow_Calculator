@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { FormulaInfo, FlowState } from '../types'
-import { APP_TAGLINE_EN, APP_TAGLINE_ZH } from '../constants/appCopy'
+import { APP_TAGLINE_SIDEBAR_EN, APP_TAGLINE_SIDEBAR_ZH } from '../constants/appCopy'
 
 interface SidebarProps {
   formulas: FlowState
@@ -31,7 +31,7 @@ export default function Sidebar({
     () => ({
       zh: {
         appTitle: 'CINF浆体计算',
-        appSubtitle: APP_TAGLINE_ZH,
+        appSubtitle: APP_TAGLINE_SIDEBAR_ZH,
         criticalVelocity: '临界流速计算',
         frictionLossParent: '摩阻损失',
         pressureHead: '压力与扬程',
@@ -53,7 +53,7 @@ export default function Sidebar({
       },
       en: {
         appTitle: 'CINF Slurry Calc',
-        appSubtitle: APP_TAGLINE_EN,
+        appSubtitle: APP_TAGLINE_SIDEBAR_EN,
         criticalVelocity: 'Critical Velocity',
         frictionLossParent: 'Friction loss',
         pressureHead: 'Pressure & head',

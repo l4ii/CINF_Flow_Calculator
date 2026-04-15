@@ -49,7 +49,7 @@ CATEGORY_INTRO = {
         "计算结果服务于管径与流速选取、流态判别及与后续摩阻、扬程模块的衔接。"
     ),
     "摩阻损失": (
-        "用于清水或浆体管道沿程水头损失、浆体当量密度与达西摩阻系数等配套计算，"
+        "用于清水或浆体管道沿程水头损失、浆体密度与达西摩阻系数等配套计算，"
         "输出单位管长水力坡降或压力梯度等，可与总扬程、加压泵站设计条件对接。"
     ),
     "压力与扬程": (
@@ -887,7 +887,7 @@ class WordExporter:
             self._add_slurry_friction_loss_process(doc, parameters, result)
         elif formula_id == "slurry_friction_workflow":
             intro_wf = doc.add_paragraph(
-                "本模块在界面内按步骤完成：浆体当量密度 ρ_k、混合物密度 ρ₁、混合物雷诺数 Re_B、达西摩阻系数 λ 与单位管长水力坡降 i_k；"
+                "本模块在界面内按步骤完成：浆体密度 ρ_k、混合物密度 ρ₁、混合物雷诺数 Re_B、达西摩阻系数 λ 与单位管长水力坡降 i_k；"
                 "下列推演对应最终合并代入关系，与界面分步结果一致。"
             )
             for run in intro_wf.runs:
