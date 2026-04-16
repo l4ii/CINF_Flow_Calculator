@@ -109,8 +109,12 @@ const PARAM_MEANINGFUL_EXAMPLE_BY_NAME: Record<string, string> = {
 function normalizePlaceholderSubject(rawName: string): string {
   let s = (rawName || '').trim()
   if (!s) return ''
+  s = s.replace(/^默认\s*[-+]?\d+(?:\.\d+)?\s*/i, '')
   s = s.replace(/^默认值\s*[-+]?\d+(?:\.\d+)?\s*/i, '')
+  s = s.replace(/[，,:：]\s*默认\s*[-+]?\d+(?:\.\d+)?(?:\s*[~～-]\s*[-+]?\d+(?:\.\d+)?)?/gi, '')
   s = s.replace(/[，,:：]\s*默认值\s*[-+]?\d+(?:\.\d+)?(?:\s*[~～-]\s*[-+]?\d+(?:\.\d+)?)?/gi, '')
+  s = s.replace(/\s*（\s*默认[^）]*）/gi, '')
+  s = s.replace(/\s*\(\s*默认[^)]*\)/gi, '')
   s = s.replace(/\s*（\s*默认值[^）]*）/gi, '')
   s = s.replace(/\s*\(\s*默认值[^)]*\)/gi, '')
   s = s.replace(/\s*（[^）]*(?:单位|无量纲)[^）]*）\s*$/gi, '')
@@ -1521,10 +1525,11 @@ function SlurryClearHydraulicGradeChartBlock({
     if (!terrainDrawOk) return chartData.map((r) => ({ ...r }))
     return chartData.map((r) => {
       const tz = interpolateTerrainZ(r.L, terrainVerts)
+      const maxPressZ = Number.isFinite(tz) && Number.isFinite(r.headSlurry) ? r.headSlurry - tz : undefined
       return {
         ...r,
         terrainZ: tz,
-        maxPressZ: Number.isFinite(tz) ? tz * 2 : undefined,
+        maxPressZ,
       }
     })
   }, [chartData, terrainDrawOk, terrainVerts])
@@ -1588,11 +1593,17 @@ function SlurryClearHydraulicGradeChartBlock({
       }
     }
     if (terrainDrawOk) {
-      for (const v of terrainVerts) {
-        lo = Math.min(lo, v.z)
-        hi = Math.max(hi, v.z)
-        lo = Math.min(lo, v.z * 2)
-        hi = Math.max(hi, v.z * 2)
+      for (const d of chartData) {
+        const tz = interpolateTerrainZ(d.L, terrainVerts)
+        if (Number.isFinite(tz)) {
+          lo = Math.min(lo, tz)
+          hi = Math.max(hi, tz)
+        }
+        const maxPressZ = Number.isFinite(tz) && Number.isFinite(d.headSlurry) ? d.headSlurry - tz : NaN
+        if (Number.isFinite(maxPressZ)) {
+          lo = Math.min(lo, maxPressZ)
+          hi = Math.max(hi, maxPressZ)
+        }
       }
     }
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null
@@ -1676,14 +1687,12 @@ function SlurryClearHydraulicGradeChartBlock({
 
   const terrainPreviewRows = useMemo(() => {
     if (!draftPreviewOk) return []
-    const n = HYDRAULIC_GRADE_CURVE_POINTS
-    return Array.from({ length: n + 1 }, (_, i) => {
-      const L = (Lmax * i) / n
-      const terrainZ = interpolateTerrainZ(L, draftVerts)
-      const maxPressZ = Number.isFinite(terrainZ) ? terrainZ * 2 : undefined
-      return { L, terrainZ, maxPressZ }
+    return chartData.map((r) => {
+      const terrainZ = interpolateTerrainZ(r.L, draftVerts)
+      const maxPressZ = Number.isFinite(terrainZ) && Number.isFinite(r.headSlurry) ? r.headSlurry - terrainZ : undefined
+      return { L: r.L, terrainZ, maxPressZ }
     })
-  }, [draftPreviewOk, Lmax, draftVerts])
+  }, [draftPreviewOk, chartData, draftVerts])
 
   const { previewYMin, previewYMax } = useMemo(() => {
     let lo = Infinity
@@ -1722,9 +1731,13 @@ function SlurryClearHydraulicGradeChartBlock({
     }
     if (terrainDrawOk && showMaxPressLine) {
       extra.push({
-        curve: chartData.map((r) => ({ L: r.L, H: interpolateTerrainZ(r.L, terrainVerts) * 2 })),
+        curve: chartData.map((r) => {
+          const terrainZ = interpolateTerrainZ(r.L, terrainVerts)
+          const maxPressZ = Number.isFinite(terrainZ) && Number.isFinite(r.headSlurry) ? r.headSlurry - terrainZ : NaN
+          return { L: r.L, H: maxPressZ }
+        }),
         color: MAX_PRESS_HYDRAULIC_LINE,
-        legend: '最大允许运行压力线（暂×2）',
+        legend: '最大允许运行压力线',
       })
     }
     downloadScientificHlChartPng({
@@ -1941,7 +1954,7 @@ function SlurryClearHydraulicGradeChartBlock({
                 <Line
                   type="linear"
                   dataKey="maxPressZ"
-                  name="最大允许运行压力线（暂×2）"
+                  name="最大允许运行压力线"
                   stroke={MAX_PRESS_HYDRAULIC_LINE}
                   strokeWidth={2.2}
                   dot={false}
@@ -2048,7 +2061,7 @@ function SlurryClearHydraulicGradeChartBlock({
                   }}
                 />
                 <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: MAX_PRESS_HYDRAULIC_LINE }} />
-                最大允许运行压力线（暂×2）
+                最大允许运行压力线
               </label>
             </>
           ) : null}
@@ -2065,7 +2078,7 @@ function SlurryClearHydraulicGradeChartBlock({
         {terrainDrawOk ? (
           <>
             {' '}
-            地形线与红线为工程示意，纵轴暂与水头同刻度；红线为地形×2 占位。
+            红线按各点“浆体总扬程（m）−地形高度（m）”计算，随地形线沿程变化。
           </>
         ) : null}
       </div>
@@ -2099,7 +2112,7 @@ function SlurryClearHydraulicGradeChartBlock({
               <span className="mt-0.5 h-3 w-8 shrink-0 rounded-sm bg-red-600" aria-hidden />
               <span>
                 <strong className={darkMode ? 'text-red-300' : 'text-red-800'}>最大允许运行压力线</strong>
-                ：与地形同一沿程采样；暂为高度×2（占位）。
+                ：与地形同一沿程采样；按“浆体总扬程（m）−该点地形高度（m）”计算。
               </span>
             </li>
           </ul>
@@ -2274,7 +2287,7 @@ function SlurryClearHydraulicGradeChartBlock({
                       <Line
                         type="linear"
                         dataKey="maxPressZ"
-                        name="最大允许运行压力线（暂×2）"
+                        name="最大允许运行压力线"
                         stroke={MAX_PRESS_HYDRAULIC_LINE}
                         strokeWidth={2}
                         dot={false}
@@ -2301,7 +2314,7 @@ function SlurryClearHydraulicGradeChartBlock({
                   </div>
                   <div className={`flex items-center gap-2 text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                     <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: MAX_PRESS_HYDRAULIC_LINE }} />
-                    最大允许运行压力线（暂×2）
+                    最大允许运行压力线
                   </div>
                 </div>
               ) : null}
@@ -7805,7 +7818,7 @@ export default function MainContent({
                           : '管段设计流量，如0.05'
                     const suffixText =
                       name === 'K_hw'
-                        ? '经验参数'
+                        ? null
                         : param?.unit != null && shouldShowParameterUnitSuffix(param.unit)
                           ? param.unit
                           : null
