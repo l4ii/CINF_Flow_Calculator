@@ -26,7 +26,7 @@ let splashWindow
 // 判断是否为开发环境
 // 仅根据是否打包判断：打包后的 exe 始终为生产模式，避免“打开软件就进 dev 模式”
 const isDev = !app.isPackaged
-const APP_DISPLAY_NAME = 'CINF Flow Calculation Tool'
+const APP_DISPLAY_NAME = 'CINF长沙院浆体计算软件'
 
 // 顶部菜单当前语言（默认中文，由渲染进程切换）
 let currentLanguage = 'zh'

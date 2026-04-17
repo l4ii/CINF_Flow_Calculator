@@ -35,14 +35,14 @@ def get_formulas():
                 "id": "liu_dezhong",
                 "name": "刘德忠公式",
                 "formula": "Vc = 9.5 * [g*D*(Δρ/ρ)*ω]^(1/3) * Cv^(1/6) * (ω_s/ω)^(1/6)",
-                "description": "本模型由刘德忠教授提出，是中国浆体管道设计中的主流经验公式之一。其核心思想基于浆体的整体沉降特性，通过引入加权平均沉速（$\\omega$）与静态界面沉速（$\\omega_s$）这两个关键实验参数，来综合反映固体颗粒群的干涉沉降行为。该公式尤其适用于细颗粒（如$d<2\\text{mm}$）含量较高、级配相对均匀的浆体，计算结果与中国工程实践贴合紧密。使用本公式的前提是需通过静态沉降柱试验获取可靠的$\\omega$与$\\omega_s$值。",
+                "description": "本模型由刘德忠教授提出，是中国浆体管道设计中的主流经验公式之一。其核心思想基于浆体的整体沉降特性，通过引入似均质中加权平均沉速（$\\omega$）与水中甲醛平均沉速（$\\omega_s$）这两个关键实验参数，来综合反映固体颗粒群的干涉沉降行为。该公式尤其适用于细颗粒（如$d<2\\text{mm}$）含量较高、级配相对均匀的浆体，计算结果与中国工程实践贴合紧密。使用本公式前，建议结合试验或辅助计算获取可靠的$\\omega$与$\\omega_s$值。",
                 "parameters": [
                     {"name": "D", "label": "$D$：管道内径，单位为 m", "unit": "m", "description": "管道内径", },
                     {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
                     {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
-                    {"name": "omega", "label": "$\\omega$：速度参数，单位为 m/s", "unit": "m/s", "description": "速度参数", },
+                    {"name": "omega", "label": "$\\omega$：似均质中加权平均沉速，单位为 m/s", "unit": "m/s", "description": "似均质中加权平均沉速", },
                     {"name": "Cv", "label": "$C_V$：体积浓度（0～1，请以小数填写；点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
-                    {"name": "omega_s", "label": "$\\omega_s$：沉降速度，单位为 m/s", "unit": "m/s", "description": "沉降速度", },
+                    {"name": "omega_s", "label": "$\\omega_s$：水中甲醛平均沉速，单位为 m/s", "unit": "m/s", "description": "水中甲醛平均沉速", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "coefficient_9_5", "label": "经验系数：默认值 9.5（无量纲）", "unit": "", "description": "经验系数", "default": 9.5}
                 ]

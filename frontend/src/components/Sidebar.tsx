@@ -30,7 +30,7 @@ export default function Sidebar({
   const translations = useMemo(
     () => ({
       zh: {
-        appTitle: 'CINF浆体计算',
+        appTitle: 'CINF浆体计算软件',
         appSubtitle: APP_TAGLINE_SIDEBAR_ZH,
         criticalVelocity: '临界流速计算',
         frictionLossParent: '摩阻损失',
@@ -52,7 +52,7 @@ export default function Sidebar({
         noFormulas: '暂无公式（请检查后端连接）'
       },
       en: {
-        appTitle: 'CINF Slurry Calc',
+        appTitle: 'CINF Slurry Calculation Software',
         appSubtitle: APP_TAGLINE_SIDEBAR_EN,
         criticalVelocity: 'Critical Velocity',
         frictionLossParent: 'Friction loss',

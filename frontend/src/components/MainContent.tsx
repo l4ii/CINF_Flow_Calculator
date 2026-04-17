@@ -253,7 +253,7 @@ const CENTRIFUGAL_PARAM_PLACEHOLDER_ZH: Record<string, string> = {
   Sigma_H_s: '装置所需液柱扬程，如120',
   H_b: '主泵扬程，如150',
   Q_k: '浆体体积流量，如0.05',
-  K_1: '经验参数，默认值 1.1（常取 1.1～1.2）',
+  K_1: '点击功率富余系数，常取1.1~1.2',
   eta_j: '传动效率，如0.95',
   eta_b: '泵扬送清水效率，如0.85',
 }
@@ -273,13 +273,13 @@ function inferCentrifugalEtaJPreset(
 
 /** 容积式泵分步输入 */
 const POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH: Record<string, string> = {
-  P_k: '输送压力，可从其他模块选用，如1200',
+  P_k: '输送压力，如1200',
   K_f: '压力富余系数，常用 0.75～0.95',
   rho_k: '浆体密度，如1.2',
   g: '重力加速度，默认值 9.81',
   P_b: '主泵总扬程压力，如1600',
   Q_k: '浆体体积流量，如0.05',
-  K_1: '经验参数，默认值 1.1（常取 1.1～1.2）',
+  K_1: '点击功率富余系数，常取1.1~1.2',
   eta_v: '泵容积效率，常用 0.90～0.95',
   eta_c: '机械总效率，常用 0.88～0.92',
 }
@@ -421,9 +421,9 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
   },
   {
     name: 'rho_s' as const,
-    label: '$\\rho_s$：浆体密度',
+    label: '$\\rho_s$：水密度',
     unit: 't/m³',
-    placeholder: '浆体密度，如1.2',
+    placeholder: '水密度，默认值1',
   },
   {
     name: 'g' as const,
@@ -446,7 +446,7 @@ const SLURRY_FRICTION_WF_STEP_INTROS: Record<
   darcy_lambda:
     '在给定 $Re_B$、管道内径 $D_n$ 及管壁绝对粗糙度 $\\varepsilon$ 的条件下，按所选显式关系求解达西摩阻系数 $\\lambda$。$Re_B$ 可取步骤 3 的计算结果或直接输入；计算完成后将 $\\lambda$ 及步骤 5 所需的 $V$、$D$、$\\rho_s$ 传递至水力坡降核算。',
   step5_ik:
-    '将达西摩阻系数 $\\lambda$、流速 $V$、管径 $D$、浆体密度 $\\rho_k$、液体密度 $\\rho_s$ 及重力加速度 $g$ 代入达西–魏斯巴赫关系，求单位管长水力坡降 $i_k$（mH₂O/m）。各量须与本管段水力计算所依据的工况一致；前序步骤所得数值仅在对应栏位为空时写入，不覆盖已录入数据。',
+    '将达西摩阻系数 $\\lambda$、流速 $V$、管径 $D$、浆体密度 $\\rho_k$、水密度 $\\rho_s$ 及重力加速度 $g$ 代入达西–魏斯巴赫关系，求单位管长水力坡降 $i_k$（mH₂O/m）。各量须与本管段水力计算所依据的工况一致；前序步骤所得数值仅在对应栏位为空时写入，不覆盖已录入数据。',
 }
 
 /** 清水摩阻：管材类型与海澄–威廉系数 C_h 对应（自定义除外） */
@@ -758,13 +758,13 @@ function CvVolumeConcentrationField({
   )
 }
 
-/** 刘德忠公式：宾汉体（η）辅助推算颗粒沉速，挂在本页 ω_s（沉降速度）输入栏；ρ_g/ρ_k/g 与主表同步 */
+/** 刘德忠公式：宾汉体（η）辅助推算似均质中加权平均沉速，挂在本页 ω 输入栏；ρ_g/ρ_k/g 与主表同步 */
 /** 与规范 (C.0.3-1) 一致：N_ω = (4.53²/N_d)[√(1+N_d^{1.5}/(0.213^{0.5}×4.53²))−1]² */
 const LIU_BINGHAM_REF = 4.53
 const LIU_BINGHAM_NW_COEF = LIU_BINGHAM_REF ** 2
 const LIU_BINGHAM_NW_INNER_DENOM = Math.sqrt(0.213) * LIU_BINGHAM_NW_COEF
 
-function LiuDezhongOmegaSBinghamField({
+function LiuDezhongOmegaBinghamField({
   darkMode,
   inputValue,
   onInputChange,
@@ -772,7 +772,8 @@ function LiuDezhongOmegaSBinghamField({
   placeholder,
   unit,
   parameters,
-  onApplyOmegaS,
+  onApplyOmega,
+  onDlComputed,
 }: {
   darkMode: boolean
   inputValue: string
@@ -781,7 +782,8 @@ function LiuDezhongOmegaSBinghamField({
   placeholder: string
   unit: ReactNode
   parameters: Record<string, number | undefined>
-  onApplyOmegaS: (omegaSStr: string) => void
+  onApplyOmega: (omegaStr: string) => void
+  onDlComputed?: (dL: number | undefined) => void
 }) {
   const [open, setOpen] = useState(false)
   const [rhoGStr, setRhoGStr] = useState('')
@@ -852,6 +854,9 @@ function LiuDezhongOmegaSBinghamField({
   const N_omega = nwOk ? (LIU_BINGHAM_NW_COEF / N_d) * (Math.sqrt(innerRadicand) - 1) ** 2 : NaN
   const w_i = nwOk && Number.isFinite(W_L) ? N_omega * W_L : NaN
   const wRounded = Number.isFinite(w_i) ? Math.round(w_i * 1e6) / 1e6 : NaN
+  useEffect(() => {
+    onDlComputed?.(Number.isFinite(D_L) && D_L > 0 ? D_L : undefined)
+  }, [D_L, onDlComputed])
 
   const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
   const shellBg = darkMode ? 'bg-gray-600' : 'bg-white'
@@ -893,14 +898,14 @@ function LiuDezhongOmegaSBinghamField({
             placeholder={placeholder}
             className={innerInputCls}
             aria-expanded={open}
-            aria-controls="liu-omega-s-bingham-panel"
-            id="liu-omega-s-bingham-input"
+            aria-controls="liu-omega-bingham-panel"
+            id="liu-omega-bingham-input"
           />
           <button
             type="button"
             tabIndex={-1}
             className={chevronBtnCls}
-            aria-label={open ? '收起宾汉体颗粒沉速辅助' : '展开宾汉体颗粒沉速辅助计算'}
+            aria-label={open ? '收起宾汉体加权沉速辅助' : '展开宾汉体加权沉速辅助计算'}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setOpen((v) => !v)}
           >
@@ -913,9 +918,9 @@ function LiuDezhongOmegaSBinghamField({
       </div>
 
       {open && (
-        <div id="liu-omega-s-bingham-panel" className={panelCls} role="region" aria-labelledby="liu-omega-s-bingham-input">
+        <div id="liu-omega-bingham-panel" className={panelCls} role="region" aria-labelledby="liu-omega-bingham-input">
           <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
-            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>颗粒沉速辅助计算公式（ <InlineMath math="\omega_s" />）</div>
+            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>似均质中加权平均沉速辅助计算（ <InlineMath math="\omega" />）</div>
             <div className={`mt-2 space-y-2 overflow-x-auto text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
               <BlockMath math="d_L=\dfrac{\left(\eta/\rho_k\right)^{2/3}}{\left[g\left(\rho_g/\rho_k-1\right)\right]^{1/3}}" />
               <BlockMath math="\omega_L=\left[g\left(\dfrac{\rho_g}{\rho_k}-1\right)\dfrac{\eta}{\rho_k}\right]^{1/3}" />
@@ -967,7 +972,7 @@ function LiuDezhongOmegaSBinghamField({
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="\eta" />：宾汉体参数
+                  <InlineMath math="\eta" />：宾汉体刚度系数
                 </span>
                 <input
                   type="text"
@@ -977,7 +982,7 @@ function LiuDezhongOmegaSBinghamField({
                   value={gbStr}
                   onChange={(e) => setGbStr(e.target.value)}
                   className={subInputCls}
-                  placeholder="宾汉体参数η，如0.01"
+                  placeholder="宾汉体刚度系数，如0.01"
                 />
               </div>
               <div>
@@ -1013,7 +1018,7 @@ function LiuDezhongOmegaSBinghamField({
                 {Number.isFinite(N_omega) ? <span className="font-mono font-semibold">{String(Math.round(N_omega * 1e6) / 1e6)}</span> : '—'}
               </div>
               <div className={`mt-1 ${hintStrong}`}>
-                <InlineMath math="\omega_i" />（供填入 <InlineMath math="\omega_s" />）={' '}
+                <InlineMath math="\omega_i" />（供填入 <InlineMath math="\omega" />）={' '}
                 {Number.isFinite(wRounded) ? <span className="font-mono text-sm font-semibold">{String(wRounded)}</span> : '—'}{' '}
                 m/s
               </div>
@@ -1050,7 +1055,245 @@ function LiuDezhongOmegaSBinghamField({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   if (!Number.isFinite(wRounded)) return
-                  onApplyOmegaS(String(wRounded))
+                  onApplyOmega(String(wRounded))
+                  setOpen(false)
+                }}
+              >
+                填入上方 <InlineMath math="\omega" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 刘德忠公式：ω_s 采用斯托克斯公式辅助估算（默认水密度 1 t/m³、重力加速度 9.81 m/s²） */
+function LiuDezhongOmegaSStokesField({
+  darkMode,
+  inputValue,
+  onInputChange,
+  onInputBlur,
+  placeholder,
+  unit,
+  parameters,
+  dLFromOmega,
+  onApplyOmegaS,
+}: {
+  darkMode: boolean
+  inputValue: string
+  onInputChange: (value: string) => void
+  onInputBlur: () => void
+  placeholder: string
+  unit: ReactNode
+  parameters: Record<string, number | undefined>
+  dLFromOmega: number | null
+  onApplyOmegaS: (omegaSStr: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [rhoGStr, setRhoGStr] = useState('')
+  const [rhoWStr, setRhoWStr] = useState('1')
+  const [gStr, setGStr] = useState('9.81')
+  const [dStr, setDStr] = useState('')
+  const [muWStr, setMuWStr] = useState('')
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const rg = parameters.rho_g
+    const rw = parameters.rho_k
+    const g0 = parameters.g
+    if (rg != null && !isNaN(Number(rg))) setRhoGStr(String(rg))
+    if (rw != null && !isNaN(Number(rw))) setRhoWStr(String(rw))
+    if (g0 != null && !isNaN(Number(g0))) setGStr(String(g0))
+    if (!muWStr) {
+      const eta1 = parameters.eta_1
+      if (eta1 != null && !isNaN(Number(eta1)) && Number(eta1) > 0) setMuWStr(String(eta1))
+      else setMuWStr('0.001')
+    }
+  }, [parameters.rho_g, parameters.rho_k, parameters.g, parameters.eta_1, muWStr])
+
+  useEffect(() => {
+    if (dLFromOmega != null && Number.isFinite(dLFromOmega) && dLFromOmega > 0) {
+      setDStr(String(Math.round(dLFromOmega * 1e9) / 1e9))
+    }
+  }, [dLFromOmega])
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      const el = wrapRef.current
+      if (el && !el.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+  const rhoG = parseFloat(norm(rhoGStr))
+  const rhoW = parseFloat(norm(rhoWStr))
+  const gVal = parseFloat(norm(gStr))
+  const dVal = parseFloat(norm(dStr))
+  const muW = parseFloat(norm(muWStr))
+
+  const ok =
+    Number.isFinite(rhoG) &&
+    Number.isFinite(rhoW) &&
+    rhoG > rhoW &&
+    rhoW > 0 &&
+    Number.isFinite(gVal) &&
+    gVal > 0 &&
+    Number.isFinite(dVal) &&
+    dVal > 0 &&
+    Number.isFinite(muW) &&
+    muW > 0
+
+  const rhoDiffKgM3 = ok ? (rhoG - rhoW) * 1000 : NaN
+  const omegaS = ok ? (gVal * rhoDiffKgM3 * dVal ** 2) / (18 * muW) : NaN
+  const omegaSRounded = Number.isFinite(omegaS) ? Math.round(omegaS * 1e6) / 1e6 : NaN
+
+  const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
+  const shellBg = darkMode ? 'bg-gray-600' : 'bg-white'
+  const shellFocus = open ? 'ring-2 ring-blue-500 ring-offset-0 border-blue-500' : ''
+  const innerInputCls = `min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-base focus:outline-none focus:ring-0 ${
+    darkMode ? 'text-gray-100 placeholder-gray-400' : 'text-gray-900'
+  }`
+  const chevronBtnCls = `flex h-full shrink-0 items-center justify-center border-l px-2.5 transition-colors ${
+    darkMode
+      ? `border-gray-500 text-gray-300 hover:bg-gray-500/40 ${open ? 'bg-gray-500/30' : ''}`
+      : `border-gray-300 text-gray-500 hover:bg-gray-50 ${open ? 'bg-gray-50' : ''}`
+  }`
+  const panelCls = `absolute left-0 right-0 z-50 mt-1.5 max-h-[min(70vh,32rem)] overflow-y-auto overflow-x-hidden rounded-xl border shadow-lg ${
+    darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
+  }`
+  const panelInnerCls = darkMode ? 'border-gray-600' : 'border-gray-100'
+  const subInputCls = `mt-1 w-full rounded-lg border px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+    darkMode ? 'border-gray-500 bg-gray-700/80 text-gray-100' : 'border-gray-300 bg-gray-50 text-gray-900'
+  }`
+  const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
+  const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
+
+  return (
+    <div className="relative min-w-0 flex-1" ref={wrapRef}>
+      <div className="flex items-stretch space-x-2">
+        <div
+          className={`flex min-w-0 flex-1 overflow-hidden rounded-lg border ${shellBorder} ${shellBg} ${shellFocus}`}
+        >
+          <input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            spellCheck={false}
+            value={inputValue}
+            onChange={(e) => onInputChange(e.target.value)}
+            onBlur={onInputBlur}
+            onClick={() => setOpen(true)}
+            onFocus={() => setOpen(true)}
+            placeholder={placeholder}
+            className={innerInputCls}
+            aria-expanded={open}
+            aria-controls="liu-omega-s-stokes-panel"
+            id="liu-omega-s-stokes-input"
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            className={chevronBtnCls}
+            aria-label={open ? '收起斯托克斯沉速辅助' : '展开斯托克斯沉速辅助计算'}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
+              ▼
+            </span>
+          </button>
+        </div>
+        {unit}
+      </div>
+
+      {open && (
+        <div id="liu-omega-s-stokes-panel" className={panelCls} role="region" aria-labelledby="liu-omega-s-stokes-input">
+          <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
+            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>水中加权平均沉速辅助计算（斯托克斯）<InlineMath math="\omega_s" /></div>
+            <div className={`mt-2 space-y-2 overflow-x-auto text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+              <BlockMath math="\omega_s=\dfrac{g(\rho_g-\rho_w)d^2}{18\mu_w}" />
+            </div>
+          </div>
+
+          <div className="space-y-3 px-3 py-3">
+            <p className={`text-[10px] leading-snug ${hintMuted}`}>
+              <InlineMath math="\rho_g" />、<InlineMath math="\rho_w" />、<InlineMath math="g" /> 与本页输入联动；<InlineMath math="d" /> 默认取上一步 <InlineMath math="d_L" />。
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="\rho_g" />：颗粒密度 · t/m³
+                </span>
+                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={rhoGStr} onChange={(e) => setRhoGStr(e.target.value)} className={subInputCls} placeholder="颗粒密度，如2.5" />
+              </div>
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="\rho_w" />：水密度 · t/m³
+                </span>
+                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={rhoWStr} onChange={(e) => setRhoWStr(e.target.value)} className={subInputCls} placeholder="水密度，默认值1" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="d" />：颗粒粒径 · m
+                </span>
+                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={dStr} onChange={(e) => setDStr(e.target.value)} className={subInputCls} placeholder="颗粒粒径d（默认取d_L）" />
+              </div>
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="\mu_w" />：水动力粘度 · Pa·s
+                </span>
+                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={muWStr} onChange={(e) => setMuWStr(e.target.value)} className={subInputCls} placeholder="水动力粘度，默认值0.001" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <span className={`text-xs font-medium ${hintStrong}`}>
+                  <InlineMath math="g" />：重力加速度 · m/s²
+                </span>
+                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={gStr} onChange={(e) => setGStr(e.target.value)} className={subInputCls} placeholder="重力加速度，默认值 9.81" />
+              </div>
+            </div>
+            <div
+              className={`rounded-lg border px-2.5 py-2 text-[11px] ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
+            >
+              <div className={`mb-1 text-xs font-semibold ${hintStrong}`}>计算结果：</div>
+              <div className={hintMuted}>
+                <InlineMath math="\omega_s" /> = {Number.isFinite(omegaSRounded) ? <span className="font-mono font-semibold">{String(omegaSRounded)}</span> : '—'} m/s
+              </div>
+            </div>
+            {!ok && (rhoGStr || rhoWStr || dStr || muWStr) && (
+              <p className={`text-[11px] ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
+                需满足 <InlineMath math="\rho_g>\rho_w>0" />、<InlineMath math="d>0" />、<InlineMath math="\mu_w>0" />、<InlineMath math="g>0" />。
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2 pt-0.5">
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                  darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setOpen(false)}
+              >
+                收起
+              </button>
+              <button
+                type="button"
+                disabled={!Number.isFinite(omegaSRounded)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+                  darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (!Number.isFinite(omegaSRounded)) return
+                  onApplyOmegaS(String(omegaSRounded))
                   setOpen(false)
                 }}
               >
@@ -1810,7 +2053,7 @@ function SlurryClearHydraulicGradeChartBlock({
 
       <div className="flex flex-col gap-3">
         <div id="slurry-hydraulic-grade-chart" className="min-h-[380px] min-w-0 w-full">
-          <ResponsiveContainer width="100%" height={380}>
+          <ResponsiveContainer width="100%" height={550}>
             <LineChart data={chartRows} margin={{ top: 8, right: 12, left: 8, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
               <XAxis
@@ -2563,7 +2806,7 @@ function ClearWaterHydraulicGradeChartBlock({
         </span>
       </div>
       <div id="clear-hydraulic-grade-chart" className="min-h-[380px] w-full">
-        <ResponsiveContainer width="100%" height={380}>
+        <ResponsiveContainer width="100%" height={550}>
           <LineChart data={chartData} margin={{ top: 8, right: 20, left: 8, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#4B5563' : '#E5E7EB'} />
             <XAxis
@@ -2861,6 +3104,7 @@ export default function MainContent({
   const [formulaRawInputs, setFormulaRawInputs] = useState<Record<string, Record<string, string>>>({})
   const [formulaResults, setFormulaResults] = useState<Record<string, CalculationResult | null>>({})
   const [formulaLockedVc, setFormulaLockedVc] = useState<Record<string, number | null>>({})
+  const [liuOmegaDLByFormula, setLiuOmegaDLByFormula] = useState<Record<string, number | null>>({})
   const [kronodzeStep2ReadyMap, setKronodzeStep2ReadyMap] = useState<Record<string, boolean>>({})
   const [kronodzeStep3VisibleMap, setKronodzeStep3VisibleMap] = useState<Record<string, boolean>>({})
   
@@ -2869,6 +3113,7 @@ export default function MainContent({
   const rawInputs = formula ? (formulaRawInputs[formula.id] || {}) : {}
   const result = formula ? (formulaResults[formula.id] || null) : null
   const lockedVc = formula ? (formulaLockedVc[formula.id] ?? null) : null
+  const liuOmegaDL = formula ? (liuOmegaDLByFormula[formula.id] ?? null) : null
   const kronodzeStep2Ready = formula ? (kronodzeStep2ReadyMap[formula.id] || false) : false
   const kronodzeStep3Visible = formula ? (kronodzeStep3VisibleMap[formula.id] || false) : false
   const isSlurryAccelFormula = formula?.id === 'slurry_accel_energy'
@@ -4192,12 +4437,14 @@ export default function MainContent({
     if (subId === 'slurry_friction_loss') {
       const rhoK = p['rho_k']
       if (rhoK == null || isNaN(rhoK) || rhoK <= 0) return '步骤5：请填写 ρ_k；可取步骤 1 计算结果'
-      for (const name of ['lambda_coef', 'V', 'D', 'rho_s'] as const) {
+      for (const name of ['lambda_coef', 'V', 'D'] as const) {
         const v = p[name]
         if (v == null || isNaN(v)) return `步骤5：请填写 ${name}`
         if (name === 'D' && v === 0) return '步骤5：管道内径 D 不能为 0'
         if (name === 'lambda_coef' && v <= 0) return '步骤5：λ 必须大于 0'
       }
+      const rhoS = p['rho_s']
+      if (rhoS != null && !isNaN(rhoS) && rhoS <= 0) return '步骤5：水密度 ρ_s 须大于 0'
       const gVal = p['g']
       if (gVal != null && !isNaN(gVal) && gVal <= 0) return '步骤5：重力加速度 g 须大于 0'
       return null
@@ -4251,6 +4498,9 @@ export default function MainContent({
     } else if (subId === 'slurry_friction_loss') {
       for (const [key, value] of Object.entries(sflP)) {
         if (value !== undefined && value !== null && !isNaN(value)) validParameters[key] = value as number
+      }
+      if (validParameters['rho_s'] === undefined) {
+        validParameters['rho_s'] = 1
       }
       if (validParameters['g'] === undefined) {
         validParameters['g'] = 9.81
@@ -5813,7 +6063,7 @@ export default function MainContent({
         }
         // omega不能为0（刘德忠公式）
         if (param.name === 'omega' && formula.id === 'liu_dezhong' && value === 0) {
-          return '速度参数ω不能为0'
+          return '似均质中加权平均沉速 ω 不能为 0'
         }
         // lambda_coef必须大于0（费祥俊公式）
         if (param.name === 'lambda_coef' && value <= 0) {
@@ -7662,6 +7912,8 @@ export default function MainContent({
                             (formulaParameters['slurry_friction_loss']?.[name] != null &&
                             !isNaN(formulaParameters['slurry_friction_loss']![name]!)
                               ? String(formulaParameters['slurry_friction_loss']![name])
+                              : name === 'rho_s'
+                                ? '1'
                               : name === 'g'
                                 ? '9.81'
                                 : '')
@@ -7914,7 +8166,7 @@ export default function MainContent({
                           rho_k: '浆体密度，如1.2',
                           g: '重力加速度，默认值 9.81',
                           H: '几何扬程，如120',
-                          rho_s: '浆体密度，如1.2',
+                          rho_s: '固体密度，如2.5',
                           i_k: '沿程摩阻系数，如0.02',
                           L: '管道总长度，如1000',
                           P_j: '局部压力损失，常用 30～50 kPa',
@@ -9611,7 +9863,7 @@ export default function MainContent({
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>达西-魏斯巴赫公式（浆体摩阻损失）</div>
                 <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('在达西–魏斯巴赫框架下，采用浆体密度 $\\rho_k$ 估算似均质悬浮流单位管长水力坡降 $i_k$（mH₂O/m）；式中密度比 $\\rho_k/\\rho_s$ 用于反映固相对能量损失的影响。给定管长 $L$ 时，总沿程水头损失可取 $h_f = i_k \\cdot L$。适用于固相浓度中等、悬浮较均匀的管流；浓度很高或流态明显偏离假定时，应结合经验系数与试验或规范另行校核。')}
+                  {renderDescriptionWithMath('在达西–魏斯巴赫框架下，采用浆体密度 $\\rho_k$ 估算似均质悬浮流单位管长水力坡降 $i_k$（mH₂O/m）；式中密度比 $\\rho_k/\\rho_s$ 用于反映固相对能量损失的影响，其中 $\\rho_s$ 为水密度。给定管长 $L$ 时，总沿程水头损失可取 $h_f = i_k \\cdot L$。适用于固相浓度中等、悬浮较均匀的管流；浓度很高或流态明显偏离假定时，应结合经验系数与试验或规范另行校核。')}
                 </p>
                 <div className={`mb-4 text-lg ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                   <BlockMath math="i_k = \lambda \cdot \frac{V^2}{2gD} \cdot \frac{\rho_k}{\rho_s}" />
@@ -9623,13 +9875,15 @@ export default function MainContent({
                       lambda_coef: '达西摩阻系数，如0.018',
                       V: '断面平均流速，如2',
                       D: '管道内径，如0.2',
-                      rho_s: '浆体密度，如1.2',
+                      rho_s: '水密度，默认值1',
                       g: '重力加速度，默认值 9.81',
                     }
                     return (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
+                        {param.name === 'rho_s'
+                          ? renderDescriptionWithMath('$\\rho_s$：水密度')
+                          : renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                       </label>
                       {param.name === 'rho_k' ? (
                         <div className="relative">
@@ -10140,10 +10394,15 @@ export default function MainContent({
                   if (param.name === 'Cv') {
                     return cvParameterPlaceholder()
                   }
-                  if (param.name === 'omega_s' && formula?.id === 'liu_dezhong') {
+                  if (formula?.id === 'liu_dezhong' && param.name === 'omega') {
                     return param.default !== undefined
-                      ? `${param.default}（点击展开颗粒沉速辅助计算公式）`
-                      : '点击输入框展开「颗粒沉速」辅助计算公式'
+                      ? `${param.default}（点击展开似均质中加权平均沉速辅助计算）`
+                      : '点击输入框展开「似均质中加权平均沉速」辅助计算'
+                  }
+                  if (formula?.id === 'liu_dezhong' && param.name === 'omega_s') {
+                    return param.default !== undefined
+                      ? `${param.default}（点击展开水中加权平均沉速辅助计算）`
+                      : '点击输入框展开「水中加权平均沉速（斯托克斯）」辅助计算'
                   }
                   if (isApiDecimalUnit(param.unit)) {
                     return decimalParameterPlaceholder(
@@ -10169,7 +10428,11 @@ export default function MainContent({
                         darkMode ? 'text-gray-200' : 'text-gray-700'
                       }`}
                     >
-                      {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
+                      {formula?.id === 'liu_dezhong' && param.name === 'omega'
+                        ? renderDescriptionWithMath('$\\omega$：似均质中加权平均沉速，单位为 m/s')
+                        : formula?.id === 'liu_dezhong' && param.name === 'omega_s'
+                          ? renderDescriptionWithMath('$\\omega_s$：水中加权平均沉速，单位为 m/s')
+                          : renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
                     </label>
                     {param.name === 'Cv' ? (
                       <CvVolumeConcentrationField
@@ -10191,8 +10454,36 @@ export default function MainContent({
                         }
                         onApplyCvFromRatio={(s) => handleParameterChange('Cv', s)}
                       />
+                    ) : formula?.id === 'liu_dezhong' && param.name === 'omega' ? (
+                      <LiuDezhongOmegaBinghamField
+                        darkMode={darkMode}
+                        inputValue={displayValue}
+                        onInputChange={(v) => handleParameterChange('omega', v)}
+                        onInputBlur={() => handleParameterBlur('omega')}
+                        placeholder={ph}
+                        unit={
+                          shouldShowParameterUnitSuffix(param.unit) ? (
+                            <span
+                              className={`self-center text-sm shrink-0 ${
+                                darkMode ? 'text-gray-400' : 'text-gray-500'
+                              }`}
+                            >
+                              {param.unit}
+                            </span>
+                          ) : null
+                        }
+                        parameters={parameters}
+                        onApplyOmega={(s) => handleParameterChange('omega', s)}
+                        onDlComputed={(dL) => {
+                          if (!formula) return
+                          setLiuOmegaDLByFormula((prev) => ({
+                            ...prev,
+                            [formula.id]: dL ?? null,
+                          }))
+                        }}
+                      />
                     ) : formula?.id === 'liu_dezhong' && param.name === 'omega_s' ? (
-                      <LiuDezhongOmegaSBinghamField
+                      <LiuDezhongOmegaSStokesField
                         darkMode={darkMode}
                         inputValue={displayValue}
                         onInputChange={(v) => handleParameterChange('omega_s', v)}
@@ -10210,6 +10501,7 @@ export default function MainContent({
                           ) : null
                         }
                         parameters={parameters}
+                        dLFromOmega={liuOmegaDL}
                         onApplyOmegaS={(s) => handleParameterChange('omega_s', s)}
                       />
                     ) : formula?.id === 'slurry_accel_energy' && param.name === 'L' ? (
