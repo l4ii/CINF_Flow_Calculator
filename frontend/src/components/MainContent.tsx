@@ -16,7 +16,7 @@ import {
   APP_NAME_EN,
   APP_NAME_ZH,
   APP_TAGLINE_MAIN_EN,
-  APP_TAGLINE_MAIN_ZH,
+  APP_TAGLINE_ZH,
 } from '../constants/appCopy';
 
 /** API 中 unit 为 decimal 时表示无量纲小数：输入框后不再展示英文「decimal」 */
@@ -4968,7 +4968,7 @@ export default function MainContent({
                 {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
               </h1>
               <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_MAIN_ZH}
+                {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
               </p>
             </div>
 
@@ -5129,7 +5129,7 @@ export default function MainContent({
                 {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
               </h1>
               <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_MAIN_ZH}
+                {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
               </p>
             </div>
 
@@ -5409,7 +5409,7 @@ export default function MainContent({
                   {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
                 </h1>
                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_MAIN_ZH}
+                  {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
                 </p>
               </div>
 
@@ -5684,7 +5684,7 @@ export default function MainContent({
             <p className={`text-xs ${
               darkMode ? 'text-gray-400' : 'text-gray-500'
             }`}>
-              {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_MAIN_ZH}
+              {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
             </p>
           </div>
 
@@ -5847,7 +5847,7 @@ export default function MainContent({
               {t.title}
             </h1>
             <p className={`text-xs leading-relaxed mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_MAIN_ZH}
+              {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
             </p>
             <p className={`text-sm mb-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               {t.subtitle}
@@ -7307,7 +7307,7 @@ export default function MainContent({
           <p className={`text-xs ${
             darkMode ? 'text-gray-400' : 'text-gray-500'
           }`}>
-            {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_MAIN_ZH}
+            {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
           </p>
         </div>
 
