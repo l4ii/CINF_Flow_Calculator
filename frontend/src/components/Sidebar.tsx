@@ -1,6 +1,11 @@
 import { useMemo } from 'react'
 import { FormulaInfo, FlowState } from '../types'
-import { APP_TAGLINE_SIDEBAR_EN, APP_TAGLINE_SIDEBAR_ZH } from '../constants/appCopy'
+import {
+  APP_TAGLINE_SIDEBAR_EN,
+  APP_TAGLINE_SIDEBAR_ZH,
+  APP_TAGLINE_SIDEBAR_ZH_LINE1,
+  APP_TAGLINE_SIDEBAR_ZH_LINE2,
+} from '../constants/appCopy'
 
 interface SidebarProps {
   formulas: FlowState
@@ -33,9 +38,9 @@ export default function Sidebar({
         appTitle: 'CINF浆体计算软件',
         appSubtitle: APP_TAGLINE_SIDEBAR_ZH,
         criticalVelocity: '临界流速计算',
-        frictionLossParent: '摩阻损失',
-        pressureHead: '压力与扬程',
-        slurryAccelEnergy: '加速流与消能',
+        frictionLossParent: '摩阻损失计算',
+        pressureHead: '压力与扬程计算',
+        slurryAccelEnergy: '加速流与消能计算',
         slurryAccel: '浆体加速流',
         aboutUs: '了解我们',
         settings: '设置',
@@ -139,7 +144,7 @@ export default function Sidebar({
 
   return (
     <div
-      className={`flex-[1] border-r flex flex-col min-w-[200px] max-w-[300px] ${
+      className={`w-[260px] shrink-0 border-r flex flex-col ${
         darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
       }`}
     >
@@ -153,7 +158,14 @@ export default function Sidebar({
             <div
               className={`text-xs leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
             >
-              {t.appSubtitle}
+              {language === 'zh' ? (
+                <div className="text-right">
+                  <div className="block">{APP_TAGLINE_SIDEBAR_ZH_LINE1}</div>
+                  <div className="block">{APP_TAGLINE_SIDEBAR_ZH_LINE2}</div>
+                </div>
+              ) : (
+                t.appSubtitle
+              )}
             </div>
           </div>
         </div>

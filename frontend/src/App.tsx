@@ -57,19 +57,36 @@ function App() {
     fetchFormulas()
   }, [])
 
-  // 闪屏期间仅预加载科研页缩略图（高清在点击放大时再拉取，避免拖慢启动）
+  // 科研创新中心配图：启动即预加载缩略图；浏览器空闲后再预加载高清原图，便于列表与放大时命中缓存
+  const RESEARCH_PLATFORM_THUMB_URLS = [
+    './info1-thumb.jpg',
+    './info2-thumb.jpg',
+    './info3-thumb.jpg',
+    './info4-thumb.jpg',
+    './info5-thumb.jpg',
+  ] as const
+  const RESEARCH_PLATFORM_FULL_URLS = [
+    './info1.jpg',
+    './info2.jpg',
+    './info3.jpg',
+    './info4.jpg',
+    './info5.jpg',
+  ] as const
+
   useEffect(() => {
-    const urls = [
-      './info1-thumb.jpg',
-      './info2-thumb.jpg',
-      './info3-thumb.jpg',
-      './info4-thumb.jpg',
-      './info5-thumb.jpg',
-    ]
-    urls.forEach((src) => {
-      const img = new Image()
-      img.src = src
-    })
+    const warm = (urls: readonly string[]) => {
+      urls.forEach((src) => {
+        const img = new Image()
+        img.src = src
+      })
+    }
+    warm(RESEARCH_PLATFORM_THUMB_URLS)
+    const runFull = () => warm(RESEARCH_PLATFORM_FULL_URLS)
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      window.requestIdleCallback(runFull, { timeout: 4000 })
+    } else {
+      setTimeout(runFull, 1200)
+    }
   }, [])
 
   const MAX_RETRIES = 4

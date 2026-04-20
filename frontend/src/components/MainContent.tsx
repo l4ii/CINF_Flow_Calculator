@@ -318,9 +318,9 @@ const SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS = [
   },
   {
     name: 'C1v' as const,
-    label: '$C_{1V}$：固相体积分数',
+    label: '$C_{1V}$：全部浆体似均质体积浓度',
     unit: '无量纲',
-    placeholder: '固相体积分数，如0.15',
+    placeholder: '全部浆体似均质体积浓度，如0.15',
   },
 ]
 
@@ -366,9 +366,9 @@ const SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS = [
   },
   {
     name: 'epsilon' as const,
-    label: '$\\varepsilon$：管壁绝对粗糙度',
+    label: '$\\varepsilon$：管道内壁粗糙度',
     unit: 'm',
-    placeholder: '管壁绝对粗糙度，默认值 0.0002',
+    placeholder: '管道内壁粗糙度，默认值 0.053',
   },
 ]
 
@@ -376,9 +376,9 @@ const SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS = [
 const SLURRY_FRICTION_WF_STEP1_FIELDS = [
   {
     name: 'C_w' as const,
-    label: '$C_w$：固相质量分数（工程上常称浆体重量浓度）',
+    label: '$C_w$：混合液体的含水率（水相体积分数）',
     unit: '无量纲',
-    placeholder: '固相质量分数，如0.35',
+    placeholder: '混合液体的含水率，取值范围0-1',
   },
   {
     name: 'rho_g' as const,
@@ -388,9 +388,9 @@ const SLURRY_FRICTION_WF_STEP1_FIELDS = [
   },
   {
     name: 'rho_s' as const,
-    label: '$\\rho_s$：浆体密度',
+    label: '$\\rho_s$：清水密度',
     unit: 't/m³',
-    placeholder: '浆体密度，如1.2',
+    placeholder: '清水密度，默认值1',
   },
 ]
 
@@ -409,9 +409,9 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
   },
   {
     name: 'V' as const,
-    label: '$V$：平均流速',
+    label: '$V$：断面平均流速',
     unit: 'm/s',
-    placeholder: '平均流速，如2',
+    placeholder: '断面平均流速，如2',
   },
   {
     name: 'D' as const,
@@ -438,16 +438,20 @@ const SLURRY_FRICTION_WF_STEP_INTROS: Record<
   string
 > = {
   step1:
-    '依据固体质量浓度 $C_w$ 与固体密度 $\\rho_g$、液体密度 $\\rho_s$，按质量加权关系求浆体密度 $\\rho_k$（t/m³），供后续水力坡降计算使用。',
+    '依据固体质量浓度 $C_w$ 与固体密度 $\\rho_g$、清水密度 $\\rho_s$，按质量加权关系求浆体密度 $\\rho_k$（t/m³）。若浆体密度（$\\rho_k$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「5.水力坡降（$i_k$）」中直接输入。',
   darcy_rho1:
-    '依据固体密度 $\\rho_g$、液体密度 $\\rho_s$ 与固相体积分数 $C_{1V}$，按体积加权求混合物密度 $\\rho_1$（t/m³）。计算结果写入后续雷诺数及摩阻系数求解所用参数集；若 $\\rho_1$ 已由设计或试验给定，可省略本步并于步骤 3 直接输入。',
+    '依据固体密度 $\\rho_g$、液体密度 $\\rho_s$ 与全部浆体似均质体积浓度 $C_{1V}$（即固体体积占总体体积的比例），按体积加权求混合物密度 $\\rho_1$（t/m³）。计算结果自动传递至后续雷诺数计算所需参数集；若混合物密度（$\\rho_1$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「3 雷诺数（$Re_B$）」中直接输入。',
   darcy_re:
-    '在已知 $\\rho_1$（t/m³）、断面平均流速 $V$、管道内径 $D_n$ 及混合物动力粘度 $\\eta_1$ 的前提下，按 $Re_B = V D_n \\cdot 1000\\rho_1 / \\eta_1$ 求混合物雷诺数（程序内将 $\\rho_1$ 换算为 kg/m³）。结果用于步骤 4 的 $\\lambda$ 求解；若 $Re_B$ 已由其他途径取得，可省略本步并于步骤 4 直接输入。',
+    '雷诺数是表征管道内流体流动状态的关键无量纲数，是计算摩阻损失的基础参数。该公式采用工程常用的显式近似形式（基于雷诺数定义 $Re=\\rho w D/\\mu$ 推导），直接求解流区的摩阻系数。同时体现了“密度、流速、管径、动力粘度”对流态的综合影响。若雷诺数（$Re_B$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「4.达西摩阻系数（$\\lambda$）」中直接输入。',
   darcy_lambda:
-    '在给定 $Re_B$、管道内径 $D_n$ 及管壁绝对粗糙度 $\\varepsilon$ 的条件下，按所选显式关系求解达西摩阻系数 $\\lambda$。$Re_B$ 可取步骤 3 的计算结果或直接输入；计算完成后将 $\\lambda$ 及步骤 5 所需的 $V$、$D$、$\\rho_s$ 传递至水力坡降核算。',
+    '达西摩阻系数（$\\lambda$）是描述管道内流体流动时阻力特性的无量纲参数，是计算浆体管道摩阻损失（水力坡降）的核心依据。其计算采用科尔布鲁克-怀特（Colebrook-White）公式的近似形式。若达西摩阻系数（$\\lambda$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「5.水力坡降（$i_k$）」中直接输入。',
   step5_ik:
-    '将达西摩阻系数 $\\lambda$、流速 $V$、管径 $D$、浆体密度 $\\rho_k$、水密度 $\\rho_s$ 及重力加速度 $g$ 代入达西–魏斯巴赫关系，求单位管长水力坡降 $i_k$（mH₂O/m）。各量须与本管段水力计算所依据的工况一致；前序步骤所得数值仅在对应栏位为空时写入，不覆盖已录入数据。',
+    '水力坡降 $i_k$ 计算采用达西-魏斯巴赫公式的多相流扩展形式，通过在经典公式中引入浆体密度与液体介质密度的比值，校正固体颗粒引起的附加能量损失，从而准确表征浆体管道单位管长的水头损失。计算所需的参数若已在前序步骤得出，系统会在当前栏位为空时自动带入，用户也可直接输入已知设计值。',
 }
+const SLURRY_FRICTION_WF_OVERVIEW_PARAGRAPHS = [
+  '本模块通过引入当量密度（$\\rho_k$）的概念，将达西-魏斯巴赫公式扩展应用于气-固-液多相流的摩阻损失计算。公式$i_k$在经典形式的基础上，乘以密度比（$\\frac{\\rho_k}{\\rho_s}$），以校正由于固体颗粒存在导致的附加能量损失。计算结果$i_k$可直接用于计算给定管长$L$下的总沿程水头损失：$h_f = i_k \\cdot L$。本方法适用于固体浓度适中、颗粒均匀悬浮的浆体或气力输送系统。当固体浓度极高或流动状态异常时，需结合经验系数进行修正。',
+  '计算步骤：本模块按五个步骤顺序计算 ① 浆体密度 $\\rho_k$；② 混合物密度 $\\rho_1$；③ 雷诺数 $Re_B$；④ 达西摩阻系数 $\\lambda$；⑤ 单位管长水力坡降 $i_k$。各步可单独执行；',
+]
 
 /** 清水摩阻：管材类型与海澄–威廉系数 C_h 对应（自定义除外） */
 const CLEAR_WATER_CH_PRESET_VALUES: Record<string, number> = {
@@ -465,6 +469,21 @@ const CLEAR_WATER_CH_MENU_ROWS: { key: ClearWaterChPresetKey; prose: string; mat
   { key: 'lined130', prose: '内衬水泥、树脂铸铁管', math: 'C_h = 130' },
   { key: 'steel100', prose: '普通钢管、铸铁管', math: 'C_h = 100' },
   { key: 'custom', prose: '用户自定义', math: 'C_h' },
+]
+
+const SLURRY_EPSILON_PRESET_VALUES: Record<string, number> = {
+  new_steel_pipe_053: 0.053,
+  new_steel_pipe_055: 0.055,
+}
+
+type SlurryEpsilonPresetKey = 'new_steel_pipe_053' | 'new_steel_pipe_055' | 'custom'
+const DEFAULT_SLURRY_EPSILON_PRESET: SlurryEpsilonPresetKey = 'new_steel_pipe_053'
+const DEFAULT_SLURRY_EPSILON = SLURRY_EPSILON_PRESET_VALUES[DEFAULT_SLURRY_EPSILON_PRESET]
+
+const SLURRY_EPSILON_MENU_ROWS: { key: SlurryEpsilonPresetKey; prose: string; math: string }[] = [
+  { key: 'new_steel_pipe_053', prose: '直缝新钢管', math: '\\varepsilon = 0.053' },
+  { key: 'new_steel_pipe_055', prose: '直缝新钢管 2', math: '\\varepsilon = 0.055' },
+  { key: 'custom', prose: '用户可自定义输入', math: '\\varepsilon' },
 ]
 
 /** 清水 $C_h$ 下拉：选项内使用 KaTeX（单位与全站一致：在输入控件外右侧 `text-sm` 展示） */
@@ -523,6 +542,74 @@ function ClearWaterChPresetMenu({
       {open && (
         <ul className={listCls} role="listbox">
           {CLEAR_WATER_CH_MENU_ROWS.map((row) => (
+            <li key={row.key} role="option" aria-selected={row.key === presetKey}>
+              <button type="button" className={itemCls} onClick={() => { onPick(row.key); setOpen(false) }}>
+                <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{row.prose}，</span>
+                <InlineMath math={row.math} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function SlurryEpsilonPresetMenu({
+  darkMode,
+  presetKey,
+  onPick,
+}: {
+  darkMode: boolean
+  presetKey: string
+  onPick: (key: SlurryEpsilonPresetKey) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      const el = wrapRef.current
+      if (el && !el.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const current = SLURRY_EPSILON_MENU_ROWS.find((r) => r.key === presetKey) ?? SLURRY_EPSILON_MENU_ROWS[0]
+  const btnCls = `w-full text-left px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between gap-2 ${
+    darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+  }`
+  const listCls = `absolute z-30 mt-1 w-full max-h-72 overflow-auto rounded-lg border shadow-lg ${
+    darkMode ? 'bg-gray-700 border-gray-500' : 'bg-white border-gray-300'
+  }`
+  const itemCls = `w-full text-left px-3 py-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b last:border-b-0 transition-colors ${
+    darkMode
+      ? 'border-gray-600 hover:bg-gray-600/80 text-gray-100'
+      : 'border-gray-100 hover:bg-slate-50 text-gray-900'
+  }`
+
+  return (
+    <div className="relative w-full" ref={wrapRef}>
+      <button
+        type="button"
+        className={btnCls}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+      >
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{current.prose}，</span>
+          <InlineMath math={current.math} />
+        </span>
+        <span className="shrink-0 text-xs opacity-70" aria-hidden>
+          {open ? '▲' : '▼'}
+        </span>
+      </button>
+      {open && (
+        <ul className={listCls} role="listbox">
+          {SLURRY_EPSILON_MENU_ROWS.map((row) => (
             <li key={row.key} role="option" aria-selected={row.key === presetKey}>
               <button type="button" className={itemCls} onClick={() => { onPick(row.key); setOpen(false) }}>
                 <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{row.prose}，</span>
@@ -2889,7 +2976,7 @@ function municipalDocSrc(n: number): string {
   return `./municipal/doc-image${String(n).padStart(2, '0')}.jpeg`
 }
 
-/** 列表用缩略路径：info1.jpg → info1-thumb.jpg（同目录放置小图可减轻首屏流量；缺失时自动回退原图） */
+/** 列表用缩略路径：info1.jpg → info1-thumb.jpg。请将低分辨率小图放在 frontend/public/ 与高清同名带 -thumb，可显著缩短「科研创新中心」首屏加载；缺失时自动回退高清原图。 */
 function researchThumbFromFull(full: string): string {
   return full.replace(/(\.[^.]+)$/i, '-thumb$1')
 }
@@ -3132,6 +3219,10 @@ export default function MainContent({
   const isKronodzeFormula = formula?.id === 'kronodze_pressure'
   const isTotalHeadFormula =
     formula?.id === 'slurry_total_head' || formula?.id === 'clear_water_total_head'
+  const densityMixingRawRhoS = formulaRawInputs['density_mixing']?.['rho_s']
+  const densityMixingRhoS = formulaParameters['density_mixing']?.['rho_s']
+  const darcyRawEpsilonPreset = formulaRawInputs['darcy_friction']?.['epsilon_preset']
+  const darcyEpsilon = formulaParameters['darcy_friction']?.['epsilon']
   
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -3156,6 +3247,45 @@ export default function MainContent({
   const [clearWaterTotalHeadIwSuggestOpen, setClearWaterTotalHeadIwSuggestOpen] = useState(false)
   /** 缩径消能 λ_d：引用已计算达西摩阻系数下拉 */
   const [slurryDissipationLambdaSuggestOpen, setSlurryDissipationLambdaSuggestOpen] = useState(false)
+
+  // 浆体摩阻工作流步骤1：ρ_s（清水密度）默认显示为 1
+  useEffect(() => {
+    if (!isSlurryFrictionWorkflow) return
+    const hasRaw = densityMixingRawRhoS != null && densityMixingRawRhoS.trim() !== ''
+    const hasParsed = densityMixingRhoS != null && !isNaN(densityMixingRhoS)
+    if (hasRaw || hasParsed) return
+    setFormulaRawInputs((prev) => ({
+      ...prev,
+      density_mixing: { ...(prev.density_mixing || {}), rho_s: '1' }
+    }))
+    setFormulaParameters((prev) => ({
+      ...prev,
+      density_mixing: { ...(prev.density_mixing || {}), rho_s: 1 }
+    }))
+  }, [isSlurryFrictionWorkflow, densityMixingRawRhoS, densityMixingRhoS])
+
+  // 浆体摩阻工作流步骤4：ε 默认显示并使用「直缝新钢管 0.053」
+  useEffect(() => {
+    if (!isSlurryFrictionWorkflow) return
+    const hasPreset = darcyRawEpsilonPreset != null && darcyRawEpsilonPreset.trim() !== ''
+    const hasEpsilon = darcyEpsilon != null && !isNaN(darcyEpsilon)
+    if (hasPreset && hasEpsilon) return
+    setFormulaRawInputs((prev) => ({
+      ...prev,
+      darcy_friction: {
+        ...(prev.darcy_friction || {}),
+        epsilon_preset: prev.darcy_friction?.epsilon_preset || DEFAULT_SLURRY_EPSILON_PRESET,
+        epsilon: prev.darcy_friction?.epsilon || String(DEFAULT_SLURRY_EPSILON),
+      }
+    }))
+    setFormulaParameters((prev) => ({
+      ...prev,
+      darcy_friction: {
+        ...(prev.darcy_friction || {}),
+        epsilon: prev.darcy_friction?.epsilon ?? DEFAULT_SLURRY_EPSILON,
+      }
+    }))
+  }, [isSlurryFrictionWorkflow, darcyRawEpsilonPreset, darcyEpsilon])
   /** 浆体摩阻损失（单页）ρ_k：跨页面结果下拉导入 */
   const [slurryFrictionRhoKSuggestOpen, setSlurryFrictionRhoKSuggestOpen] = useState(false)
   /** 浆体摩阻损失（单页）λ：跨页面结果下拉导入 */
@@ -3615,21 +3745,6 @@ export default function MainContent({
     } else {
       setCurrentVersion('1.0.0')
     }
-  }, [])
-
-  // 了解我们-科研：仅预加载缩略图，避免启动时拉满幅高清拖慢首屏（高清在点击放大时再请求）
-  useEffect(() => {
-    const urls = [
-      './info1-thumb.jpg',
-      './info2-thumb.jpg',
-      './info3-thumb.jpg',
-      './info4-thumb.jpg',
-      './info5-thumb.jpg',
-    ]
-    urls.forEach((src) => {
-      const img = new Image()
-      img.src = src
-    })
   }, [])
 
   useEffect(() => {
@@ -4381,7 +4496,19 @@ export default function MainContent({
   const handleSubParameterBlur = (subId: string, name: string) => {
     const raw = formulaRawInputs[subId]?.[name]
     if (raw === undefined) return
-    if (raw.trim() === '') return
+    if (raw.trim() === '') {
+      if (subId === 'density_mixing' && name === 'rho_s') {
+        setFormulaRawInputs((prev) => ({
+          ...prev,
+          [subId]: { ...(prev[subId] || {}), [name]: '1' }
+        }))
+        setFormulaParameters((prev) => ({
+          ...prev,
+          [subId]: { ...(prev[subId] || {}), [name]: 1 }
+        }))
+      }
+      return
+    }
     const normalized = normalizeDecimalInput(raw.trim())
     const numValue = parseFloat(normalized)
     if (isNaN(numValue)) return
@@ -4421,7 +4548,7 @@ export default function MainContent({
         return '步骤3：请填写管道内径 D_n'
       }
       if (darcy['eta_1'] == null || isNaN(darcy['eta_1']!) || darcy['eta_1']! <= 0) {
-        return '步骤3：请填写混合物动力粘度 η₁'
+        return '步骤3：请填写混合物动力粘度 η₁（Pa·s）'
       }
       return null
     }
@@ -4493,7 +4620,7 @@ export default function MainContent({
         }
       }
       if (subId === 'darcy_friction_step3_lambda' && validParameters['epsilon'] === undefined) {
-        validParameters['epsilon'] = 0.0002
+        validParameters['epsilon'] = DEFAULT_SLURRY_EPSILON
       }
     } else if (subId === 'slurry_friction_loss') {
       for (const [key, value] of Object.entries(sflP)) {
@@ -4891,6 +5018,7 @@ export default function MainContent({
                         alt={item.name}
                         loading={idx === 0 ? 'eager' : 'lazy'}
                         decoding="async"
+                        {...(idx === 0 ? { fetchPriority: 'high' as const } : {})}
                         className={`mx-auto max-h-[min(480px,65vh)] w-auto max-w-full cursor-zoom-in object-contain transition-opacity duration-200 ${
                           imgLoaded ? 'opacity-100' : 'opacity-0'
                         }`}
@@ -7494,19 +7622,24 @@ export default function MainContent({
             </>
           ) : isSlurryFrictionWorkflow ? (
             <>
-              <div className="mb-6 space-y-3">
-                {formula.description
-                  .split(/\n\n+/)
-                  .map((para) => para.trim())
-                  .filter(Boolean)
-                  .map((para, idx) => (
-                    <p
-                      key={idx}
-                      className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
-                    >
-                      {renderDescriptionWithMath(para)}
-                    </p>
-                  ))}
+              {/* space-y-*：控制「简介」与「流程介绍」两段之间的垂直间距；改为 space-y-0 可去掉段间空隙 */}
+              <div className="mb-6 space-y-0">
+                {SLURRY_FRICTION_WF_OVERVIEW_PARAGRAPHS.map((para, idx) => (
+                  <p
+                    key={idx}
+                    className={`text-sm leading-relaxed ${
+                      idx === 0
+                        ? darkMode
+                          ? 'text-gray-100'
+                          : 'text-gray-900'
+                        : darkMode
+                          ? 'text-gray-400'
+                          : 'text-gray-500'
+                    }`}
+                  >
+                    {renderDescriptionWithMath(para)}
+                  </p>
+                ))}
               </div>
 
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
@@ -7701,8 +7834,7 @@ export default function MainContent({
                 <div className={`mb-3 space-y-2 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   <BlockMath math="Re_B = \frac{V \cdot D_n \cdot 1000 \rho_1}{\eta_1}" />
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    式中 <InlineMath math="\rho_1" /> 为 t/m³；乘以 1000 后为 SI 密度（kg/m³），与 <InlineMath math="\eta_1" />（Pa·s）配套得无量纲{' '}
-                    <InlineMath math="Re_B" />。
+                    <InlineMath math="\rho_1" /> 输入单位为 t/m³，计算时自动换算为 kg/m³。
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -7760,6 +7892,15 @@ export default function MainContent({
                   const im = r?.intermediate as Record<string, unknown> | undefined
                   const rhoKg = im?.rho_1_kg_m3
                   const num = im?.re_numerator_V_D_rho_kg
+                  const reB = r?.Re_B != null && !isNaN(Number(r.Re_B)) ? Number(r.Re_B) : null
+                  const flowState =
+                    reB == null
+                      ? null
+                      : reB < 2000
+                        ? '通常为层流（黏性力主导，流动稳定，分层明显）'
+                        : reB < 4000
+                          ? '过渡区（流动状态不稳定）'
+                          : '通常为湍流'
                   const mid: [string, string][] = []
                   if (r?.rho_1 != null && !isNaN(Number(r.rho_1))) {
                     mid.push(['mixture_rho_1', `${fmtDissipation(Number(r.rho_1))} t/m³`])
@@ -7784,6 +7925,24 @@ export default function MainContent({
                             <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                           ),
                       })}
+                      {reB != null && flowState && (
+                        <div
+                          className={`mb-3 rounded-lg border px-3 py-3 text-sm leading-relaxed ${
+                            darkMode ? 'border-blue-500/50 bg-blue-950/30 text-blue-100' : 'border-blue-200 bg-blue-50 text-blue-900'
+                          }`}
+                        >
+                          <p>
+                            雷诺数（<InlineMath math="Re_B" />）反映了流体流动中惯性力与黏性力的比值。
+                          </p>
+                          <p className="mt-1">
+                            当前判定：<strong>{flowState}</strong>（<InlineMath math={`Re_B=${fmtDissipation(reB)}`} />）
+                          </p>
+                          <p className={`mt-1 ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>
+                            判别区间：<InlineMath math="Re_B&lt;2000" /> 层流；<InlineMath math="2000&lt;Re_B&lt;4000" /> 过渡区；
+                            <InlineMath math="Re_B&gt;4000" /> 湍流。
+                          </p>
+                        </div>
+                      )}
                       {mid.length > 0 && renderIntermediateResultsBlock(mid, undefined, 'white')}
                     </>
                   )
@@ -7801,37 +7960,106 @@ export default function MainContent({
                   <BlockMath math="\lambda = \frac{1.33036}{\left[\ln\left(\frac{\varepsilon}{3.7 D_n} + \frac{5.7385}{Re_B^{0.9}}\right)\right]^2}" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS.map(({ name, label, unit, placeholder }) => (
-                    <div key={name}>
-                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(label)}
-                      </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          spellCheck={false}
-                          placeholder={placeholder}
-                          value={
-                            formulaRawInputs['darcy_friction']?.[name] ??
-                            (formulaParameters['darcy_friction']?.[name] != null &&
-                            !isNaN(formulaParameters['darcy_friction']![name]!)
-                              ? String(formulaParameters['darcy_friction']![name])
-                              : name === 'epsilon'
-                                ? '0.0002'
+                  {SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS.map(({ name, label, unit, placeholder }) => {
+                    if (name === 'epsilon') {
+                      const epsPresetKey = formulaRawInputs['darcy_friction']?.['epsilon_preset'] ?? DEFAULT_SLURRY_EPSILON_PRESET
+                      const epsilonRaw =
+                        formulaRawInputs['darcy_friction']?.['epsilon'] ??
+                        (formulaParameters['darcy_friction']?.['epsilon'] != null &&
+                        !isNaN(formulaParameters['darcy_friction']!['epsilon']!)
+                          ? String(formulaParameters['darcy_friction']!['epsilon'])
+                          : String(DEFAULT_SLURRY_EPSILON))
+                      return (
+                        <div key={name} className="md:col-span-2">
+                          <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                            {renderDescriptionWithMath(label)}
+                          </label>
+                          <div className={`grid grid-cols-1 ${epsPresetKey === 'custom' ? 'md:grid-cols-2' : ''} gap-3`}>
+                            <div className="min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <div className="flex-1">
+                                  <SlurryEpsilonPresetMenu
+                                    darkMode={darkMode}
+                                    presetKey={epsPresetKey}
+                                    onPick={(key) => {
+                                      if (key === 'custom') {
+                                        setFormulaRawInputs((prev) => ({
+                                          ...prev,
+                                          darcy_friction: { ...(prev.darcy_friction || {}), epsilon_preset: 'custom' }
+                                        }))
+                                        return
+                                      }
+                                      const n = SLURRY_EPSILON_PRESET_VALUES[key]
+                                      if (n != null) {
+                                        setFormulaParameters((prev) => ({
+                                          ...prev,
+                                          darcy_friction: { ...(prev.darcy_friction || {}), epsilon: n }
+                                        }))
+                                        setFormulaRawInputs((prev) => ({
+                                          ...prev,
+                                          darcy_friction: { ...(prev.darcy_friction || {}), epsilon_preset: key, epsilon: String(n) }
+                                        }))
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
+                              </div>
+                            </div>
+                            {epsPresetKey === 'custom' && (
+                              <div className="min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    placeholder={placeholder}
+                                    value={epsilonRaw}
+                                    onChange={(e) => handleSubParameterChange('darcy_friction', 'epsilon', e.target.value)}
+                                    onBlur={() => handleSubParameterBlur('darcy_friction', 'epsilon')}
+                                    className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
+                                      darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                                    }`}
+                                  />
+                                  <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={name}>
+                        <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                          {renderDescriptionWithMath(label)}
+                        </label>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
+                            spellCheck={false}
+                            placeholder={placeholder}
+                            value={
+                              formulaRawInputs['darcy_friction']?.[name] ??
+                              (formulaParameters['darcy_friction']?.[name] != null &&
+                              !isNaN(formulaParameters['darcy_friction']![name]!)
+                                ? String(formulaParameters['darcy_friction']![name])
                                 : '')
-                          }
-                          onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
-                          onBlur={() => handleSubParameterBlur('darcy_friction', name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                            darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                          }`}
-                        />
-                        <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
+                            }
+                            onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
+                            onBlur={() => handleSubParameterBlur('darcy_friction', name)}
+                            className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
+                              darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                            }`}
+                          />
+                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
                   <button
@@ -8015,51 +8243,48 @@ export default function MainContent({
                           '$C_h$：海澄–威廉系数（Hazen–Williams），无量纲'
                       )}
                     </label>
-                    <div className="min-w-0">
-                      <ClearWaterChPresetMenu
-                        darkMode={darkMode}
-                        presetKey={rawInputs['ch_preset'] ?? 'steel100'}
-                        onPick={(key) => {
-                          if (key === 'custom') {
-                            updateRawInputs((prev) => ({ ...prev, ch_preset: 'custom' }))
-                            return
-                          }
-                          const n = CLEAR_WATER_CH_PRESET_VALUES[key]
-                          if (n != null) {
-                            updateParameters((prev) => ({ ...prev, C_h: n }))
-                            updateRawInputs((prev) => ({ ...prev, ch_preset: key, C_h: String(n) }))
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                  {(rawInputs['ch_preset'] ?? 'steel100') === 'custom' && (
-                    <div className="md:col-span-2">
-                      <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                        {renderDescriptionWithMath(
-                          '$C_h$：自定义海澄–威廉系数，无量纲'
-                        )}
-                      </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          spellCheck={false}
-                          value={
-                            rawInputs['C_h'] ??
-                            (parameters['C_h'] != null && !isNaN(parameters['C_h']!) ? String(parameters['C_h']) : '')
-                          }
-                          onChange={(e) => handleParameterChange('C_h', e.target.value)}
-                          onBlur={() => handleParameterBlur('C_h')}
-                          placeholder="海澄-威廉系数，如130"
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                            darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                          }`}
+                    <div className={`grid grid-cols-1 ${(rawInputs['ch_preset'] ?? 'steel100') === 'custom' ? 'md:grid-cols-2' : ''} gap-3`}>
+                      <div className="min-w-0">
+                        <ClearWaterChPresetMenu
+                          darkMode={darkMode}
+                          presetKey={rawInputs['ch_preset'] ?? 'steel100'}
+                          onPick={(key) => {
+                            if (key === 'custom') {
+                              updateRawInputs((prev) => ({ ...prev, ch_preset: 'custom' }))
+                              return
+                            }
+                            const n = CLEAR_WATER_CH_PRESET_VALUES[key]
+                            if (n != null) {
+                              updateParameters((prev) => ({ ...prev, C_h: n }))
+                              updateRawInputs((prev) => ({ ...prev, ch_preset: key, C_h: String(n) }))
+                            }
+                          }}
                         />
                       </div>
+                      {(rawInputs['ch_preset'] ?? 'steel100') === 'custom' && (
+                        <div className="min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={
+                                rawInputs['C_h'] ??
+                                (parameters['C_h'] != null && !isNaN(parameters['C_h']!) ? String(parameters['C_h']) : '')
+                              }
+                              onChange={(e) => handleParameterChange('C_h', e.target.value)}
+                              onBlur={() => handleParameterBlur('C_h')}
+                              placeholder="海澄-威廉系数，如130"
+                              className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
+                                darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                   {(['K_hw', 'd_j', 'q_g'] as const).map((name) => {
                     const param = formula.parameters.find((p) => p.name === name)
                     const ph =
@@ -9801,7 +10026,7 @@ export default function MainContent({
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>计算浆体密度</div>
                 <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('依据固体质量浓度 $C_w$ 及固体密度 $\\rho_g$、液体密度 $\\rho_s$，按质量加权关系计算浆体密度 $\\rho_k$（t/m³），供达西–魏斯巴赫型沿程损失公式使用。')}
+                  {renderDescriptionWithMath('依据固体质量浓度 $C_w$ 及固体密度 $\\rho_g$、液体密度 $\\rho_s$，按质量加权关系计算浆体密度 $\\rho_k$（t/m³）。')}
                 </p>
                 <div className={`mb-4 text-xl ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                   <BlockMath math="\rho_k = \frac{1}{\frac{C_w}{\rho_g} + \frac{1-C_w}{\rho_s}}" />
