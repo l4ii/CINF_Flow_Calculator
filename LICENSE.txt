@@ -1,7 +1,7 @@
 长沙院浆体管道计算工具 软件许可协议
 
 软件名称：长沙院浆体管道计算工具
-版本号：1.0.0
+版本号：1.0.1
 著作权人：(C) 2026 长沙有色冶金设计研究院有限公司
 
 一、软件说明
@@ -22,12 +22,16 @@
 
 使用、复制、修改、分发本软件即表示您已阅读、理解并同意受本协议约束。如有疑问，请以现行国家标准、行业规范及有资质单位出具的正式设计文件为准。
 
+五、设计使用与院方授权
+
+若将本软件输出的计算结果、或依本软件功能得到的参数与指标，作为工程设计的依据，或用于对工程设计、设备选型、对外技术条件等起结论性或实质性指导作用，使用者须就相应业务与**长沙有色冶金设计研究院有限公司**已签订合法、有效且与使用场景、项目范围相符的正式合同（如技术服务、工程咨询、设计等），或持有该院就具体项目出具的书面授权文件。**本软件许可及本协议本身不替代、不构成**上述合同关系或院方对具体设计的认可与背书。未经该院书面同意，**不得以**长沙有色院或本公司名义，将本软件或其结果用于对外的正式设计说明、报审、承诺、担保或类似具有法律或商业约束力的技术表述。
+
 ---
 
 CINF Slurry Pipeline Calculation Tool - Software License Agreement (English)
 
 Software: CINF Slurry Pipeline Calculation Tool
-Version: 1.0.0
+Version: 1.0.1
 Copyright: (C) 2026 Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.
 
 I. Software Description
@@ -42,4 +46,7 @@ III. Conditions
 (3) The copyright holder shall not be liable for any claims or damages.
 
 IV. Legal Notice
-By using this software, you agree to be bound by this agreement.
+By using this software, you agree to be bound by this agreement. For formal engineering design, follow applicable national and industry standards and formally issued design documents from qualified organizations.
+
+V. Design Use and Company Authorization
+If you use calculation outputs or parameters/indicators produced by or through this software as a basis for engineering design, equipment selection, or as decisive or material guidance in external technical conditions, you must have a valid, applicable contract (e.g., technical services, consulting, or design) in effect with **Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.**, or written project authorization from that company that matches the intended use and project scope. **This software license and this agreement are not a substitute for** such a contract, authorization, or the company’s endorsement of any specific design. **Without the company’s written consent, you may not** present results from this software in the name of the company in formal design submissions, approvals, undertakings, guarantees, or similar binding technical statements.

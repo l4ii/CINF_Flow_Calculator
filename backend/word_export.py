@@ -366,6 +366,17 @@ class WordExporter:
         intro_p.paragraph_format.first_line_indent = Pt(24)
         intro_p.paragraph_format.line_spacing = 1.25
 
+        auth_p = doc.add_paragraph()
+        auth_run = auth_p.add_run(
+            "设计使用与授权：若将本计算书所列结果、或依本软件功能得到的参数与指标，作为工程设计依据、设备选型或对外技术条件，"
+            "或用于对设计起结论性、实质性指导的，须同时具备与「长沙有色冶金设计研究院有限公司」合法有效且与项目范围、用途相符的正式合同"
+            "（如技术服务、工程咨询、设计等）或该院就具体项目出具的书面授权。本计算书及软件使用许可不替代、不构成上述合同或院方对具体项目的认可。"
+            "未经该院书面同意，不得以长沙有色院或本公司名义将本计算书内容用于正式报审、对外技术承诺或具有担保性质的表述。"
+        )
+        self._set_font(auth_run)
+        auth_p.paragraph_format.first_line_indent = Pt(24)
+        auth_p.paragraph_format.line_spacing = 1.25
+
         scope_p = doc.add_paragraph()
         scope_run = scope_p.add_run("平台功能按业务板块划分为四类：")
         scope_run.bold = True
@@ -834,6 +845,8 @@ class WordExporter:
         result_table.cell(2, 1).text = (
             "本表数值由当前输入与所选公式按程序逻辑计算得出，用于设计辅助与资料整理；"
             "实施阶段请结合现场条件、规范及专业判断复核。"
+            "若将本表结果或依本软件功能形成的指标作为工程设计或对外正式依据，须同时具备与「长沙有色冶金设计研究院有限公司」"
+            "合法有效且与项目相符的正式合同或书面项目授权；本计算书不替代该等合同或授权。"
         )
         # 设置该行所有单元格的字体
         for cell in result_table.rows[2].cells:
@@ -1547,6 +1560,10 @@ class WordExporter:
             (
                 "本院秉承「创新驱动，诚信服务，持续为客户创造价值」的理念，致力成为有色行业创新型领军企业。"
                 "本浆体与清水管道水力计算软件由本院组织研发，用于设计辅助与资料整理，计算结论应与现行规范及工程实际相结合。"
+            ),
+            (
+                "若将本计算书或本软件产出的结果用于工程设计依据、对外技术报审或结论性技术表述，须另行具备与长沙有色冶金设计研究院有限公司"
+                "之间合法有效、与项目相符的正式业务合同，或该院出具的书面项目授权。本计算书与软件使用许可不替代上述合同或授权。"
             ),
         ]
         for text in paras:

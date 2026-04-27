@@ -10,7 +10,8 @@ import {
   downloadScientificHlChartPng,
   formatHydraulicHeadTick,
   formatHydraulicLengthTick,
-} from '../utils/chartExportCanvas';
+} from '../utils/chartExportCanvas'
+import { formatUpdateError } from '../utils/formatUpdateError'
 import {
   APP_EXPORT_FILENAME_PREFIX,
   APP_NAME_EN,
@@ -3740,10 +3741,10 @@ export default function MainContent({
       (window as any).electronAPI.update.getAppVersion().then((version: string) => {
         setCurrentVersion(version)
       }).catch(() => {
-        setCurrentVersion('1.0.0')
+        setCurrentVersion('1.0.1')
       })
     } else {
-      setCurrentVersion('1.0.0')
+      setCurrentVersion('1.0.1')
     }
   }, [])
 
@@ -5785,7 +5786,7 @@ export default function MainContent({
           downloading: 'Downloading',
           downloaded: 'Update downloaded. Install after restart.',
           installNow: 'Restart & Install',
-          updateFailed: 'Update check failed',
+          updateFailed: "Couldn't check for updates. Please try again.",
           retry: 'Retry',
           versionTitle: 'App Version',
           noAutoUpdateBrowser: '(Auto-update is unavailable in browser mode)',
@@ -5795,6 +5796,8 @@ export default function MainContent({
             'The formulas and results provided by this software are for engineering reference only and do not constitute any guarantee or final design basis. Decisions must be made with applicable standards, site conditions, and professional judgment.',
           disclaimerP2:
             'The developer/provider assumes no liability for any direct or indirect consequences arising from the use of this software or its results. When in doubt, refer to current national/industry standards and formally issued design documents from qualified organizations.',
+          disclaimerP3:
+            'If you use this software’s outputs or parameters/indicators derived from its features as a basis for engineering design or as material guidance, you must also have a valid, applicable contract or written project authorization from Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd. The app license is not a substitute for such authorization. Without the company’s written consent, you may not use the institute’s name when submitting results for formal design review or external technical commitments.',
           privacyTitle: 'Data & Privacy',
           privacyP:
             'All calculations are performed locally. The app does not collect or upload your input data or results. Exporting to Word is also done on your machine without sending content to external servers.',
@@ -5826,7 +5829,7 @@ export default function MainContent({
           downloading: '正在下载',
           downloaded: '更新已下载，重启后安装',
           installNow: '立即重启并安装',
-          updateFailed: '更新检查失败',
+          updateFailed: '暂时无法检查更新，请稍后再试',
           retry: '重试',
           versionTitle: '应用版本',
           noAutoUpdateBrowser: '（浏览器环境下无自动更新）',
@@ -5834,6 +5837,8 @@ export default function MainContent({
           disclaimerTitle: '免责声明',
           disclaimerP1: '本软件所提供的计算公式及计算结果仅供工程设计参考，不构成任何设计依据或保证。实际工程须结合现行规范、现场条件及专业判断综合决策。',
           disclaimerP2: '使用本软件及其结果所产生的任何直接或间接后果，开发与提供方不承担责任。如有疑问，请以现行国家标准、行业规范及有资质单位出具的正式设计文件为准。',
+          disclaimerP3:
+            '若将本软件产出的计算结果、或依本软件功能形成的参数与指标，作为工程设计依据、设备选型或对外技术条件的依据，或用于对设计起结论性指导的，须同时具备与「长沙有色冶金设计研究院有限公司」合法有效且与项目范围相符的正式合同或该院出具的书面项目授权。本软件使用许可不替代上述合同或授权。未经该院书面同意，不得以长沙有色院或本公司名义将本软件结果用于正式报审、对外技术承诺或担保性表述。',
           privacyTitle: '数据与隐私',
           privacyP: '本软件在本地完成计算，不收集、不上传您的输入数据或计算结果。导出 Word 等操作均在您本机完成，不会将内容发送至外部服务器。',
         })
@@ -5986,7 +5991,7 @@ export default function MainContent({
                     {updateStatus === 'error' && (
                       <div className="space-y-3">
                         <div className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-red-900/30 border border-red-700 text-red-300' : 'bg-red-50 border border-red-200 text-red-800'}`}>
-                          {updateError || t.updateFailed}
+                          {formatUpdateError(updateError, language === 'en' ? 'en' : 'zh') || t.updateFailed}
                         </div>
                         <button onClick={handleCheckForUpdates} className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">{t.retry}</button>
                       </div>
@@ -6019,6 +6024,7 @@ export default function MainContent({
                 <div className={`text-sm leading-relaxed space-y-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   <p>{t.disclaimerP1}</p>
                   <p>{t.disclaimerP2}</p>
+                  <p>{t.disclaimerP3}</p>
                 </div>
               </div>
               <div className={cardCls}>

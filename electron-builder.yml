@@ -7,19 +7,20 @@ directories:
   buildResources: electron/build
   output: release
 
-# 更新服务器配置
-# 选项1: 使用 GitHub Releases (推荐)
-# publish:
-#   provider: github
-#   owner: your-username
-#   repo: your-repo-name
-
-# 选项2: 使用通用 HTTP 服务器
+# 自动更新：GitHub Releases（拉取 .atom / latest.yml 与安装包资产）
+# 版本号：根 package.json 的 "version" 与发版时一致；发版前升版本再 build。
+# 发布到 GitHub（本机/CI）：需 GH_TOKEN，例如  npx electron-builder --win --publish always
+#
+# 重要：github.com/owner/repo/releases 若对「未登录用户」是 404（常见为私有库），
+# electron-updater 的匿名检查也会 404。公网用户能用的做法是其一：
+#   A) 将仓库改为 Public，或
+#   B) 另建一个「仅发安装包+latest.yml 的 Public 空仓库」，把下面 owner/repo 改成它。
+# 内网可给运行环境设 GH_TOKEN（勿写入安装包分发给公网）。
+# 大陆网络不稳时可改为 generic，把 yml+exe 放到国内可访问的静态站。
 publish:
-  provider: generic
-  url: https://your-update-server.com/updates
-  # 或者使用本地/内网服务器
-  # url: http://192.168.1.100:8080/updates
+  provider: github
+  owner: l4ii
+  repo: CINF_Flow_Calculator
 
 # 前端不放进 asar，改由 extraResources 放到 resources/frontend-dist，安装时必被覆盖，避免旧缓存/旧 asar 导致看到旧版
 files:

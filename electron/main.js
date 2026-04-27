@@ -598,11 +598,18 @@ function createWindow() {
 
 // 配置自动更新（仅在生产环境）
 if (!isDev) {
-  // 注意：更新服务器 URL 需要在 electron-builder.yml 或 package.json 的 publish 配置中设置
-  // 如果使用 GitHub Releases，需要设置环境变量 GH_TOKEN
-  // 如果使用通用服务器，确保 URL 正确配置
+  // 注意：更新服务器在 electron-builder.yml 的 publish 中配置。
+  // GitHub：匿名可访问的仓库才能在不带令牌时检查 release（见下方 GH_TOKEN 说明）。
   autoUpdater.autoDownload = false // 不自动下载，等待用户确认
   autoUpdater.autoInstallOnAppQuit = true // 应用退出时自动安装更新
+
+  // 私有仓拉 releases 会 404。仅建议在「内网/受控机」为进程配置令牌；公网分发改用「公开库」或 generic 静态地址，勿把 token 写进安装包。
+  const gh = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
+  if (gh) {
+    const t = String(gh).trim()
+    const auth = /^(?:token|Bearer)\s/i.test(t) ? t : `token ${t}`
+    autoUpdater.addAuthHeader(auth)
+  }
   
   // 更新检查事件（仅在生产环境）
   autoUpdater.on('checking-for-update', () => {

@@ -1,20 +1,20 @@
 /**
  * electron-builder 自带 NSIS 模板的幂等补丁，改善安装过程的用户体验：
  *
- *   1) assistedInstaller.nsh：安装页 / 卸载页默认展开详情面板（自动点击按钮 ID 1027）
- *   2) assistedInstaller.nsh：在「选择安装目录」之前插入 customPageBeforeChangeDir，
- *      让 installer.nsh 里的序列号页能嵌到「许可 → 序列号 → 选目录 → 安装」之间
- *   3) installSection.nsh：把底层文件操作日志静音，改为显示几条中文阶段提示
+ *   1) assistedInstaller.nsh：
+ *      - 在「选择安装目录」之前插入 customPageBeforeChangeDir，
+ *        让 installer.nsh 里的序列号页能嵌到「许可 → 序列号 → 选目录 → 安装」之间
+ *      - 若检测到历史补丁（自动点击 1027 展开详情面板）则回滚：
+ *        现已改为隐藏整个详情面板（见 electron/build/installer.nsh 中的
+ *        ShowInstDetails hide / ShowUninstDetails hide），无需再自动展开
+ *   2) installSection.nsh：把底层文件操作日志静音，改为显示几条中文阶段提示
  *      - 顶部 SetDetailsPrint 规范化为 textonly（只显示 DetailPrint 文字，
- *        不显示 `File / CopyFiles / Nsis7z` 插件自身的文件名与错误）
- *      - 「卸载旧版本」期间整段 SetDetailsPrint none，避免 electron-builder
- *        打印 `Uninstall was not successful` / `Can't modify ... files` 等易引起
- *        用户困惑的原始日志
- *      - 「解压程序文件」期间整段 SetDetailsPrint none，让 Nsis7z 插件的重试/
- *        占用提示也不可见；改为单条 `正在解压程序文件...` 稳定文字
- *      - 阶段切换点前先 DetailPrint 中文阶段提示（会同时刷新底部状态栏）
+ *        不显示 File/CopyFiles/Nsis7z 的文件名与错误）
+ *      - 「卸载旧版本」期间整段 SetDetailsPrint none
+ *      - 「解压程序文件」期间整段 SetDetailsPrint none
+ *      - 阶段切换点前 DetailPrint 中文提示（同时刷新底部状态栏）
  *
- * 补丁具有严格的幂等性：检测到 v2 标记即跳过；从旧 v1 补丁状态或原始状态都能升级。
+ * 补丁具有严格的幂等性：检测到对应标记即跳过；从旧 v1 / 原始状态都能升级。
  */
 const fs = require('fs')
 const path = require('path')
@@ -51,51 +51,37 @@ function patchAssistedInstaller() {
   let s = fs.readFileSync(assistedPath, 'utf8')
   let changed = false
 
-  if (!s.includes(MARK_INSTALL)) {
-    const blockInstall =
-      '\n  ' +
-      MARK_INSTALL +
-      '\n  !define MUI_PAGE_CUSTOMFUNCTION_SHOW FlowCalMuiInstFilesShow\n' +
-      '  Function FlowCalMuiInstFilesShow\n' +
-      '    FindWindow $R9 "#32770" "" $HWNDPARENT\n' +
-      '    GetDlgItem $R8 $R9 1027\n' +
-      '    IntCmp $R8 0 FlowCalSkipInstClick\n' +
-      '    SendMessage $R8 0xF5 0 0\n' +
-      '    FlowCalSkipInstClick:\n' +
-      '  FunctionEnd\n' +
-      '\n  !insertmacro MUI_PAGE_INSTFILES'
-
-    const needleInstall = '\n  !insertmacro MUI_PAGE_INSTFILES'
-    if (!s.includes(needleInstall)) {
-      console.error('[apply-nsis-patches] 无法定位 MUI_PAGE_INSTFILES，请检查 app-builder-lib 版本')
+  // ---- 回滚历史补丁：自动展开安装页详情（MARK_INSTALL） ----
+  // 旧补丁把 `\n  !insertmacro MUI_PAGE_INSTFILES` 替换成了
+  //   `\n  ; [FlowCal] MUI_PAGE_INSTFILES show details
+  //       !define MUI_PAGE_CUSTOMFUNCTION_SHOW FlowCalMuiInstFilesShow
+  //       Function FlowCalMuiInstFilesShow ... FunctionEnd
+  //    \n  !insertmacro MUI_PAGE_INSTFILES`
+  // 现在把它还原成原始单行。
+  if (s.includes(MARK_INSTALL)) {
+    const rollbackInstallRegex =
+      /\r?\n {2}; \[FlowCal\] MUI_PAGE_INSTFILES show details\r?\n {2}!define MUI_PAGE_CUSTOMFUNCTION_SHOW FlowCalMuiInstFilesShow\r?\n {2}Function FlowCalMuiInstFilesShow\r?\n(?: {4}.*\r?\n)+? {2}FunctionEnd\r?\n\r?\n {2}!insertmacro MUI_PAGE_INSTFILES/
+    if (!rollbackInstallRegex.test(s)) {
+      console.error('[apply-nsis-patches] assistedInstaller.nsh 含 MARK_INSTALL 但无法匹配完整块，请手工检查')
       process.exit(1)
     }
-    s = s.replace(needleInstall, blockInstall)
+    s = s.replace(rollbackInstallRegex, '\n  !insertmacro MUI_PAGE_INSTFILES')
     changed = true
   }
 
-  if (!s.includes(MARK_UNINSTALL)) {
-    const blockUn =
-      '\n  ' +
-      MARK_UNINSTALL +
-      '\n  !define MUI_PAGE_CUSTOMFUNCTION_SHOW un.FlowCalMuiUnInstFilesShow\n' +
-      '  Function un.FlowCalMuiUnInstFilesShow\n' +
-      '    FindWindow $R9 "#32770" "" $HWNDPARENT\n' +
-      '    GetDlgItem $R8 $R9 1027\n' +
-      '    IntCmp $R8 0 FlowCalSkipUnClick\n' +
-      '    SendMessage $R8 0xF5 0 0\n' +
-      '    FlowCalSkipUnClick:\n' +
-      '  FunctionEnd\n' +
-      '\n  !insertmacro MUI_UNPAGE_INSTFILES'
-    const needleUn = '\n  !insertmacro MUI_UNPAGE_INSTFILES'
-    if (!s.includes(needleUn)) {
-      console.error('[apply-nsis-patches] 无法定位 MUI_UNPAGE_INSTFILES')
+  // ---- 回滚历史补丁：自动展开卸载页详情（MARK_UNINSTALL） ----
+  if (s.includes(MARK_UNINSTALL)) {
+    const rollbackUnInstallRegex =
+      /\r?\n {2}; \[FlowCal\] MUI_UNPAGE_INSTFILES show details\r?\n {2}!define MUI_PAGE_CUSTOMFUNCTION_SHOW un\.FlowCalMuiUnInstFilesShow\r?\n {2}Function un\.FlowCalMuiUnInstFilesShow\r?\n(?: {4}.*\r?\n)+? {2}FunctionEnd\r?\n\r?\n {2}!insertmacro MUI_UNPAGE_INSTFILES/
+    if (!rollbackUnInstallRegex.test(s)) {
+      console.error('[apply-nsis-patches] assistedInstaller.nsh 含 MARK_UNINSTALL 但无法匹配完整块，请手工检查')
       process.exit(1)
     }
-    s = s.replace(needleUn, blockUn)
+    s = s.replace(rollbackUnInstallRegex, '\n  !insertmacro MUI_UNPAGE_INSTFILES')
     changed = true
   }
 
+  // ---- 必保留：在「选择安装目录」之前插入 customPageBeforeChangeDir ----
   if (!s.includes(MARK_BEFORE_DIR)) {
     const needleBeforeDir =
       '  !ifndef INSTALL_MODE_PER_ALL_USERS\n' +
@@ -137,7 +123,7 @@ function patchAssistedInstaller() {
 /**
  * 对 installSection.nsh 做"友好阶段提示"补丁（v2）。
  * 做 4 个改动：
- *   [A] 顶部 SetDetailsPrint 规范化为 textonly（同时兼容 v1 的 `both` / 原始的 `none`）
+ *   [A] 顶部 SetDetailsPrint 规范化为 textonly
  *   [B] 卸载旧版本前：DetailPrint 中文 + 整段 SetDetailsPrint none
  *   [C] 解压程序文件前：DetailPrint 中文 + 整段 SetDetailsPrint none
  *   [D] 写注册表/快捷方式前：DetailPrint 中文 + 恢复 SetDetailsPrint textonly
@@ -155,11 +141,6 @@ function patchInstallSection() {
   }
 
   // ---- [A] 规范化顶部的 SetDetailsPrint 块 ----
-  // 可能的状态：
-  //   · 原始：        `${IfNot} ${Silent}\n  SetDetailsPrint none\n${endif}`
-  //   · v1 补丁：     `; [FlowCal] SetDetailsPrint both\n${IfNot} ${Silent}\n  SetDetailsPrint both\n${endif}`
-  // 一律替换为 v2 形态：
-  //   `; [FlowCal v2] friendly install stages\n${IfNot} ${Silent}\n  SetDetailsPrint textonly\n${endif}`
   const topRegex =
     /(?:; \[FlowCal\] SetDetailsPrint both\r?\n)?\$\{IfNot\} \$\{Silent\}\r?\n\s*SetDetailsPrint (?:none|both|textonly)\r?\n\$\{endif\}/
   const topReplacement =
@@ -173,7 +154,7 @@ function patchInstallSection() {
   }
   s = s.replace(topRegex, topReplacement)
 
-  // ---- [B] 卸载旧版本前：静音底层日志，仅显示"正在清理旧版本..."
+  // ---- [B] 卸载旧版本前：仅显示"正在清理旧版本..."
   const uninstallAnchor = '!insertmacro uninstallOldVersion SHELL_CONTEXT'
   const uninstallBlock =
     '; [FlowCal v2] stage: clean old version\n' +
@@ -183,14 +164,12 @@ function patchInstallSection() {
     '${endif}\n' +
     uninstallAnchor
   if (s.indexOf(uninstallAnchor) === -1) {
-    console.error('[apply-nsis-patches] installSection.nsh 未找到 uninstallOldVersion，请检查 app-builder-lib 版本')
+    console.error('[apply-nsis-patches] installSection.nsh 未找到 uninstallOldVersion')
     process.exit(1)
   }
-  // 只替换第一处（另外两处可能在条件分支内）
   s = s.replace(uninstallAnchor, uninstallBlock)
 
-  // ---- [C] 解压程序文件前：静音底层日志，仅显示"正在解压程序文件..."
-  // 锚点为 `SetOutPath $INSTDIR`（installApplicationFiles 之前的固定句）
+  // ---- [C] 解压程序文件前：仅显示"正在解压程序文件..."
   const extractAnchor = 'SetOutPath $INSTDIR\n\n!ifdef UNINSTALLER_ICON'
   const extractBlock =
     '; [FlowCal v2] stage: extract program files\n' +
@@ -206,7 +185,7 @@ function patchInstallSection() {
   }
   s = s.replace(extractAnchor, extractBlock)
 
-  // ---- [D] 写注册表/快捷方式前：恢复 textonly，显示"正在配置注册信息与快捷方式..."
+  // ---- [D] 写注册表/快捷方式前：显示"正在配置注册信息与快捷方式..."
   const registryAnchor = '!insertmacro registryAddInstallInfo'
   const registryBlock =
     '; [FlowCal v2] stage: registry & shortcuts\n' +
