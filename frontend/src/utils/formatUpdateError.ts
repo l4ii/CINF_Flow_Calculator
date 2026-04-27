@@ -26,8 +26,8 @@ export function formatUpdateError(
 
   if (s.includes('No published versions on GitHub') || low.includes('err_updater_no_published')) {
     return lang === 'en'
-      ? "There isn't a published update package on the release page yet. Once your team adds a new version (with the installer) on GitHub, try «Check for updates» again."
-      : '发布页上暂时还没有可安装的更新包。请等待维护人员在网站上发布带安装程序的新版本后，再点击「检查更新」。'
+      ? 'No GitHub Release with installer + latest.yml yet. Pushing code to a branch is not enough: create a Release under the repo’s Releases tab and upload the files produced by electron-builder, or run electron-builder with --publish.'
+      : '未在「GitHub → Releases」找到已发布的安装包与更新元数据。仅把代码推送到仓库分支不会触发自更新；需在本机用 electron-builder 打好包后，在仓库 Releases 中新建版本并上传 release 目录下的安装程序、latest.yml 等，或使用带 GH_TOKEN 的 --publish 发布。完成后再点「检查更新」。'
   }
 
   if (low.includes('err_updater_channel_file_not_found') || (s.includes('Cannot find') && s.includes('latest') && s.includes('yml'))) {
@@ -76,6 +76,12 @@ export function formatUpdateError(
       return lang === 'en'
         ? "We couldn't read the update page—access may be restricted. If the project is not public, ask your team to use a public release location or a network-accessible update address."
         : '无法访问发布页，可能是项目未对公网开放或受权限限制。请与维护方确认发布方式。'
+    }
+    const likeDownload = low.includes('download') || low.includes('releases/') || low.includes('assets/')
+    if (likeDownload) {
+      return lang === 'en'
+        ? 'The installer file for this version was not found (404). On GitHub Releases, the uploaded .exe name must match latest.yml (same build output folder). Re-upload the exact files from electron-builder, or fix the asset file name on the release page.'
+        : '下载安装包时返回 404：GitHub 上该版本的安装包文件名或路径与发布元数据（latest.yml）不一致。请从本机 release 目录原样上传与 yml 同批生成的 exe（勿改名），或让维护方用 electron-builder --publish 发布。私有仓库需在本机/CI 为运行环境设置 GH_TOKEN。'
     }
     return lang === 'en'
       ? "The update information wasn't found (404). The new version may not be published yet, or the address may be out of date—ask your app team if this continues."

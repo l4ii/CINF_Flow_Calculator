@@ -5,6 +5,55 @@ const { spawn, execSync } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const { autoUpdater } = require('electron-updater')
+const license = require('./license')
+
+/**
+ * 打包后固定 userData 目录，避免 package name / productName 与 Electron 默认规则变化时，
+ * 应用更新后 userData 路径漂移导致读不到 offline-license.dat、反复要求激活。
+ * 若稳定目录尚无许可文件，则从当前默认路径及历史常见目录名尝试复制一份。
+ */
+function prepareStableUserDataPath() {
+  if (!app.isPackaged) return
+  const appData = app.getPath('appData')
+  const stableDir = path.join(appData, 'CINF_FlowCalc')
+  const licenseFile = license.LICENSE_BASENAME
+
+  const legacyDirs = new Set()
+  try {
+    legacyDirs.add(app.getPath('userData'))
+  } catch (_) {
+    /* ignore */
+  }
+  for (const folderName of ['flow-calculation-tool', '长沙院浆体管道计算工具']) {
+    legacyDirs.add(path.join(appData, folderName))
+  }
+
+  const destLicense = path.join(stableDir, licenseFile)
+  if (!fs.existsSync(destLicense)) {
+    for (const dir of legacyDirs) {
+      if (!dir) continue
+      if (path.resolve(dir) === path.resolve(stableDir)) continue
+      const src = path.join(dir, licenseFile)
+      if (fs.existsSync(src)) {
+        try {
+          fs.mkdirSync(stableDir, { recursive: true })
+          fs.copyFileSync(src, destLicense)
+        } catch (e) {
+          console.error('离线许可迁移失败:', e)
+        }
+        break
+      }
+    }
+  }
+
+  try {
+    app.setPath('userData', stableDir)
+  } catch (e) {
+    console.error('setPath userData 失败:', e)
+  }
+}
+
+prepareStableUserDataPath()
 
 // 减轻 Windows 下缓存目录权限导致的 ERROR: Unable to move the cache / Gpu Cache Creation failed
 if (process.platform === 'win32') {
@@ -705,6 +754,14 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion()
 })
 
+ipcMain.handle('license:get-status', () => {
+  return license.getLicenseStatus(isDev)
+})
+
+ipcMain.handle('license:activate', async (_e, token) => {
+  return license.activateWithToken(isDev, token)
+})
+
 // 顶部菜单语言切换（由渲染进程触发）
 ipcMain.on('set-language', (_event, lang) => {
   if (lang === 'zh' || lang === 'en') {
@@ -752,6 +809,7 @@ ipcMain.handle('show-app-alert', async (_event, payload) => {
 // 应用准备就绪
 app.whenReady().then(async () => {
   try {
+    license.setElectronApp(app)
     createSplashWindow()
     // 启动后端服务器
     await startBackend()

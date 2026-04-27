@@ -1,9 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
+import LicenseActivation from './components/LicenseActivation'
 import { FormulaInfo, FlowState } from './types'
 import { API_BASE_URL, API_TIMEOUT } from './config/api'
 import { APP_TAGLINE_ZH } from './constants/appCopy'
+
+function initialLicenseGate(): 'unknown' | 'ok' | 'blocked' {
+  if (typeof window === 'undefined') return 'ok'
+  return (window as { electronAPI?: { license?: unknown } }).electronAPI?.license ? 'unknown' : 'ok'
+}
 
 function App() {
   const [formulas, setFormulas] = useState<FlowState>({
@@ -22,6 +28,23 @@ function App() {
   const [language, setLanguage] = useState<'zh' | 'en'>('zh')
   const [currentView, setCurrentView] = useState<'formula' | 'about' | 'settings'>('formula')
   const [aboutDepartment, setAboutDepartment] = useState<string | null>(null)
+  const [licenseGate, setLicenseGate] = useState<'unknown' | 'ok' | 'blocked'>(initialLicenseGate)
+  const appReadySent = useRef(false)
+
+  useEffect(() => {
+    const lic = (window as { electronAPI?: { license?: { getStatus: () => Promise<{ ok: boolean }> } } }).electronAPI?.license
+    if (!lic) return
+    lic.getStatus().then((s) => {
+      setLicenseGate(s.ok ? 'ok' : 'blocked')
+    })
+  }, [])
+
+  useEffect(() => {
+    if (loading || licenseGate === 'unknown') return
+    if (appReadySent.current) return
+    appReadySent.current = true
+    ;(window as { electronAPI?: { appReady?: () => void } }).electronAPI?.appReady?.()
+  }, [loading, licenseGate])
 
   // 从localStorage加载设置
   useEffect(() => {
@@ -203,7 +226,6 @@ function App() {
         setFormulas(data)
         setLoadingHint(null)
         setLoading(false)
-        ;(window as any).electronAPI?.appReady?.()
         return
       } catch (err: any) {
         lastError = err
@@ -216,7 +238,6 @@ function App() {
         if (!isNetworkError || attempt === MAX_RETRIES) {
           setLoading(false)
           setLoadingHint(null)
-          ;(window as any).electronAPI?.appReady?.()
           if (err.name === 'AbortError') {
             setError(`请求超时（${API_TIMEOUT / 1000}秒）。请检查后端服务是否正常运行。`)
           } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
@@ -230,7 +251,6 @@ function App() {
     }
     setLoading(false)
     setLoadingHint(null)
-    ;(window as any).electronAPI?.appReady?.()
     if (lastError) {
       setError(`无法连接到后端服务器 (${API_BASE_URL})。\n\n请确保：\n1. 后端服务已启动\n2. 运行命令: python backend/app.py\n3. 检查防火墙设置\n\n（Win7 用户若首次连接失败，可点击下方「重试连接」多试几次）`)
     }
@@ -254,7 +274,10 @@ function App() {
     setAboutDepartment(null) // 清除"了解我们"状态
   }
 
-  if (loading) {
+  const elecLicense = typeof window !== 'undefined' && (window as { electronAPI?: { license?: unknown } }).electronAPI?.license
+  const waitingLicense = !!elecLicense && licenseGate === 'unknown'
+
+  if (loading || waitingLicense) {
     return (
       <div className="flex items-center justify-center h-screen bg-gradient-to-b from-gray-50 to-white">
         <div className="text-center px-6">
@@ -270,7 +293,7 @@ function App() {
             {APP_TAGLINE_ZH}
           </div>
           <div className="text-sm text-gray-600">
-            {loadingHint || '正在连接后端服务器…'}
+            {waitingLicense && !loading ? '正在验证本机授权…' : loadingHint || '正在连接后端服务器…'}
           </div>
           <div className="mt-4 flex justify-center">
             <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -278,6 +301,10 @@ function App() {
         </div>
       </div>
     )
+  }
+
+  if (licenseGate === 'blocked') {
+    return <LicenseActivation language={language} onActivated={() => setLicenseGate('ok')} />
   }
 
   if (error) {
@@ -325,6 +352,7 @@ function App() {
           darkModeValue={darkMode}
           onDarkModeChange={setDarkMode}
           onLanguageChange={setLanguage}
+          onLicenseResolved={() => setLicenseGate('ok')}
         />
       </div>
     </div>

@@ -1,6 +1,6 @@
 {
   "name": "flow-calculation-tool",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "基于行业标准与设计规范，面向浆体管道水力校核、输送压力及消能等多类计算的专业工具。",
   "main": "electron/main.js",
   "scripts": {
@@ -23,7 +23,8 @@
     "disk:mac": "npm run dist:mac",
     "disk:linux": "npm run dist:linux",
     "pack": "node scripts/build-frontend.js && node scripts/verify-frontend-dist.js && npx electron-builder --dir",
-    "start:backend": "python backend/app.py"
+    "start:backend": "python backend/app.py",
+    "license:gen-keys": "node scripts/generate-offline-license-keys.js"
   },
   "keywords": [
     "electron",

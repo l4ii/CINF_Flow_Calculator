@@ -81,6 +81,9 @@ __pycache__/
 # Python virtual environment (build environment)
 build_env/
 
+# 离线授权签发私钥（公钥在 electron/license-public.pem 可入库）
+scripts/license-private.pem
+
 # Documentation (moved to docs/)
 # Keep root README.md only
 

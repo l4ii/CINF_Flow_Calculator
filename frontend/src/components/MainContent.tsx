@@ -12,6 +12,7 @@ import {
   formatHydraulicLengthTick,
 } from '../utils/chartExportCanvas'
 import { formatUpdateError } from '../utils/formatUpdateError'
+import { stripHtmlToPlain } from '../utils/stripHtmlToPlain'
 import {
   APP_EXPORT_FILENAME_PREFIX,
   APP_NAME_EN,
@@ -3173,6 +3174,8 @@ interface MainContentProps {
   darkModeValue?: boolean
   onDarkModeChange?: (dark: boolean) => void
   onLanguageChange?: (lang: 'zh' | 'en') => void
+  /** 在「设置」中完成离线授权后通知父组件更新门禁状态 */
+  onLicenseResolved?: () => void
 }
 
 export default function MainContent({ 
@@ -3183,7 +3186,8 @@ export default function MainContent({
   language = 'zh',
   darkModeValue = false,
   onDarkModeChange,
-  onLanguageChange
+  onLanguageChange,
+  onLicenseResolved
 }: MainContentProps) {
   // 主内容滚动容器，用于在切换视图/公式时回到顶部
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
@@ -3341,7 +3345,13 @@ export default function MainContent({
   const [updateInfo, setUpdateInfo] = useState<{ version?: string; releaseNotes?: string } | null>(null)
   const [updateProgress, setUpdateProgress] = useState<number>(0)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [updateUpToDateNotice, setUpdateUpToDateNotice] = useState(false)
   const [currentVersion, setCurrentVersion] = useState<string>('')
+  const [licenseInfo, setLicenseInfo] = useState<{ machineId: string; ok: boolean; expiresAtMs: number | null } | null>(null)
+  const [licenseInput, setLicenseInput] = useState('')
+  const [licenseMsg, setLicenseMsg] = useState<string | null>(null)
+  const [licenseBusy, setLicenseBusy] = useState(false)
+  const [licenseCopyOk, setLicenseCopyOk] = useState(false)
 
   // 与公式计算页一致：主栏用 w-full 对齐侧栏边界，勿用 100vw（与侧栏不同步会产生错位/假边距）
   const mainScrollClassName = `flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`
@@ -3410,6 +3420,24 @@ export default function MainContent({
       setMunicipalLightbox(null)
     }
   }, [currentView, aboutDepartment])
+
+  useEffect(() => {
+    if (currentView !== 'settings') return
+    const api =
+      typeof window !== 'undefined' &&
+      (window as { electronAPI?: { license?: { getStatus: () => Promise<{ ok: boolean; machineId?: string; expiresAtMs?: number | null }> } } }).electronAPI?.license
+    if (!api) {
+      setLicenseInfo(null)
+      return
+    }
+    api.getStatus().then((s) => {
+      setLicenseInfo({
+        machineId: s.machineId || '',
+        ok: !!s.ok,
+        expiresAtMs: s.expiresAtMs != null ? s.expiresAtMs : null,
+      })
+    })
+  }, [currentView])
 
   // 渲染包含LaTeX数学符号的描述文本（$...$ 内为 KaTeX，与中文混排）
   const renderDescriptionWithMath = (text: string): JSX.Element => {
@@ -3741,10 +3769,10 @@ export default function MainContent({
       (window as any).electronAPI.update.getAppVersion().then((version: string) => {
         setCurrentVersion(version)
       }).catch(() => {
-        setCurrentVersion('1.0.1')
+        setCurrentVersion('1.0.2')
       })
     } else {
-      setCurrentVersion('1.0.1')
+      setCurrentVersion('1.0.2')
     }
   }, [])
 
@@ -3761,11 +3789,13 @@ export default function MainContent({
     const electronAPI = (window as any).electronAPI.update
 
     electronAPI.onUpdateChecking(() => {
+      setUpdateUpToDateNotice(false)
       setUpdateStatus('checking')
       setUpdateError(null)
     })
 
     electronAPI.onUpdateAvailable((info: any) => {
+      setUpdateUpToDateNotice(false)
       setUpdateStatus('available')
       setUpdateInfo({
         version: info.version,
@@ -3776,9 +3806,11 @@ export default function MainContent({
     electronAPI.onUpdateNotAvailable((info: any) => {
       setUpdateStatus('idle')
       setUpdateInfo({ version: info.version })
+      setUpdateUpToDateNotice(true)
     })
 
     electronAPI.onUpdateError((error: any) => {
+      setUpdateUpToDateNotice(false)
       setUpdateStatus('error')
       setUpdateError(error.message || '更新检查失败')
     })
@@ -3823,6 +3855,7 @@ export default function MainContent({
     }
 
     try {
+      setUpdateUpToDateNotice(false)
       setUpdateStatus('checking')
       setUpdateError(null)
       const result = await (window as any).electronAPI.update.checkForUpdates()
@@ -4081,7 +4114,7 @@ export default function MainContent({
     )
   }
 
-  // 下载更新
+  // 下载更新（主进程以 { error } 返回错误而非抛错，需显式判断）
   const handleDownloadUpdate = async () => {
     if (typeof window === 'undefined' || !(window as any).electronAPI?.update) {
       return
@@ -4090,10 +4123,16 @@ export default function MainContent({
     try {
       setUpdateStatus('downloading')
       setUpdateProgress(0)
-      await (window as any).electronAPI.update.downloadUpdate()
+      setUpdateError(null)
+      const result = (await (window as any).electronAPI.update.downloadUpdate()) as { success?: boolean; error?: string }
+      if (result?.error) {
+        setUpdateStatus('error')
+        setUpdateError(result.error)
+        return
+      }
     } catch (error: any) {
       setUpdateStatus('error')
-      setUpdateError(error.message || '下载更新失败')
+      setUpdateError(error?.message || '下载更新失败')
     }
   }
 
@@ -5801,6 +5840,18 @@ export default function MainContent({
           privacyTitle: 'Data & Privacy',
           privacyP:
             'All calculations are performed locally. The app does not collect or upload your input data or results. Exporting to Word is also done on your machine without sending content to external servers.',
+          offlineLicense: 'Product license',
+          deviceCode: 'Device ID',
+          copyDev: 'Copy',
+          licenseCode: 'License key',
+          licensePlaceholder: 'CINF-LIC1.…',
+          updateLicense: 'Update',
+          applyLicenseBusy: 'Applying…',
+          validUntil: 'Valid until',
+          noExpiry: 'No expiry',
+          alreadyLatest: 'You already have the latest version.',
+          saveLicense: 'Save',
+          licenseSaved: 'Saved. This device is licensed.',
         }
       : {
           title: '设置',
@@ -5841,7 +5892,19 @@ export default function MainContent({
             '若将本软件产出的计算结果、或依本软件功能形成的参数与指标，作为工程设计依据、设备选型或对外技术条件的依据，或用于对设计起结论性指导的，须同时具备与「长沙有色冶金设计研究院有限公司」合法有效且与项目范围相符的正式合同或该院出具的书面项目授权。本软件使用许可不替代上述合同或授权。未经该院书面同意，不得以长沙有色院或本公司名义将本软件结果用于正式报审、对外技术承诺或担保性表述。',
           privacyTitle: '数据与隐私',
           privacyP: '本软件在本地完成计算，不收集、不上传您的输入数据或计算结果。导出 Word 等操作均在您本机完成，不会将内容发送至外部服务器。',
-        })
+          offlineLicense: '产品许可',
+          deviceCode: '设备标识',
+          copyDev: '复制',
+          licenseCode: '许可密钥',
+          licensePlaceholder: '许可密钥以 CINF-LIC1 开头，整段粘贴即可。',
+          updateLicense: '更新',
+          applyLicenseBusy: '应用更新中…',
+          validUntil: '许可证有效期',
+          noExpiry: '无期限',
+          alreadyLatest: '当前已是最新版本。',
+          saveLicense: '保存',
+          licenseSaved: '已保存，本机已激活。',
+        }) as Record<string, string>
 
     return (
       <div ref={scrollContainerRef} className={mainScrollClassName}>
@@ -5866,6 +5929,140 @@ export default function MainContent({
               </div>
             </div>
           </div>
+
+          {!!(
+            typeof window !== 'undefined' &&
+            (window as { electronAPI?: { license?: { getStatus: () => Promise<unknown> } } }).electronAPI?.license
+          ) && (
+            <section className="mb-8 mt-2">
+              <h2
+                className={`text-sm font-semibold mb-3 flex items-center gap-2 border-l-4 ${accentBorder} pl-3 ${
+                  darkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}
+              >
+                {t.offlineLicense}
+              </h2>
+              <div
+                className={`rounded-xl border px-5 pt-3 pb-5 ${
+                  darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-white border-gray-200'
+                }`}
+              >
+                {licenseInfo?.ok && (
+                  <div className={`text-sm mb-2.5 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <span className="font-bold">{t.validUntil}</span>
+                    <span className="mx-1.5 font-bold">：</span>
+                    {licenseInfo.expiresAtMs == null ? (
+                      <span className={`font-bold ${darkMode ? 'text-green-400' : 'text-green-700'}`}>{t.noExpiry}</span>
+                    ) : (
+                      <span
+                        className={
+                          (() => {
+                            const days = (licenseInfo.expiresAtMs - Date.now()) / 86400000
+                            if (days <= 30) return darkMode ? 'text-red-400 font-bold' : 'text-red-600 font-bold'
+                            return darkMode ? 'text-green-400 font-bold' : 'text-green-700 font-bold'
+                          })()
+                        }
+                      >
+                        {new Date(licenseInfo.expiresAtMs).toLocaleDateString(language === 'en' ? 'en-US' : 'zh-CN', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                        })}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">{t.deviceCode}</div>
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch mb-4">
+                  <div
+                    className={`flex-1 min-w-0 rounded-lg border px-3 py-2 font-mono text-xs break-all min-h-[2.5rem] flex items-center ${
+                      darkMode ? 'bg-gray-800/80 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-800'
+                    }`}
+                  >
+                    {licenseInfo?.machineId || '—'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = licenseInfo?.machineId
+                      if (!id) return
+                      void navigator.clipboard.writeText(id).then(() => {
+                        setLicenseCopyOk(true)
+                        window.setTimeout(() => setLicenseCopyOk(false), 2000)
+                      })
+                    }}
+                    disabled={!licenseInfo?.machineId}
+                    className="shrink-0 w-full sm:w-24 rounded-lg text-sm font-medium bg-slate-100 dark:bg-gray-600 text-slate-800 dark:text-gray-200 hover:opacity-90 disabled:opacity-50 inline-flex items-center justify-center min-h-[2.5rem] sm:self-stretch"
+                  >
+                    {licenseCopyOk ? (language === 'en' ? 'Copied' : '已复制') : t.copyDev}
+                  </button>
+                </div>
+                <div className="text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">{t.licenseCode}</div>
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch mb-2">
+                  <textarea
+                    value={licenseInput}
+                    onChange={(e) => {
+                      setLicenseInput(e.target.value)
+                      setLicenseMsg(null)
+                    }}
+                    rows={1}
+                    placeholder={t.licensePlaceholder}
+                    spellCheck={false}
+                    className={`flex-1 min-w-0 rounded-lg border px-3 py-2 text-xs font-mono resize-y min-h-[2.5rem] ${
+                      darkMode ? 'bg-gray-800/80 border-gray-600 text-gray-200' : 'bg-white border-gray-200 text-gray-800'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    disabled={licenseBusy || !licenseInput.trim()}
+                    onClick={async () => {
+                      const api = (window as {
+                        electronAPI?: {
+                          license?: {
+                            activate: (x: string) => Promise<{ ok: boolean; error?: string }>
+                            getStatus: () => Promise<{ ok: boolean; machineId?: string; expiresAtMs?: number | null }>
+                          }
+                        }
+                      }).electronAPI?.license
+                      if (!api) return
+                      setLicenseBusy(true)
+                      setLicenseMsg(null)
+                      try {
+                        const r = await api.activate(licenseInput.trim())
+                        if (r.ok) {
+                          setLicenseMsg(t.licenseSaved)
+                          setLicenseInput('')
+                          onLicenseResolved?.()
+                          const s = await api.getStatus()
+                          setLicenseInfo({
+                            machineId: s.machineId || '',
+                            ok: true,
+                            expiresAtMs: s.expiresAtMs != null ? s.expiresAtMs : null,
+                          })
+                        } else {
+                          setLicenseMsg(r.error || (language === 'en' ? 'Failed' : '保存失败'))
+                        }
+                      } catch (e) {
+                        setLicenseMsg((e as Error)?.message || (language === 'en' ? 'Failed' : '保存失败'))
+                      } finally {
+                        setLicenseBusy(false)
+                      }
+                    }}
+                    className="shrink-0 w-full sm:w-24 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 inline-flex items-center justify-center min-h-[2.5rem] sm:self-stretch px-2"
+                  >
+                    {licenseBusy ? t.applyLicenseBusy : t.updateLicense}
+                  </button>
+                </div>
+                {licenseMsg && (
+                  <p
+                    className={`text-sm mb-2 ${licenseMsg.includes('已保存') || licenseMsg.includes('Saved') ? (darkMode ? 'text-green-400' : 'text-green-700') : 'text-red-600'}`}
+                  >
+                    {licenseMsg}
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
 
           {/* 一、外观与偏好：两列 */}
           <section className="mb-8">
@@ -5954,9 +6151,21 @@ export default function MainContent({
                   </div>
                   <div className="space-y-3">
                     {updateStatus === 'idle' && (
-                      <button onClick={handleCheckForUpdates} className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-                        {t.checkUpdates}
-                      </button>
+                      <>
+                        {updateUpToDateNotice && (
+                          <div
+                            className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-green-900/25 border border-green-800 text-green-300' : 'bg-green-50 border border-green-200 text-green-800'}`}
+                          >
+                            {t.alreadyLatest}
+                          </div>
+                        )}
+                        <button
+                          onClick={handleCheckForUpdates}
+                          className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                        >
+                          {t.checkUpdates}
+                        </button>
+                      </>
                     )}
                     {updateStatus === 'checking' && (
                       <div className={`text-center py-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -5967,7 +6176,11 @@ export default function MainContent({
                       <div className="space-y-3">
                         <div className={`p-3 rounded-lg text-sm ${darkMode ? 'bg-green-900/30 border border-green-700 text-green-300' : 'bg-green-50 border border-green-200 text-green-800'}`}>
                           <div className="font-medium">{t.newVersion} {updateInfo.version}</div>
-                          {updateInfo.releaseNotes && <div className={`mt-1 text-xs ${darkMode ? 'text-green-400' : 'text-green-700'}`}>{updateInfo.releaseNotes}</div>}
+                          {updateInfo.releaseNotes && (
+                            <div className={`mt-1 text-xs whitespace-pre-line ${darkMode ? 'text-green-400' : 'text-green-700'}`}>
+                              {stripHtmlToPlain(updateInfo.releaseNotes)}
+                            </div>
+                          )}
                         </div>
                         <button onClick={handleDownloadUpdate} className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors">{t.downloadUpdate}</button>
                       </div>

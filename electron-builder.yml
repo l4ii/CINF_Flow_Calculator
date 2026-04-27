@@ -3,6 +3,8 @@ appId: com.changsha.pipeline.calc
 productName: 长沙院浆体管道计算工具
 copyright: Copyright © 2026 长沙有色冶金设计研究院有限公司
 
+# 安装包/更新用文件名：仅 ASCII，避免 GitHub 网页拖入 Release 时剥掉中文导致与 latest.yml 不一致（界面仍用中文 productName）
+
 directories:
   buildResources: electron/build
   output: release
@@ -46,7 +48,7 @@ win:
       arch:
         - x64
   icon: icon.ico
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: CINF-FlowCalc-${version}-${arch}.${ext}
   requestedExecutionLevel: asInvoker
   sign: null
   verifyUpdateCodeSignature: false
@@ -79,7 +81,7 @@ mac:
         - arm64
   # icon: icon.icns  # 暂时注释，等准备好 icon.icns 放入 electron/build 后再启用
   category: public.app-category.utilities
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: CINF-FlowCalc-${version}-${arch}.${ext}
 
 dmg:
   title: ${productName} ${version}
@@ -98,10 +100,10 @@ linux:
     - deb
   icon: icon.png
   category: Utility
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: CINF-FlowCalc-${version}-${arch}.${ext}
 
 appImage:
-  artifactName: ${productName}-${version}-${arch}.AppImage
+  artifactName: CINF-FlowCalc-${version}-${arch}.AppImage
 
 deb:
   depends:

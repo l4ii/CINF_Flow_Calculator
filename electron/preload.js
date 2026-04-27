@@ -54,5 +54,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 统一应用提示弹窗（标题、图标由主进程控制）
   showAlert: (payload) => ipcRenderer.invoke('show-app-alert', payload),
   // 通知主进程：前端已完成公式加载（成功或失败），可关闭闪屏并显示主窗口
-  appReady: () => ipcRenderer.send('app:ready')
+  appReady: () => ipcRenderer.send('app:ready'),
+  // 离线一机一证：设备码 + 授权码
+  license: {
+    getStatus: () => ipcRenderer.invoke('license:get-status'),
+    activate: (token) => ipcRenderer.invoke('license:activate', token),
+  },
 })

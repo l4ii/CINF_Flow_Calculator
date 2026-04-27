@@ -1,4 +1,4 @@
-# Win7/8 兼容版打包配置：输出到 release-win7，安装包名带 -Win7兼容
+# Win7/8 兼容版打包配置：输出到 release-win7；安装包文件名为 ASCII（见主 yml 说明）
 # 需配合 Electron 22 使用（npm run dist:win:legacy）
 appId: com.changsha.pipeline.calc
 productName: 长沙院浆体管道计算工具
@@ -31,7 +31,7 @@ win:
       arch:
         - x64
   icon: icon.ico
-  artifactName: ${productName}-${version}-${arch}-Win7兼容.${ext}
+  artifactName: CINF-FlowCalc-${version}-${arch}-Win7.${ext}
   requestedExecutionLevel: asInvoker
   sign: null
   verifyUpdateCodeSignature: false

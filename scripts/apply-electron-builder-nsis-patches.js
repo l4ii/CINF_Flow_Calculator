@@ -2,8 +2,7 @@
  * electron-builder 自带 NSIS 模板的幂等补丁，改善安装过程的用户体验：
  *
  *   1) assistedInstaller.nsh：
- *      - 在「选择安装目录」之前插入 customPageBeforeChangeDir，
- *        让 installer.nsh 里的序列号页能嵌到「许可 → 序列号 → 选目录 → 安装」之间
+ *      - 在「选择安装目录」之前插入 customPageBeforeChangeDir（可为空宏，仅保留插入点）
  *      - 若检测到历史补丁（自动点击 1027 展开详情面板）则回滚：
  *        现已改为隐藏整个详情面板（见 electron/build/installer.nsh 中的
  *        ShowInstDetails hide / ShowUninstDetails hide），无需再自动展开
