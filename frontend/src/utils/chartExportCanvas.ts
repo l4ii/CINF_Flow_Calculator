@@ -4,6 +4,13 @@ export interface HlCurvePoint {
   H: number
 }
 
+const CANVAS_FONT_FAMILY = 'system-ui, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif'
+const CANVAS_FONT_XS = `11px ${CANVAS_FONT_FAMILY}`
+const CANVAS_FONT_SM = `12px ${CANVAS_FONT_FAMILY}`
+const CANVAS_FONT_BASE = `13px ${CANVAS_FONT_FAMILY}`
+const CANVAS_FONT_TITLE = `bold 18px ${CANVAS_FONT_FAMILY}`
+const CANVAS_FONT_ITALIC = `italic 13px ${CANVAS_FONT_FAMILY}`
+
 function niceStep(range: number, approxDivisions: number): number {
   if (!Number.isFinite(range) || range <= 0) return 1
   const raw = range / Math.max(1, approxDivisions)
@@ -249,7 +256,7 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   ctx.strokeRect(left, top, plotW, plotH)
 
   // 刻度与数字
-  ctx.font = '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+  ctx.font = CANVAS_FONT_BASE
   ctx.fillStyle = muted
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
@@ -327,16 +334,16 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
 
   // 标题
   ctx.fillStyle = fg
-  ctx.font = 'bold 18px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+  ctx.font = CANVAS_FONT_TITLE
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillText(title, width / 2, 16)
   if (subtitle) {
-    ctx.font = '12px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    ctx.font = CANVAS_FONT_SM
     ctx.fillStyle = muted
     const subY = 42
     const maxSubW = width - 48
-    wrapFillText(ctx, subtitle, width / 2, subY, maxSubW, 16, muted, '12px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif')
+    wrapFillText(ctx, subtitle, width / 2, subY, maxSubW, 16, muted, CANVAS_FONT_SM)
   }
 
   ctx.save()
@@ -344,7 +351,7 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   ctx.rotate(-Math.PI / 2)
   ctx.textAlign = 'center'
   ctx.fillStyle = muted
-  ctx.font = 'italic 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+  ctx.font = CANVAS_FONT_ITALIC
   const yLines = yAxisLabel.split('\n')
   const yLineH = 15
   const yStart = (-(yLines.length - 1) * yLineH) / 2
@@ -372,10 +379,10 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     const sampleW = 36
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    const totalW = items.reduce((s, it) => s + sampleW + 8 + measureTextW(ctx, it.text, '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif') + gap, 0) - gap
+    const totalW = items.reduce((s, it) => s + sampleW + 8 + measureTextW(ctx, it.text, CANVAS_FONT_BASE) + gap, 0) - gap
     let cx = left + (plotW - totalW) / 2
     const legY = bottom + hydraulicTickBand + hydraulicLegendBand / 2
-    ctx.font = '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    ctx.font = CANVAS_FONT_BASE
     for (const it of items) {
       ctx.strokeStyle = it.color
       ctx.lineWidth = 3
@@ -387,20 +394,20 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
       ctx.fillStyle = fg
       const t = it.text.length > 36 ? `${it.text.slice(0, 33)}…` : it.text
       ctx.fillText(t, cx + sampleW + 8, legY)
-      cx += sampleW + 8 + measureTextW(ctx, t, '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif') + gap
+      cx += sampleW + 8 + measureTextW(ctx, t, CANVAS_FONT_BASE) + gap
     }
   }
 
   // X 轴标题（多行）：紧挨画布下沿之上，在图例下方区域
   ctx.fillStyle = muted
-  ctx.font = 'italic 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+  ctx.font = CANVAS_FONT_ITALIC
   ctx.textBaseline = 'top'
   ctx.textAlign = 'center'
   const xLabelY =
     isHydraulic
       ? bottom + hydraulicTickBand + hydraulicLegendBand + 4
       : height - margin.bottom + 18
-  wrapFillText(ctx, xAxisLabel, left + plotW / 2, xLabelY, plotW - 8, 15, muted, 'italic 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif')
+  wrapFillText(ctx, xAxisLabel, left + plotW / 2, xLabelY, plotW - 8, 15, muted, CANVAS_FONT_ITALIC)
 
   if (!isHydraulic) {
     let legY = top + 12
@@ -415,7 +422,7 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     ctx.lineTo(legX - 20, legY)
     ctx.stroke()
     ctx.fillStyle = fg
-    ctx.font = '13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    ctx.font = CANVAS_FONT_BASE
     const shortLegend = legendText.length > 70 ? `${legendText.slice(0, 67)}…` : legendText
     ctx.fillText(shortLegend, legX - 128, legY)
 
@@ -437,7 +444,7 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   if (footnote) {
     ctx.save()
     ctx.fillStyle = muted
-    ctx.font = '11px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif'
+    ctx.font = CANVAS_FONT_XS
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'
     let t = footnote

@@ -1,6 +1,6 @@
 # 必须在项目根目录执行 electron-builder（npm run dist:win），这样 extraResources 的 from: frontend/dist 才会解析为根目录下的 frontend/dist
 appId: com.changsha.pipeline.calc
-productName: 长沙院浆体管道计算工具
+productName: CINF长沙院浆体计算软件
 copyright: Copyright © 2026 长沙有色冶金设计研究院有限公司
 
 # 安装包/更新用文件名：仅 ASCII，避免 GitHub 网页拖入 Release 时剥掉中文导致与 latest.yml 不一致（界面仍用中文 productName）
@@ -28,6 +28,7 @@ publish:
 files:
   - electron/**
   - backend/**
+  - "!backend/python38/**"
   - requirements.txt
   - package.json
   - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
@@ -50,8 +51,9 @@ win:
   icon: icon.ico
   artifactName: CINF-FlowCalc-${version}-${arch}.${ext}
   requestedExecutionLevel: asInvoker
-  sign: null
-  verifyUpdateCodeSignature: false
+  # 正式公网分发应配置 Windows 代码签名证书（如 CSC_LINK/CSC_KEY_PASSWORD 或系统证书）。
+  # 不再关闭更新签名校验；未签名更新包会被拒绝，避免被替换的安装包静默安装。
+  verifyUpdateCodeSignature: true
 
 nsis:
   oneClick: false
@@ -125,6 +127,7 @@ extraResources:
       - "**/*.py"
       - "**/*.exe"
       - "**/dist/**"
+      - "!python38/**"
       - "!**/__pycache__/**"
       - "!**/*.pyc"
       - "!**/build/**"

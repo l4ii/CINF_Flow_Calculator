@@ -24,7 +24,7 @@ function prepareStableUserDataPath() {
   } catch (_) {
     /* ignore */
   }
-  for (const folderName of ['flow-calculation-tool', '长沙院浆体管道计算工具']) {
+  for (const folderName of ['flow-calculation-tool', '长沙院浆体管道计算工具', 'CINF长沙院浆体计算软件']) {
     legacyDirs.add(path.join(appData, folderName))
   }
 
@@ -76,6 +76,18 @@ let splashWindow
 // 仅根据是否打包判断：打包后的 exe 始终为生产模式，避免“打开软件就进 dev 模式”
 const isDev = !app.isPackaged
 const APP_DISPLAY_NAME = 'CINF长沙院浆体计算软件'
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+}
 
 // 顶部菜单当前语言（默认中文，由渲染进程切换）
 let currentLanguage = 'zh'
@@ -175,6 +187,11 @@ function buildAppMenu() {
     }
   ]
 
+  if (!isDev) {
+    zh[2].submenu = zh[2].submenu.filter((item) => item.role !== 'toggleDevTools')
+    en[2].submenu = en[2].submenu.filter((item) => item.role !== 'toggleDevTools')
+  }
+
   const template = currentLanguage === 'en' ? en : zh
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
@@ -249,7 +266,10 @@ function createSplashWindow() {
         }
       })
     } else {
-      splashWindow.loadURL('data:text/html,<html><body style=\"font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;\">Loading…</body></html>')
+      const fallbackSplashHtml = encodeURIComponent(
+        '<!doctype html><html><body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Noto Sans SC,Microsoft YaHei,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;color:#475569;">正在启动，请稍候...</body></html>'
+      )
+      splashWindow.loadURL(`data:text/html;charset=utf-8,${fallbackSplashHtml}`)
     }
 
     splashWindow.once('ready-to-show', () => {
@@ -373,9 +393,29 @@ function findBackendExecutable() {
   return null
 }
 
-// Windows：结束占用 5000 端口的进程，避免旧后端占端口导致新后端起不来、前端一直连到旧版
+function isManagedBackendPid(pid) {
+  if (process.platform !== 'win32') return false
+  try {
+    const out = execSync(`wmic process where processid=${pid} get CommandLine,ExecutablePath /format:list`, {
+      encoding: 'utf-8',
+      windowsHide: true,
+      timeout: 5000,
+    })
+    const text = String(out || '').toLowerCase().replace(/\//g, '\\')
+    const resourceRoot = (!isDev ? process.resourcesPath : path.join(__dirname, '..')).toLowerCase().replace(/\//g, '\\')
+    const backendRoot = getResourcePath('backend').toLowerCase().replace(/\//g, '\\')
+    const isBackendCmd = text.includes('backend.exe') || text.includes('backend\\app.py') || text.includes('backend\\\\app.py')
+    return isBackendCmd && (text.includes(resourceRoot) || text.includes(backendRoot))
+  } catch (e) {
+    console.warn('[后端] 无法确认 5000 端口进程归属，跳过结束 PID:', pid, e.message)
+    return false
+  }
+}
+
+// Windows：仅结束本应用旧后端占用的 5000 端口，避免误杀其它本机服务
 function killProcessOnPort5000() {
-  if (process.platform !== 'win32') return
+  if (process.platform !== 'win32') return []
+  const unmanagedPids = []
   try {
     const out = execSync('netstat -ano', { encoding: 'utf-8', windowsHide: true })
     const lines = out.split(/\r?\n/)
@@ -387,6 +427,11 @@ function killProcessOnPort5000() {
       if (pid && /^\d+$/.test(pid) && pid !== '0') pids.add(pid)
     }
     for (const pid of pids) {
+      if (!isManagedBackendPid(pid)) {
+        unmanagedPids.push(pid)
+        console.warn('[后端] 5000 端口被非本应用进程占用，未结束 PID:', pid)
+        continue
+      }
       try {
         // /T: kill process tree, avoid child still listening
         execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true })
@@ -396,6 +441,7 @@ function killProcessOnPort5000() {
   } catch (e) {
     console.warn('[后端] 检查/结束 5000 端口进程时出错:', e.message)
   }
+  return unmanagedPids
 }
 
 /** Werkzeug/Flask 启动信息多在 stderr；PyInstaller --noconsole 时子进程可能几乎无输出，不能只靠日志判断就绪 */
@@ -439,8 +485,12 @@ function waitForBackendHttpReady(maxMs, intervalMs) {
 // 启动后端服务器
 function startBackend() {
   return new Promise((resolve, reject) => {
-    // 先释放 5000 端口，确保当前代码启动的后端能绑定成功（否则会连到旧后端）
-    killProcessOnPort5000()
+    // 仅释放本应用旧后端占用的 5000 端口；遇到其它服务时直接提示，避免误连或误杀。
+    const unmanagedPids = killProcessOnPort5000()
+    if (unmanagedPids.length > 0) {
+      reject(new Error(`5000 端口已被非本应用进程占用（PID: ${unmanagedPids.join(', ')}）。请关闭该服务或释放端口后重试。`))
+      return
+    }
     // 给系统一点时间释放端口，再启动后端，减少“端口仍被占用”的误判
     const delayBeforeSpawn = process.platform === 'win32' ? 800 : 400
 
@@ -651,6 +701,9 @@ if (!isDev) {
   // GitHub：匿名可访问的仓库才能在不带令牌时检查 release（见下方 GH_TOKEN 说明）。
   autoUpdater.autoDownload = false // 不自动下载，等待用户确认
   autoUpdater.autoInstallOnAppQuit = true // 应用退出时自动安装更新
+  if (isWindows7KernelOrOlder()) {
+    autoUpdater.channel = 'win7'
+  }
 
   // 私有仓拉 releases 会 404。仅建议在「内网/受控机」为进程配置令牌；公网分发改用「公开库」或 generic 静态地址，勿把 token 写进安装包。
   const gh = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
@@ -774,10 +827,10 @@ ipcMain.on('set-language', (_event, lang) => {
 ipcMain.handle('show-save-dialog-export', async (event, defaultFileName) => {
   const win = BrowserWindow.getFocusedWindow()
   const { filePath, canceled } = await dialog.showSaveDialog(win || mainWindow, {
-    title: '导出计算书',
-    defaultPath: defaultFileName || '长沙院浆体计算_计算书.docx',
+    title: currentLanguage === 'en' ? 'Export Calculation Report' : '导出计算书',
+    defaultPath: defaultFileName || (currentLanguage === 'en' ? 'CINF_Calculation_Report.docx' : 'CINF长沙院浆体计算_计算书.docx'),
     filters: [
-      { name: 'Word 文档', extensions: ['docx'] }
+      { name: currentLanguage === 'en' ? 'Word Document' : 'Word 文档', extensions: ['docx'] }
     ]
   })
   return canceled ? null : filePath
@@ -787,7 +840,7 @@ ipcMain.handle('show-save-dialog-export', async (event, defaultFileName) => {
 ipcMain.handle('show-app-alert', async (_event, payload) => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow
   const title = payload?.title || APP_DISPLAY_NAME
-  const message = payload?.message || '操作提示'
+  const message = payload?.message || (currentLanguage === 'en' ? 'Notice' : '操作提示')
   const detail = payload?.detail || ''
   const iconPath = resolveAppIconPath()
   const options = {
@@ -795,7 +848,7 @@ ipcMain.handle('show-app-alert', async (_event, payload) => {
     title,
     message,
     detail,
-    buttons: ['确定'],
+    buttons: [currentLanguage === 'en' ? 'OK' : '确定'],
     defaultId: 0,
     noLink: true,
   }
@@ -824,7 +877,7 @@ app.whenReady().then(async () => {
     // 应用启动后延迟检查更新（避免影响启动速度）
     if (!isDev) {
       setTimeout(() => {
-        autoUpdater.checkForUpdatesAndNotify().catch(err => {
+        autoUpdater.checkForUpdates().catch(err => {
           console.error('自动检查更新失败:', err)
         })
       }, 5000)

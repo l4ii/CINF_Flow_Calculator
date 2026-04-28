@@ -1,5 +1,5 @@
 /**
- * 打包 Win7/8 兼容版：临时切换到 Electron 22，打包后恢复 Electron 28
+ * 打包 Win7/8 兼容版：临时切换到 Electron 22，打包后恢复执行前的 Electron 版本
  * 输出目录：release-win7，安装包文件名为 CINF-FlowCalc-*-Win7.exe
  * 需先完成前端构建与（可选）后端打包，再执行本脚本
  */

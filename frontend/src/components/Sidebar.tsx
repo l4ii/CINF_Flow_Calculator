@@ -1,6 +1,9 @@
 import { useMemo } from 'react'
 import { FormulaInfo, FlowState } from '../types'
 import {
+  APP_NAME_EN,
+  APP_NAME_ZH,
+  APP_ORG_NAME_EN,
   APP_TAGLINE_SIDEBAR_EN,
   APP_TAGLINE_SIDEBAR_ZH,
   APP_TAGLINE_SIDEBAR_ZH_LINE1,
@@ -35,7 +38,7 @@ export default function Sidebar({
   const translations = useMemo(
     () => ({
       zh: {
-        appTitle: 'CINF浆体计算软件',
+        appTitle: APP_NAME_ZH,
         appSubtitle: APP_TAGLINE_SIDEBAR_ZH,
         criticalVelocity: '临界流速计算',
         frictionLossParent: '摩阻损失计算',
@@ -54,19 +57,20 @@ export default function Sidebar({
         language: '语言调节',
         chinese: '中文',
         english: 'English',
-        noFormulas: '暂无公式（请检查后端连接）'
+        noFormulas: '暂无公式（请检查后端连接）',
+        noAccelEnergyFormulas: '暂无公式，请重启后端以加载'
       },
       en: {
-        appTitle: 'CINF Slurry Calculation Software',
+        appTitle: APP_NAME_EN,
         appSubtitle: APP_TAGLINE_SIDEBAR_EN,
         criticalVelocity: 'Critical Velocity',
-        frictionLossParent: 'Friction loss',
-        pressureHead: 'Pressure & head',
-        slurryAccelEnergy: 'Accelerating flow & dissipation',
-        slurryAccel: 'Slurry accelerating flow',
+        frictionLossParent: 'Friction Loss',
+        pressureHead: 'Pressure & Head',
+        slurryAccelEnergy: 'Accelerating Flow & Energy Dissipation',
+        slurryAccel: 'Slurry Accelerating Flow',
         aboutUs: 'About Us',
         settings: 'Settings',
-        cinf: 'Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.',
+        cinf: APP_ORG_NAME_EN,
         municipal: 'Municipal Division',
         research: 'Research Innovation Center',
         footerBy: 'By',
@@ -76,7 +80,8 @@ export default function Sidebar({
         language: 'Language',
         chinese: '中文',
         english: 'English',
-        noFormulas: 'No formulas available (check backend connection)'
+        noFormulas: 'No formulas available (check backend connection)',
+        noAccelEnergyFormulas: 'No formulas available. Restart the backend to reload.'
       }
     }),
     []
@@ -86,19 +91,19 @@ export default function Sidebar({
     liu_dezhong: 'Liu Dezong Formula',
     wasp: 'E.J. Wasp Formula',
     fei_xiangjun: 'Fei Xiangjun Formula',
-    kronodze_pressure: 'B.C. Konoroz Method',
+    kronodze_pressure: 'B.C. Kronodze Method',
     friction_loss: 'Friction Loss',
     density_mixing: 'Density Mixing',
     slurry_friction_loss: 'Slurry Friction Loss',
-    slurry_friction_workflow: 'Slurry friction (5-step)',
+    slurry_friction_workflow: 'Slurry Friction (5-Step)',
     clear_water_friction_loss: 'Clear Water Friction Loss',
-    slurry_total_head: 'Slurry total head / pressure',
-    clear_water_total_head: 'Clear water total head / pressure',
-    centrifugal_pump_total_head: 'Centrifugal pump total head',
-    positive_displacement_pump_outlet_pressure: 'Positive displacement pump total head',
+    slurry_total_head: 'Slurry Total Head / Pressure',
+    clear_water_total_head: 'Clear Water Total Head / Pressure',
+    centrifugal_pump_total_head: 'Centrifugal Pump Total Head',
+    positive_displacement_pump_outlet_pressure: 'Positive Displacement Pump Total Head',
     slurry_accel_energy: 'Slurry Accelerating Flow',
-    slurry_dissipation: 'Reducer dissipation',
-    slurry_dissipation_orifice: 'Orifice dissipation',
+    slurry_dissipation: 'Reducer Dissipation',
+    slurry_dissipation_orifice: 'Orifice Dissipation',
     slurry_energy_dissipation: 'Slurry Energy Dissipation'
   }
 
@@ -144,7 +149,7 @@ export default function Sidebar({
 
   return (
     <div
-      className={`w-[260px] shrink-0 border-r flex flex-col ${
+      className={`w-[270px] shrink-0 border-r flex flex-col ${
         darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
       }`}
     >
@@ -316,7 +321,7 @@ export default function Sidebar({
             </button>
             {!slurryAccelFormula && !dissipationReducer && !dissipationOrifice && (
               <div className={`text-xs py-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                暂无公式，请重启后端以加载
+                {t.noAccelEnergyFormulas}
               </div>
             )}
           </div>

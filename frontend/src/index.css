@@ -11,9 +11,54 @@ html, body {
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+    'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/*
+ * 全应用拉丁字母与阿拉伯数字优先使用 KaTeX_Main（与公式 \\mathrm{} 一致），汉字缺字回退系统字体。
+ * 复制计算结果请使用界面「复制」按钮（纯文本），勿依赖从 KaTeX DOM 拖拽。
+ */
+.katex-app-typography {
+  font-family:
+    KaTeX_Main,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Roboto',
+    'Helvetica Neue',
+    'Noto Sans SC',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+.katex-app-typography code,
+.katex-app-typography pre {
+  font-family:
+    KaTeX_Typewriter,
+    KaTeX_Main,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    'Liberation Mono',
+    'Courier New',
+    monospace;
+}
+
+.katex-app-typography .font-mono {
+  font-family:
+    KaTeX_Typewriter,
+    KaTeX_Main,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
 }
 
 #root {
@@ -51,7 +96,7 @@ body {
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
 
@@ -81,18 +126,8 @@ code {
   color: inherit;
 }
 
-/* 流动动画 - 慢速（临界流速） */
-@keyframes flow-slow {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-/* 流动动画 - 快速（超过临界流速50%） */
-@keyframes flow-fast {
+/* 水平流动动画：快慢由 animation-duration 控制 */
+@keyframes flow-horizontal {
   0% {
     transform: translateX(-100%);
   }

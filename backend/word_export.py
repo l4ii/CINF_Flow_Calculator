@@ -156,10 +156,10 @@ class WordExporter:
                 if t and v:
                     return t, v
                 if v:
-                    return t or "长沙院浆体管道计算工具", v
+                    return t or "CINF长沙院浆体计算软件", v
             except (OSError, json.JSONDecodeError):
                 continue
-        return "长沙院浆体管道计算工具", version or "—"
+        return "CINF长沙院浆体计算软件", version or "—"
 
     def _apply_docx_header_to_document(self, doc: Document) -> None:
         title, ver = self._get_app_title_version()

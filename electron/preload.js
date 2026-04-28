@@ -1,6 +1,15 @@
 // Preload脚本 - 在渲染进程中运行，可以安全地暴露API
 const { contextBridge, ipcRenderer } = require('electron')
 
+const UPDATE_CHANNELS = new Set([
+  'update-checking',
+  'update-available',
+  'update-not-available',
+  'update-error',
+  'update-download-progress',
+  'update-downloaded',
+])
+
 // 暴露安全的API给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   // 更新相关 API
@@ -44,7 +53,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     // 移除监听器
     removeAllListeners: (channel) => {
-      ipcRenderer.removeAllListeners(channel)
+      if (UPDATE_CHANNELS.has(channel)) {
+        ipcRenderer.removeAllListeners(channel)
+      }
     }
   },
   // 导出计算书：显示“另存为”对话框，返回用户选择的路径或 null

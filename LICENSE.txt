@@ -1,7 +1,7 @@
-长沙院浆体管道计算工具 软件许可协议
+CINF长沙院浆体计算软件 软件许可协议
 
-软件名称：长沙院浆体管道计算工具
-版本号：1.0.1
+软件名称：CINF长沙院浆体计算软件
+版本号：1.0.3
 著作权人：(C) 2026 长沙有色冶金设计研究院有限公司
 
 一、软件说明
@@ -28,10 +28,10 @@
 
 ---
 
-CINF Slurry Pipeline Calculation Tool - Software License Agreement (English)
+CINF Slurry Calculation Software - Software License Agreement (English)
 
-Software: CINF Slurry Pipeline Calculation Tool
-Version: 1.0.1
+Software: CINF Slurry Calculation Software
+Version: 1.0.3
 Copyright: (C) 2026 Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.
 
 I. Software Description

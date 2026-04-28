@@ -2,9 +2,7 @@ import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import type { FormulaInfo, CalculationResult, Parameter } from '../types';
 import axios from 'axios';
 import { API_BASE_URL, API_TIMEOUT } from '../config/api';
-// @ts-ignore - react-katex types
 import { BlockMath, InlineMath } from 'react-katex';
-import 'katex/dist/katex.min.css';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   downloadScientificHlChartPng,
@@ -17,6 +15,7 @@ import {
   APP_EXPORT_FILENAME_PREFIX,
   APP_NAME_EN,
   APP_NAME_ZH,
+  APP_ORG_NAME_EN,
   APP_TAGLINE_MAIN_EN,
   APP_TAGLINE_ZH,
 } from '../constants/appCopy';
@@ -3161,9 +3160,11 @@ function MunicipalHandbookCarousel({
   )
 }
 
-// 配置axios默认设置
-axios.defaults.timeout = API_TIMEOUT;
-axios.defaults.headers.common['Content-Type'] = 'application/json';
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: API_TIMEOUT,
+  headers: { 'Content-Type': 'application/json' },
+})
 
 interface MainContentProps {
   formula: FormulaInfo | null
@@ -3171,7 +3172,6 @@ interface MainContentProps {
   currentView?: 'formula' | 'about' | 'settings'
   aboutDepartment?: string | null
   language?: 'zh' | 'en'
-  darkModeValue?: boolean
   onDarkModeChange?: (dark: boolean) => void
   onLanguageChange?: (lang: 'zh' | 'en') => void
   /** 在「设置」中完成离线授权后通知父组件更新门禁状态 */
@@ -3184,7 +3184,6 @@ export default function MainContent({
   currentView = 'formula',
   aboutDepartment = null,
   language = 'zh',
-  darkModeValue = false,
   onDarkModeChange,
   onLanguageChange,
   onLicenseResolved
@@ -3216,7 +3215,6 @@ export default function MainContent({
   const isSlurryDissipationOrifice = formula?.id === 'slurry_dissipation_orifice'
   /** 与历史代码兼容：仅缩径消能走消能计算链 */
   const isSlurryDissipationFormula = isSlurryDissipationReducer
-  const isSlurryEnergyPlaceholder = false
   const isClearWaterFrictionLoss = formula?.id === 'clear_water_friction_loss'
   const isSlurryFrictionWorkflow = formula?.id === 'slurry_friction_workflow'
   const isCentrifugalPumpTotalHead = formula?.id === 'centrifugal_pump_total_head'
@@ -4049,7 +4047,7 @@ export default function MainContent({
                 {/* 正常流动：液体整体由左向右流动 */}
                 <div
                   className="absolute inset-0 bg-gradient-to-r from-green-300 via-green-400 to-green-300"
-                  style={{ animation: 'flow-slow 2s linear infinite', backgroundSize: '200% 100%' }}
+                  style={{ animation: 'flow-horizontal 2s linear infinite', backgroundSize: '200% 100%' }}
                 ></div>
                 {[...Array(20)].map((_, i) => {
                   const sizePx = (0.8 + (i % 4) * 0.3) * 3 * scale
@@ -4080,7 +4078,7 @@ export default function MainContent({
                 {/* 快速流动：液体更快由左向右流动 */}
                 <div
                   className="absolute inset-0 bg-gradient-to-r from-green-300 via-green-400 to-green-300"
-                  style={{ animation: 'flow-fast 1.5s linear infinite', backgroundSize: '200% 100%' }}
+                  style={{ animation: 'flow-horizontal 1.5s linear infinite', backgroundSize: '200% 100%' }}
                 ></div>
                 {[...Array(20)].map((_, i) => {
                   const sizePx = (0.8 + (i % 4) * 0.3) * 3 * scale
@@ -4677,7 +4675,7 @@ export default function MainContent({
     const r6 = (x: number) => Math.round(x * 1e6) / 1e6
     setLoading(true)
     try {
-      const response = await axios.post(
+      const response = await apiClient.post(
         `${API_BASE_URL}/calculate`,
         { formula_id: subId, parameters: validParameters },
         { timeout: API_TIMEOUT }
@@ -4858,7 +4856,7 @@ export default function MainContent({
     }
     setLoading(true)
     try {
-      const response = await axios.post(
+      const response = await apiClient.post(
         `${API_BASE_URL}/calculate`,
         { formula_id: 'slurry_dissipation_orifice', parameters: validParameters },
         { timeout: API_TIMEOUT }
@@ -5013,11 +5011,22 @@ export default function MainContent({
             </div>
 
             <div className={`${mainPanelCardClassName} mb-10`}>
-              <p className={researchKickerCls}>长沙有色冶金设计研究院有限公司 · 科研创新中心</p>
-              <h2 className={`text-2xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>科研创新中心</h2>
+              <p className={researchKickerCls}>
+                {language === 'en'
+                  ? `${APP_ORG_NAME_EN} · Research Innovation Center`
+                  : '长沙有色冶金设计研究院有限公司 · 科研创新中心'}
+              </p>
+              <h2 className={`text-2xl font-bold mb-4 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                {language === 'en' ? 'Research Innovation Center' : '科研创新中心'}
+              </h2>
               <div
                 className={`space-y-3 text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
               >
+                {language === 'en' && (
+                  <p>
+                    Detailed platform descriptions are currently provided in Chinese. Key English headings are shown to keep navigation and context clear.
+                  </p>
+                )}
                 <p>{researchIntroP1}</p>
                 <p>{researchIntroP2}</p>
               </div>
@@ -5044,14 +5053,14 @@ export default function MainContent({
                           darkMode ? 'bg-gray-800/60 text-gray-400' : 'bg-gray-100 text-gray-500'
                         }`}
                       >
-                        <span className="text-sm">加载中...</span>
+                        <span className="text-sm">{language === 'en' ? 'Loading...' : '加载中...'}</span>
                       </div>
                     )}
                     <button
                       type="button"
                       className="relative z-[2] w-full max-w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       onClick={() => setZoomPlatformImageUrl(item.image)}
-                      aria-label={`放大查看：${item.name}`}
+                      aria-label={language === 'en' ? `Open image: ${item.name}` : `放大查看：${item.name}`}
                     >
                       <img
                         src={listSrc}
@@ -5075,7 +5084,7 @@ export default function MainContent({
                       />
                     </button>
                   </div>
-                  <p className={capCls}>平台展示 · 点击可放大</p>
+                  <p className={capCls}>{language === 'en' ? 'Platform Display · Click to enlarge' : '平台展示 · 点击可放大'}</p>
                 </div>
               )
               const textCol = (
@@ -5107,20 +5116,20 @@ export default function MainContent({
                 onClick={() => setZoomPlatformImageUrl(null)}
                 role="dialog"
                 aria-modal="true"
-                aria-label="放大查看图片"
+                aria-label={language === 'en' ? 'Image preview' : '放大查看图片'}
               >
                 <button
                   type="button"
                   className="absolute top-4 right-4 z-[2] w-10 h-10 rounded-full bg-white/20 text-white hover:bg-white/30 flex items-center justify-center text-xl"
                   onClick={() => setZoomPlatformImageUrl(null)}
-                  aria-label="关闭"
+                  aria-label={language === 'en' ? 'Close' : '关闭'}
                 >
                   ×
                 </button>
                 {!researchZoomLightboxReady && (
                   <div className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2 text-white text-sm pointer-events-none">
                     <span className="inline-block h-8 w-8 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden />
-                    <span>加载中…</span>
+                    <span>{language === 'en' ? 'Loading...' : '加载中…'}</span>
                   </div>
                 )}
                 <img
@@ -5179,18 +5188,33 @@ export default function MainContent({
                 ? 'border-gray-600 bg-gradient-to-br from-slate-900/95 via-gray-900 to-slate-950'
                 : 'border-slate-200/90 bg-gradient-to-br from-white via-slate-50/80 to-blue-50/50 shadow-sm'
             }`}>
-              <p className={sectionKickerCls}>长沙有色冶金设计研究院有限公司 · 企业概况</p>
+              <p className={sectionKickerCls}>
+                {language === 'en' ? `${APP_ORG_NAME_EN} · Company Profile` : '长沙有色冶金设计研究院有限公司 · 企业概况'}
+              </p>
               <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-10 xl:gap-12 lg:items-stretch">
                 <div className="min-w-0 flex flex-col justify-center">
                   <h2
                     className={`text-2xl sm:text-3xl font-bold tracking-tight leading-snug ${darkMode ? 'text-white' : 'text-slate-900'}`}
                   >
-                    有色金属行业全产业链<br className="hidden sm:block" />技术与服务提供商
+                    {language === 'en' ? (
+                      <>
+                        Full-Chain Technology and Services<br className="hidden sm:block" />for the Nonferrous Metals Industry
+                      </>
+                    ) : (
+                      <>
+                        有色金属行业全产业链<br className="hidden sm:block" />技术与服务提供商
+                      </>
+                    )}
                   </h2>
                   <div
                     className={`mt-4 leading-relaxed text-[15px] sm:text-base ${darkMode ? 'text-gray-200' : 'text-slate-800'}`}
                   >
                     <p>
+                      {language === 'en' && (
+                        <span className="mb-3 block">
+                          Detailed corporate materials are currently shown in Chinese. This section introduces the institute's history, capabilities, innovation platforms, contact channels, and representative credentials.
+                        </span>
+                      )}
                       <span className="font-semibold">长沙有色冶金设计研究院有限公司</span>（简称长沙有色院）于1953年正式成立，为国家高新技术企业、国家技术创新示范企业、国家企业技术中心，是我国最早成立的大型综合性设计研究单位之一；隶属于中国铝业集团有限公司，为中铝国际工程股份有限公司子公司。
                     </p>
                   </div>
@@ -5214,7 +5238,9 @@ export default function MainContent({
                         loading="lazy"
                       />
                     </div>
-                    <p className={capCls}>中国铝业集团 · 长沙有色冶金设计研究院有限公司</p>
+                    <p className={capCls}>
+                      {language === 'en' ? `Chinalco · ${APP_ORG_NAME_EN}` : '中国铝业集团 · 长沙有色冶金设计研究院有限公司'}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -5461,19 +5487,26 @@ export default function MainContent({
                     : 'border-slate-200/90 bg-gradient-to-br from-white via-slate-50/80 to-blue-50/50 shadow-sm'
                 }`}
               >
-                <p className={sectionKickerCls}>长沙有色冶金设计研究院有限公司 · 市政事业部</p>
+                <p className={sectionKickerCls}>
+                  {language === 'en' ? `${APP_ORG_NAME_EN} · Municipal Division` : '长沙有色冶金设计研究院有限公司 · 市政事业部'}
+                </p>
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-10 xl:gap-12 lg:items-start">
                   <div className="min-w-0">
                     <h2
                       className={`text-2xl sm:text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}
                     >
-                      市政工程 · 废水处理及矿浆输送技术
+                      {language === 'en' ? 'Municipal Engineering · Wastewater Treatment and Slurry Transport' : '市政工程 · 废水处理及矿浆输送技术'}
                     </h2>
                     <div
                       className={`mt-4 leading-relaxed text-[15px] sm:text-base ${
                         darkMode ? 'text-gray-200' : 'text-slate-800'
                       }`}
                     >
+                      {language === 'en' && (
+                        <p className="mb-3 font-medium">
+                          Detailed municipal project materials are currently shown in Chinese. This page covers wastewater treatment, slurry transport, representative projects, and related qualifications.
+                        </p>
+                      )}
                       <p className="font-medium">
                         长沙有色院依托行业优势，在采选废水处理、冶炼废水处理、市政污水处理、矿浆输送等领域技术实力雄厚，处于国内外领先水平；研究开发了铜冶炼废水「零排放」关键技术、
                         <InlineMath math="\mathrm{CO_2}" />
@@ -5801,7 +5834,7 @@ export default function MainContent({
           title: 'Settings',
           subtitle: 'Manage appearance and language, check for updates, view notices, and contact support.',
           appName: APP_NAME_EN,
-          appOrg: 'China ENFI Engineering Corporation (CINF)',
+          appOrg: APP_ORG_NAME_EN,
           appearancePref: 'Appearance & Preferences',
           displayMode: 'Theme',
           light: 'Light',
@@ -5840,10 +5873,10 @@ export default function MainContent({
           privacyTitle: 'Data & Privacy',
           privacyP:
             'All calculations are performed locally. The app does not collect or upload your input data or results. Exporting to Word is also done on your machine without sending content to external servers.',
-          offlineLicense: 'Product license',
+          offlineLicense: 'Product License',
           deviceCode: 'Device ID',
           copyDev: 'Copy',
-          licenseCode: 'License key',
+          licenseCode: 'License Key',
           licensePlaceholder: 'CINF-LIC1.…',
           updateLicense: 'Update',
           applyLicenseBusy: 'Applying…',
@@ -6078,20 +6111,20 @@ export default function MainContent({
                   <button
                     onClick={() => onDarkModeChange && onDarkModeChange(false)}
                     className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                      !darkModeValue ? 'bg-blue-600 text-white shadow' : darkMode ? 'bg-gray-600/80 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      !darkMode ? 'bg-blue-600 text-white shadow' : darkMode ? 'bg-gray-600/80 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
                     <span className="font-medium">{t.light}</span>
-                    <span className={`block text-xs mt-0.5 ${!darkModeValue ? 'opacity-90' : 'opacity-70'}`}>{t.lightHint}</span>
+                    <span className={`block text-xs mt-0.5 ${!darkMode ? 'opacity-90' : 'opacity-70'}`}>{t.lightHint}</span>
                   </button>
                   <button
                     onClick={() => onDarkModeChange && onDarkModeChange(true)}
                     className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                      darkModeValue ? 'bg-blue-600 text-white shadow' : darkMode ? 'bg-gray-600/80 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      darkMode ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
                     <span className="font-medium">{t.dark}</span>
-                    <span className={`block text-xs mt-0.5 ${darkModeValue ? 'opacity-90' : 'opacity-70'}`}>{t.darkHint}</span>
+                    <span className={`block text-xs mt-0.5 ${darkMode ? 'opacity-90' : 'opacity-70'}`}>{t.darkHint}</span>
                   </button>
                 </div>
               </div>
@@ -6549,7 +6582,7 @@ export default function MainContent({
           const v = parameters[key]
           if (v !== undefined && v !== null && !isNaN(v)) step1Params[key] = v
         }
-        const response = await axios.post(`${API_BASE_URL}/calculate`, {
+        const response = await apiClient.post(`${API_BASE_URL}/calculate`, {
           formula_id: formula.id,
           parameters: step1Params,
         }, { timeout: API_TIMEOUT })
@@ -6678,7 +6711,7 @@ export default function MainContent({
         }
       }
       validParameters.calculation_step = step
-      const response = await axios.post(
+      const response = await apiClient.post(
         `${API_BASE_URL}/calculate`,
         { formula_id: formula.id, parameters: validParameters, locked_vc: lockedVc },
         { timeout: API_TIMEOUT }
@@ -6746,7 +6779,7 @@ export default function MainContent({
         }
       }
       validParameters.calculation_step = step
-      const response = await axios.post(
+      const response = await apiClient.post(
         `${API_BASE_URL}/calculate`,
         { formula_id: formula.id, parameters: validParameters, locked_vc: lockedVc },
         { timeout: API_TIMEOUT }
@@ -6831,7 +6864,7 @@ export default function MainContent({
         }
       }
       
-      const response = await axios.post(`${API_BASE_URL}/calculate`, {
+      const response = await apiClient.post(`${API_BASE_URL}/calculate`, {
         formula_id: effectiveFormulaId,
         parameters: validParameters,
         // B.C.克诺罗兹法不参与锁定反推
@@ -7006,7 +7039,7 @@ export default function MainContent({
 
       if (savePath != null) {
         // 用户已选路径：后端直接写入该路径，返回 JSON
-        const response = await axios.post(`${API_BASE_URL}/export`, { ...payload, save_path: savePath }, {
+        const response = await apiClient.post(`${API_BASE_URL}/export`, { ...payload, save_path: savePath }, {
           timeout: API_TIMEOUT,
           validateStatus: (s) => s >= 200 && s < 300
         })
@@ -7018,7 +7051,7 @@ export default function MainContent({
       }
 
       // 非 Electron 或未选路径：原有下载方式（后端返回 blob）
-      const response = await axios.post(`${API_BASE_URL}/export`, payload, {
+      const response = await apiClient.post(`${API_BASE_URL}/export`, payload, {
         responseType: 'blob',
         timeout: API_TIMEOUT,
         validateStatus: (status) => status >= 200 && status < 300
@@ -7357,7 +7390,9 @@ export default function MainContent({
       <div className={shell}>
         <div className={`${labelCls} flex items-start justify-between gap-2`}>
           <div className="min-w-0 flex-1">{title}</div>
-          {opts.titleRight != null ? <div className="shrink-0">{opts.titleRight}</div> : null}
+          {opts.titleRight != null ? (
+            <div className="flex shrink-0 items-center gap-1">{opts.titleRight}</div>
+          ) : null}
         </div>
         <div className={valueCls}>{opts.value}</div>
         <div className={unitCls}>{opts.unitZh}</div>
@@ -7445,7 +7480,9 @@ export default function MainContent({
     return (
       <div className={surfaceCls}>
         <div
-          className={`text-sm font-medium mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
+          className={`text-sm font-medium mb-3 ${
+            darkMode ? 'text-gray-200' : 'text-gray-700'
+          }`}
         >
           中间计算结果：
         </div>
@@ -7462,7 +7499,7 @@ export default function MainContent({
                 <div className="text-gray-500 text-xs mb-1">
                   {isReactElement ? labelElement : `${labelElement}:`}
                 </div>
-                <span className="font-mono font-semibold">{value as ReactNode}</span>
+                <span className="font-mono">{value as ReactNode}</span>
               </div>
             )
           })}
@@ -7518,7 +7555,7 @@ export default function MainContent({
       <div className={contentWrapperClassName}>
         {/* Header：大标题下副标题与全站一致，不随视图切换改写 */}
         <div className="mb-5">
-          <h1 className={`text-2xl font-bold mb-2 ${
+          <h1 className={`text-2xl font-bold tracking-wide mb-2 ${
             darkMode ? 'text-gray-100' : 'text-gray-900'
           }`}>
             {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
@@ -7727,6 +7764,7 @@ export default function MainContent({
                     }
                     return <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                   })(),
+                  
                 })}
               </div>
 
@@ -7808,7 +7846,7 @@ export default function MainContent({
                     ) : (
                       <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                     ),
-                })}
+                  })}
                 {(() => {
                   if (!result?.success || result.result?.N == null || !result.result?.intermediate) return null
                   const imo = result.result.intermediate as Record<string, unknown>
@@ -7938,7 +7976,7 @@ export default function MainContent({
                           ) : (
                             <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                           ),
-                      })}
+                        })}
                       {denom != null && !isNaN(Number(denom)) &&
                         renderIntermediateResultsBlock(
                           [['denom', `${fmtDissipation(Number(denom))} m³/t`]],
@@ -8036,7 +8074,7 @@ export default function MainContent({
                           ) : (
                             <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                           ),
-                      })}
+                        })}
                       {mid.length > 0 && renderIntermediateResultsBlock(mid, undefined, 'white')}
                     </>
                   )
@@ -8143,7 +8181,7 @@ export default function MainContent({
                           ) : (
                             <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                           ),
-                      })}
+                        })}
                       {reB != null && flowState && (
                         <div
                           className={`mb-3 rounded-lg border px-3 py-3 text-sm leading-relaxed ${
@@ -8324,7 +8362,7 @@ export default function MainContent({
                           ) : (
                             <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                           ),
-                      })}
+                        })}
                       {mid.length > 0 && renderIntermediateResultsBlock(mid, undefined, 'white')}
                     </>
                   )
@@ -8420,7 +8458,7 @@ export default function MainContent({
                           ) : (
                             <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                           ),
-                      })}
+                        })}
                       {mid.length > 0 && renderIntermediateResultsBlock(mid, 'slurry_friction_loss', 'white')}
                     </>
                   )
@@ -8429,7 +8467,7 @@ export default function MainContent({
                     titleRow: renderDescriptionWithMath('水力坡降 $i_k$：'),
                     unitZh: 'mH₂O/m（米水柱每米管长）',
                     value: <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>,
-                  })
+                    })
                 )}
               </div>
             </>
@@ -8568,7 +8606,7 @@ export default function MainContent({
                       ) : (
                         <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                       ),
-                  })}
+                    })}
                   {result.result?.intermediate &&
                     renderIntermediateResultsBlock(
                       Object.entries(result.result.intermediate),
@@ -8587,7 +8625,7 @@ export default function MainContent({
                   ) : (
                     <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                   ),
-                })
+                  })
               )}
             </>
           ) : isTotalHeadFormula ? (
@@ -8839,6 +8877,7 @@ export default function MainContent({
                     ) : (
                       <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                     ),
+                    
                   })}
                   {result?.success &&
                     result.result?.intermediate &&
@@ -8973,6 +9012,7 @@ export default function MainContent({
                     ) : (
                       <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                     ),
+                    
                   })}
                   {result?.success &&
                     result.result?.intermediate &&
@@ -9113,6 +9153,7 @@ export default function MainContent({
                       </span>
                     )
                   })(),
+                  
                 })}
               </div>
 
@@ -9298,6 +9339,7 @@ export default function MainContent({
                     }
                     return <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                   })(),
+                  
                 })}
                 {(() => {
                   const snap2 = formula ? centrifugalStep2SnapshotByFormula[formula.id] : undefined
@@ -9640,7 +9682,7 @@ export default function MainContent({
                     ) : (
                       <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                     ),
-                })}
+                  })}
                 {(() => {
                   if (!result?.success || result.result?.N == null || !result.result?.intermediate) return null
                   const imo = result.result.intermediate as Record<string, unknown>
@@ -9827,6 +9869,7 @@ export default function MainContent({
                         : '—'}
                     </span>
                   ),
+                  
                 })}
                 {result?.success &&
                   (result.result?.intermediate?.step_1_kql != null || result.result?.K_QL != null) && (
@@ -9971,7 +10014,7 @@ export default function MainContent({
                             {dhNum != null ? fmtDissipation(dhNum) : '—'}
                           </span>
                         ),
-                      })}
+                        })}
                       {showMid &&
                         renderIntermediateResultsBlock(
                           [['dissipation_q_squared', fmtDissipation(Number(q2))]],
@@ -10058,6 +10101,7 @@ export default function MainContent({
                           : '—'}
                       </span>
                     ),
+                    
                   })}
               </div>
 
@@ -10128,6 +10172,7 @@ export default function MainContent({
                           : '—'}
                       </span>
                     ),
+                    
                   })}
               </div>
 
@@ -10197,7 +10242,7 @@ export default function MainContent({
                           {fmtDissipation(Number(result.result.delta_h))}
                         </span>
                       ),
-                    })}
+                      })}
                     {result.result?.intermediate?.Q_squared != null &&
                       renderIntermediateResultsBlock(
                         [
@@ -10215,27 +10260,9 @@ export default function MainContent({
                     titleRow: renderDescriptionWithMath('消能水头 $\\Delta h$：'),
                     unitZh: 'm（米液柱）',
                     value: <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>,
-                  })
+                    })
                 )}
               </div>
-            </>
-          ) : isSlurryEnergyPlaceholder ? (
-            <>
-              <p className={`text-sm leading-relaxed mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {renderDescriptionWithMath('浆体消能模块用于评估输送过程中的能量衰减与消耗特征。当前界面为占位版本，后续将补充完整的模型说明、参数定义、计算过程与结果判据。')}
-              </p>
-              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
-                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>参数输入</div>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  当前版本暂未开放参数配置。
-                </p>
-              </div>
-              {renderPrimaryResultCallout({
-                nameZh: '模块主结果',
-                unitZh: '—（当前为占位页）',
-                bordered: true,
-                value: <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>,
-              })}
             </>
           ) : formula?.id === 'density_mixing' ? (
             <>
@@ -10295,7 +10322,7 @@ export default function MainContent({
                 ) : (
                   <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                 ),
-              })}
+                })}
             </>
           ) : formula?.id === 'slurry_friction_loss' ? (
             <>
@@ -10506,6 +10533,7 @@ export default function MainContent({
                 ) : (
                   <span className={`text-xl font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
                 ),
+                
               })}
             </>
           ) : formula?.id === 'kronodze_pressure' ? (
@@ -10578,6 +10606,7 @@ export default function MainContent({
                         : '—'}
                     </span>
                   ),
+                  
                 })}
               </div>
 
@@ -10676,6 +10705,7 @@ export default function MainContent({
                         : '—'}
                     </span>
                   ),
+                  
                 })}
               </div>
 
@@ -10810,7 +10840,7 @@ export default function MainContent({
           )}
 
           {/* Input Parameters - 非 B.C.克诺罗兹法、非浆体摩阻损失、非密度混合 时显示统一参数区 */}
-          {formula?.id !== 'kronodze_pressure' && formula?.id !== 'slurry_friction_loss' && formula?.id !== 'density_mixing' && formula?.id !== 'slurry_friction_workflow' && !isSlurryDissipationFormula && !isSlurryEnergyPlaceholder && !isClearWaterFrictionLoss && !isTotalHeadFormula && !isPositiveDisplacementPumpFormula && !isCentrifugalPumpTotalHead && !isSlurryDissipationOrifice && (
+          {formula?.id !== 'kronodze_pressure' && formula?.id !== 'slurry_friction_loss' && formula?.id !== 'density_mixing' && formula?.id !== 'slurry_friction_workflow' && !isSlurryDissipationFormula && !isClearWaterFrictionLoss && !isTotalHeadFormula && !isPositiveDisplacementPumpFormula && !isCentrifugalPumpTotalHead && !isSlurryDissipationOrifice && (
           <div className={`border-t pt-4 ${
             darkMode ? 'border-gray-600' : 'border-gray-200'
           }`}>
@@ -11062,7 +11092,6 @@ export default function MainContent({
           formula?.id !== 'density_mixing' &&
           formula?.id !== 'slurry_friction_workflow' &&
           !isSlurryDissipationFormula &&
-          !isSlurryEnergyPlaceholder &&
           !isClearWaterFrictionLoss &&
           !isTotalHeadFormula &&
           !isPositiveDisplacementPumpFormula &&
@@ -11161,6 +11190,7 @@ export default function MainContent({
                       : result?.error || '—'
                 return <span className={`text-xl font-bold ${tone}`}>{text}</span>
               })(),
+              
               footer:
                 isKronodzeFormula &&
                 kronodzeStep3Visible &&
@@ -11514,7 +11544,7 @@ export default function MainContent({
                                       {/* 液体（正常流动） */}
                                       <div className="absolute inset-0 bg-gradient-to-r from-green-300 via-green-400 to-green-300"
                                            style={{
-                                             animation: 'flow-slow 2s linear infinite',
+                                             animation: 'flow-horizontal 2s linear infinite',
                                              backgroundSize: '200% 100%'
                                            }}></div>
                                       {/* 颗粒大小不一，正常流动（小幅度向右移动，消失后复位） */}
@@ -11550,7 +11580,7 @@ export default function MainContent({
                                       {/* 液体（快速流动） */}
                                       <div className="absolute inset-0 bg-gradient-to-r from-green-300 via-green-400 to-green-300"
                                            style={{
-                                             animation: 'flow-fast 1.5s linear infinite',
+                                             animation: 'flow-horizontal 1.5s linear infinite',
                                              backgroundSize: '200% 100%'
                                            }}></div>
                                       {/* 颗粒大小不一，快速流动（大幅度快速向右移动，消失后复位） */}
@@ -11697,7 +11727,6 @@ export default function MainContent({
         )}
 
         {/* 操作区：计算与导出（卡片式布局） */}
-        {!isSlurryEnergyPlaceholder && (
         <div
           className={`mt-2 rounded-2xl border shadow-md overflow-hidden ${
             darkMode
@@ -11991,7 +12020,6 @@ export default function MainContent({
               </div>
           </div>
         </div>
-        )}
       </div>
     </div>
   )

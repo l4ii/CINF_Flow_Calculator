@@ -2,6 +2,9 @@
 export const APP_NAME_ZH = 'CINF长沙院浆体计算软件'
 export const APP_NAME_EN = 'CINF Slurry Calculation Software'
 
+/** 对外统一机构英文名 */
+export const APP_ORG_NAME_EN = 'Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.'
+
 /** 导出文档默认文件名前缀 */
 export const APP_EXPORT_FILENAME_PREFIX = 'CINF'
 
@@ -14,10 +17,6 @@ export const APP_TAGLINE_SIDEBAR_ZH_LINE1 = '基于行业标准与设计规范�
 export const APP_TAGLINE_SIDEBAR_ZH_LINE2 = '浆体管道计算软件'
 /** 合并字符串（导出、搜索等仍可用整句） */
 export const APP_TAGLINE_SIDEBAR_ZH = `${APP_TAGLINE_SIDEBAR_ZH_LINE1}\n${APP_TAGLINE_SIDEBAR_ZH_LINE2}`
-
-/** 英文侧栏与英文界面下与中文副文案对应 */
-export const APP_TAGLINE_EN =
-  'Slurry pipeline calculation software per industry standards and design codes, covering critical velocity, friction loss, pressure/head, and accelerating-flow/dissipation.'
 
 /** 英文侧栏副文案（短版） */
 export const APP_TAGLINE_SIDEBAR_EN =

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { APP_NAME_EN, APP_NAME_ZH, APP_TAGLINE_MAIN_EN, APP_TAGLINE_ZH } from '../constants/appCopy'
+import { APP_NAME_EN, APP_NAME_ZH, APP_ORG_NAME_EN, APP_TAGLINE_MAIN_EN, APP_TAGLINE_ZH } from '../constants/appCopy'
 
 /** 与侧栏一致：frontend 构建后位于站点根目录 */
 const APP_LOGO_SRC = './icon.png'
@@ -46,13 +46,13 @@ const copy = {
     deviceLabel: 'Device ID',
     copy: 'Copy',
     copied: 'Copied',
-    licenseLabel: 'License key',
+    licenseLabel: 'License Key',
     placeholder: 'CINF-LIC1.…',
     activate: 'Activate',
     activating: 'Activating…',
     needElectron: 'Use the installed desktop app to complete activation.',
     zoneContactTitle: 'Licensor contact',
-    orgName: 'Changsha Engineering & Research Institute of Nonferrous Metals Co., Ltd.',
+    orgName: APP_ORG_NAME_EN,
     orgBlurb:
       'Founded in 1953 under Aluminum Corporation of China; national high-tech enterprise, national technological innovation demonstration enterprise, and national enterprise technology center, with 3 national and 7 provincial S&T innovation platforms. 900+ employees (800+ technical professionals), 1,300+ national/provincial/ministerial awards, 500+ patents, projects worldwide—the enterprise technology center and sustained R&D underpin credible in-house development of professional engineering software.',
     contactRouting:
@@ -210,7 +210,7 @@ export default function LicenseActivation({
               </div>
               <p className={`mb-5 shrink-0 text-[13px] sm:text-[14px] ${bodyCls}`}>{t.activationHint}</p>
 
-              <div className="mt-auto space-y-4 rounded-lg border border-slate-100 bg-slate-50/90 p-5 ring-1 ring-slate-900/[0.03]">
+              <div className="mt-1 space-y-4 rounded-lg border border-slate-100 bg-slate-50/90 p-5 ring-1 ring-slate-900/[0.03]">
                 <div>
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{t.deviceLabel}</div>
                   <div className="flex gap-2">
@@ -221,7 +221,7 @@ export default function LicenseActivation({
                       type="button"
                       onClick={copyId}
                       disabled={!machineId}
-                      className="shrink-0 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                      className="inline-flex min-h-[2.25rem] min-w-[6.5rem] shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
                     >
                       {copied ? t.copied : t.copy}
                     </button>
@@ -244,7 +244,7 @@ export default function LicenseActivation({
                       type="button"
                       onClick={activate}
                       disabled={busy || !input.trim()}
-                      className="inline-flex min-h-[2.25rem] shrink-0 items-center justify-center rounded-md bg-gradient-to-b from-blue-600 to-blue-700 px-5 text-sm font-semibold text-white shadow-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 sm:min-w-[6.5rem]"
+                      className="inline-flex min-h-[2.25rem] min-w-[6.5rem] shrink-0 items-center justify-center rounded-md bg-gradient-to-b from-blue-600 to-blue-700 px-5 text-sm font-semibold text-white shadow-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50"
                     >
                       {busy ? t.activating : t.activate}
                     </button>
@@ -307,7 +307,7 @@ export default function LicenseActivation({
           </div>
 
           <p className="shrink-0 border-t border-slate-100 bg-white px-4 py-2.5 text-center text-xs text-slate-500 sm:text-sm">
-            长沙有色冶金设计研究院有限公司
+            {language === 'en' ? APP_ORG_NAME_EN : '长沙有色冶金设计研究院有限公司'}
           </p>
           </div>
         </div>

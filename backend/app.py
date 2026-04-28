@@ -14,14 +14,33 @@ from word_export import WordExporter
 from datetime import datetime
 
 app = Flask(__name__)
-# 配置CORS，允许所有来源（开发环境）
+
+def _allowed_cors_origins():
+    raw = os.environ.get('CINF_ALLOWED_ORIGINS')
+    if raw:
+        return [x.strip() for x in raw.split(',') if x.strip()]
+    # 桌面生产环境从 file:// 发起请求时 Origin 常为 null；开发环境为 Vite 本地地址。
+    return ['null', 'http://localhost:5173', 'http://127.0.0.1:5173']
+
+ALLOWED_CORS_ORIGINS = _allowed_cors_origins()
+
+# 仅允许桌面应用与本地开发地址访问 API；如需其它前端来源，可设置 CINF_ALLOWED_ORIGINS 逗号分隔覆盖。
 CORS(app, resources={
     r"/api/*": {
-        "origins": "*",
+        "origins": ALLOWED_CORS_ORIGINS,
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
+
+def add_cors_headers(response):
+    origin = request.headers.get('Origin')
+    if origin in ALLOWED_CORS_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Vary'] = 'Origin'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
 
 calculation_engine = CalculationEngine()
 word_exporter = WordExporter()
@@ -315,10 +334,7 @@ def export_word():
     # 处理CORS预检请求
     if request.method == 'OPTIONS':
         response = jsonify({})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        return response
+        return add_cors_headers(response)
     
     try:
         data = request.json
@@ -358,11 +374,8 @@ def export_word():
             download_name=download_name,
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
         response.headers['Content-Disposition'] = f'attachment; filename="{download_name}"'
-        return response
+        return add_cors_headers(response)
     except PermissionError as e:
         import traceback
         error_msg = f"文件权限错误: {str(e)}\n\n可能原因：\n1. 文件正在被其他程序（如Word）打开\n2. 目录没有写权限\n3. 文件被锁定\n\n请关闭可能打开该文件的程序后重试。"
@@ -371,8 +384,7 @@ def export_word():
             "success": False,
             "error": error_msg
         })
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        return response, 400
+        return add_cors_headers(response), 400
     except Exception as e:
         import traceback
         error_msg = f"{str(e)}\n{traceback.format_exc()}"
@@ -381,8 +393,7 @@ def export_word():
             "success": False,
             "error": str(e)
         })
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        return response, 400
+        return add_cors_headers(response), 400
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

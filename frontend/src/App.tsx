@@ -4,7 +4,7 @@ import MainContent from './components/MainContent'
 import LicenseActivation from './components/LicenseActivation'
 import { FormulaInfo, FlowState } from './types'
 import { API_BASE_URL, API_TIMEOUT } from './config/api'
-import { APP_TAGLINE_ZH } from './constants/appCopy'
+import { APP_NAME_EN, APP_NAME_ZH, APP_TAGLINE_MAIN_EN, APP_TAGLINE_ZH } from './constants/appCopy'
 
 function initialLicenseGate(): 'unknown' | 'ok' | 'blocked' {
   if (typeof window === 'undefined') return 'ok'
@@ -137,7 +137,8 @@ function App() {
         }
         const raw = await response.json()
         const data: FlowState = {}
-        const hasSlurryAccel = raw.apiVersion >= 3
+        const apiVersion = Number(raw.apiVersion ?? 0)
+        const hasSlurryAccel = apiVersion >= 3
           || (raw['浆体加速流及消能'] !== undefined && Array.isArray(raw['浆体加速流及消能']))
           || (raw['浆体加速流'] !== undefined && Array.isArray(raw['浆体加速流']))
           || (raw['浆体消能'] !== undefined && Array.isArray(raw['浆体消能']))
@@ -288,12 +289,18 @@ function App() {
               <path d="M26.4 29V15.1H29.5V26.4H34.9V29H26.4Z" fill="white"/>
             </svg>
           </div>
-          <div className="text-lg font-semibold text-gray-800 mb-1">长沙院浆体管道计算工具</div>
+          <div className="text-lg font-semibold text-gray-800 mb-1">
+            {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
+          </div>
           <div className="text-xs text-gray-600 max-w-md mx-auto leading-relaxed mb-2 px-2">
-            {APP_TAGLINE_ZH}
+            {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
           </div>
           <div className="text-sm text-gray-600">
-            {waitingLicense && !loading ? '正在验证本机授权…' : loadingHint || '正在连接后端服务器…'}
+            {waitingLicense && !loading
+              ? language === 'en'
+                ? 'Verifying this device license...'
+                : '正在验证本机授权…'
+              : loadingHint || (language === 'en' ? 'Connecting to the local backend...' : '正在连接后端服务器…')}
           </div>
           <div className="mt-4 flex justify-center">
             <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -311,18 +318,30 @@ function App() {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow-lg border border-red-200">
-          <div className="text-red-600 font-semibold text-lg mb-3">⚠️ 连接后端失败</div>
+          <div className="text-red-600 font-semibold text-lg mb-3">
+            {language === 'en' ? 'Backend Connection Failed' : '连接后端失败'}
+          </div>
           <div className="text-gray-700 text-sm mb-4 whitespace-pre-line">{error}</div>
           <div className="text-gray-600 text-xs mb-4">
-            <div className="font-semibold mb-2">解决方法：</div>
-            <div>1. 若为安装包安装：请完全关闭本软件后重新打开；若仍失败，请向发布者索取最新安装包并重新安装。</div>
-            <div>2. 若为开发运行：在项目目录运行 <code className="bg-gray-100 px-1 rounded">python backend/app.py</code> 启动后端。</div>
+            {language === 'en' ? (
+              <>
+                <div className="font-semibold mb-2">How to fix:</div>
+                <div>1. If this is the installed app, close it completely and reopen it. If it still fails, ask the publisher for the latest installer.</div>
+                <div>2. If this is a development run, start the backend with <code className="bg-gray-100 px-1 rounded">python backend/app.py</code> in the project directory.</div>
+              </>
+            ) : (
+              <>
+                <div className="font-semibold mb-2">解决方法：</div>
+                <div>1. 若为安装包安装：请完全关闭本软件后重新打开；若仍失败，请向发布者索取最新安装包并重新安装。</div>
+                <div>2. 若为开发运行：在项目目录运行 <code className="bg-gray-100 px-1 rounded">python backend/app.py</code> 启动后端。</div>
+              </>
+            )}
           </div>
           <button
             onClick={fetchFormulas}
             className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            重试连接
+            {language === 'en' ? 'Retry Connection' : '重试连接'}
           </button>
         </div>
       </div>
@@ -349,7 +368,6 @@ function App() {
           currentView={currentView}
           aboutDepartment={aboutDepartment}
           language={language}
-          darkModeValue={darkMode}
           onDarkModeChange={setDarkMode}
           onLanguageChange={setLanguage}
           onLicenseResolved={() => setLicenseGate('ok')}

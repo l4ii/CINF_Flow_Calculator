@@ -5,11 +5,20 @@ const { execSync, spawnSync } = require('child_process')
 
 const root = path.join(__dirname, '..')
 
-/** 与 electron-builder.win7.yml / electron-builder.yml 中 productName 一致，用于 taskkill */
+/** 与 electron-builder.yml / electron-builder.win7.yml 中 productName 一致，用于 taskkill */
 function getPackagedExeName() {
   try {
-    const p = path.join(root, 'electron-builder.win7.yml')
-    const text = fs.readFileSync(p, 'utf8')
+    const configs = ['electron-builder.yml', 'electron-builder.win7.yml']
+    const text = configs
+      .map((file) => {
+        try {
+          return fs.readFileSync(path.join(root, file), 'utf8')
+        } catch (_) {
+          return ''
+        }
+      })
+      .find((content) => /^productName:\s*(.+)$/m.test(content))
+    if (!text) return null
     const m = text.match(/^productName:\s*(.+)$/m)
     if (!m) return null
     let name = m[1].trim()

@@ -157,7 +157,7 @@ function clearLicense() {
 
 /**
  * isDev: 开发不校验
- * 无公钥文件：不阻断（方便未配密钥的构建调试），返回 ok: true, warn: 'no_public_key'
+ * 无公钥文件：生产环境阻断激活，避免发布包缺少验签材料仍继续使用。
  */
 function getLicenseStatus(isDev) {
   const machineId = collectMachineIdRaw()
