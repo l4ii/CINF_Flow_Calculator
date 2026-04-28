@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
 import { FormulaInfo, FlowState } from '../types'
 import {
-  APP_NAME_EN,
-  APP_NAME_ZH,
   APP_ORG_NAME_EN,
   APP_TAGLINE_SIDEBAR_EN,
   APP_TAGLINE_SIDEBAR_ZH,
   APP_TAGLINE_SIDEBAR_ZH_LINE1,
   APP_TAGLINE_SIDEBAR_ZH_LINE2,
+  APP_TITLE_SIDEBAR_EN,
+  APP_TITLE_SIDEBAR_ZH,
 } from '../constants/appCopy'
 
 interface SidebarProps {
@@ -38,7 +38,7 @@ export default function Sidebar({
   const translations = useMemo(
     () => ({
       zh: {
-        appTitle: APP_NAME_ZH,
+        appTitle: APP_TITLE_SIDEBAR_ZH,
         appSubtitle: APP_TAGLINE_SIDEBAR_ZH,
         criticalVelocity: '临界流速计算',
         frictionLossParent: '摩阻损失计算',
@@ -61,7 +61,7 @@ export default function Sidebar({
         noAccelEnergyFormulas: '暂无公式，请重启后端以加载'
       },
       en: {
-        appTitle: APP_NAME_EN,
+        appTitle: APP_TITLE_SIDEBAR_EN,
         appSubtitle: APP_TAGLINE_SIDEBAR_EN,
         criticalVelocity: 'Critical Velocity',
         frictionLossParent: 'Friction Loss',

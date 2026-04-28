@@ -4,7 +4,7 @@ import MainContent from './components/MainContent'
 import LicenseActivation from './components/LicenseActivation'
 import { FormulaInfo, FlowState } from './types'
 import { API_BASE_URL, API_TIMEOUT } from './config/api'
-import { APP_NAME_EN, APP_NAME_ZH, APP_TAGLINE_MAIN_EN, APP_TAGLINE_ZH } from './constants/appCopy'
+import { APP_TITLE_MAIN_EN, APP_TITLE_MAIN_ZH, APP_TAGLINE_MAIN_EN, APP_TAGLINE_ZH } from './constants/appCopy'
 
 function initialLicenseGate(): 'unknown' | 'ok' | 'blocked' {
   if (typeof window === 'undefined') return 'ok'
@@ -290,7 +290,7 @@ function App() {
             </svg>
           </div>
           <div className="text-lg font-semibold text-gray-800 mb-1">
-            {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
+            {language === 'en' ? APP_TITLE_MAIN_EN : APP_TITLE_MAIN_ZH}
           </div>
           <div className="text-xs text-gray-600 max-w-md mx-auto leading-relaxed mb-2 px-2">
             {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}

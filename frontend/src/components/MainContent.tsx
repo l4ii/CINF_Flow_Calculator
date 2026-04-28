@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, type CSSProperties, type ReactNode } from 'react';
 import type { FormulaInfo, CalculationResult, Parameter } from '../types';
 import axios from 'axios';
 import { API_BASE_URL, API_TIMEOUT } from '../config/api';
@@ -15,6 +15,8 @@ import {
   APP_EXPORT_FILENAME_PREFIX,
   APP_NAME_EN,
   APP_NAME_ZH,
+  APP_TITLE_MAIN_EN,
+  APP_TITLE_MAIN_ZH,
   APP_ORG_NAME_EN,
   APP_TAGLINE_MAIN_EN,
   APP_TAGLINE_ZH,
@@ -3355,6 +3357,16 @@ export default function MainContent({
   const mainScrollClassName = `flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`
   const contentWrapperClassName = 'w-full max-w-[1440px] mx-auto box-border px-6 py-6'
   const mainPanelCardClassName = `rounded-lg shadow-sm border p-5 mb-5 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`
+  const renderAppHeader = () => (
+    <div className="mb-6">
+      <h1 className={`text-2xl font-bold tracking-wide mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+        {language === 'en' ? APP_TITLE_MAIN_EN : APP_TITLE_MAIN_ZH}
+      </h1>
+      <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+        {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
+      </p>
+    </div>
+  )
   
   // 更新当前公式参数的辅助函数
   const updateParameters = (updater: (prev: Record<string, number | undefined>) => Record<string, number | undefined>) => {
@@ -3868,10 +3880,12 @@ export default function MainContent({
   }
 
   const renderFlowAnimation = (animationType: string, statusColor: string, size: 'small' | 'full') => {
+    const isSmallSettlingPreview = size === 'small' && (animationType === 'settle-20' || animationType === 'settle-10-flow')
+    const isSmallMediumSettle = size === 'small' && animationType === 'settle-20'
     const boxBase =
       size === 'full'
         ? 'w-full h-[60vh] sm:h-[70vh] rounded-xl border-2 relative overflow-hidden'
-        : 'w-full h-20 rounded border-2 relative overflow-hidden'
+        : `w-full ${isSmallSettlingPreview ? 'h-28' : 'h-24'} rounded border-2 relative overflow-hidden`
 
     const borderCls =
       animationType === 'settle-30'
@@ -3908,8 +3922,192 @@ export default function MainContent({
         ? '正常流动'
         : '快速流动'
 
-    const scale = size === 'full' ? 1.8 : 1
-    const particleCount = animationType === 'settle-30' ? 25 : 20
+    const scale = size === 'full' ? 1.8 : isSmallSettlingPreview ? 1.3 : 1.14
+    const speedScale = size === 'full' ? 1.28 : isSmallSettlingPreview ? 1.14 : 1
+    const isSevereSettle = animationType === 'settle-30'
+    const isCritical = animationType === 'still-flow'
+    const isFast = animationType !== 'settle-30' && animationType !== 'settle-20' && animationType !== 'settle-10-flow' && animationType !== 'still-flow' && animationType !== 'medium-flow'
+    const particleCount = size === 'full'
+      ? isCritical
+        ? 156
+        : isFast
+          ? 168
+          : 158
+      : isCritical
+        ? 118
+        : isFast
+          ? 124
+          : 116
+    const settlingMovingCount = size === 'full'
+      ? isSevereSettle
+        ? 34
+        : animationType === 'settle-20'
+          ? 58
+          : 82
+      : isSevereSettle
+        ? 24
+        : animationType === 'settle-20'
+          ? 96
+          : 38
+    const settledCount = size === 'full'
+      ? isSevereSettle
+        ? 240
+        : animationType === 'settle-20'
+          ? 210
+          : 176
+      : isSevereSettle
+        ? 160
+        : animationType === 'settle-20'
+          ? 132
+          : 236
+    const pseudo = (i: number, salt: number) => {
+      const x = Math.sin((i + 1) * (salt + 12.9898)) * 43758.5453
+      return x - Math.floor(x)
+    }
+    const particleMeta = (i: number, mode: 'settle' | 'critical' | 'flow') => {
+      const diameter = (2.1 + pseudo(i, 1) * 4.2) * scale
+      const left =
+        mode === 'flow'
+          ? -18 + pseudo(i, 2) * 36
+          : mode === 'critical'
+            ? 4 + pseudo(i, 2) * 92
+            : 2 + pseudo(i, 2) * 96
+      const top =
+        mode === 'settle'
+          ? isSevereSettle
+            ? 54 + pseudo(i, 3) * 28
+            : animationType === 'settle-20'
+              ? isSmallMediumSettle
+                ? 6 + pseudo(i, 3) * 72
+                : 34 + pseudo(i, 3) * 42
+              : size === 'small' && animationType === 'settle-10-flow'
+                ? 46 + pseudo(i, 3) * 28
+                : 6 + pseudo(i, 3) * 72
+          : mode === 'critical'
+            ? 10 + pseudo(i, 3) * 74
+            : 7 + pseudo(i, 3) * 78
+      const driftX =
+        mode === 'critical'
+          ? (pseudo(i, 4) - 0.5) * 78 * scale
+          : mode === 'settle'
+            ? (pseudo(i, 4) - 0.5) * (isSevereSettle ? 18 : 34) * scale
+            : (pseudo(i, 4) - 0.5) * 42 * scale
+      const driftY =
+        mode === 'critical'
+          ? (pseudo(i, 5) - 0.5) * 42 * scale
+          : (pseudo(i, 5) - 0.5) * (mode === 'settle' ? 18 : 34) * scale
+      const fallY =
+        mode === 'settle'
+          ? (isSevereSettle
+            ? 22 + pseudo(i, 6) * 42
+            : isSmallMediumSettle
+              ? 58 + pseudo(i, 6) * 76
+              : size === 'small' && animationType === 'settle-10-flow'
+                ? 18 + pseudo(i, 6) * 40
+              : 42 + pseudo(i, 6) * 64) * scale
+          : (46 + pseudo(i, 6) * 60) * scale
+      const duration = (
+        mode === 'settle'
+          ? isSevereSettle
+            ? 9.2 + pseudo(i, 7) * 5.2
+            : animationType === 'settle-20'
+              ? isSmallMediumSettle
+                ? 4.2 + pseudo(i, 7) * 2.6
+                : 6.8 + pseudo(i, 7) * 4.1
+              : size === 'small' && animationType === 'settle-10-flow'
+                ? 11.5 + pseudo(i, 7) * 7.0
+                : 5.6 + pseudo(i, 7) * 3.6
+          : mode === 'critical'
+            ? 6.6 + pseudo(i, 7) * 4.8
+            : isFast
+              ? 5.4 + pseudo(i, 7) * 3.0
+              : 4.2 + pseudo(i, 7) * 2.6
+      ) * speedScale
+      const delay = -pseudo(i, 8) * duration
+      const opacity = 0.55 + pseudo(i, 9) * 0.42
+      return { diameter, left, top, driftX, driftY, fallY, duration, delay, opacity }
+    }
+    const particleColor = darkMode ? 'rgba(30, 64, 175, 0.92)' : 'rgba(30, 64, 175, 0.9)'
+    const renderMovingParticles = (mode: 'settle' | 'critical' | 'flow') =>
+      Array.from({ length: mode === 'settle' ? settlingMovingCount : particleCount }).map((_, i) => {
+        const p = particleMeta(i, mode)
+        const animationName =
+          mode === 'settle'
+            ? 'particle-random-settle'
+            : mode === 'critical'
+              ? 'particle-critical-drift'
+              : 'particle-random-flow'
+        const style = {
+          width: `${p.diameter}px`,
+          height: `${p.diameter}px`,
+          left: `${p.left}%`,
+          top: `${p.top}%`,
+          opacity: p.opacity,
+          animation: `${animationName} ${p.duration}s ease-in-out infinite`,
+          animationDelay: `${p.delay}s`,
+          animationDirection: mode === 'critical' && pseudo(i, 10) > 0.5 ? 'alternate' : 'normal',
+          '--particle-drift-x': `${p.driftX}px`,
+          '--particle-drift-y': `${p.driftY}px`,
+          '--particle-fall-y': `${p.fallY}px`,
+        } as CSSProperties
+        return (
+          <div
+            key={`${mode}-${i}`}
+            className="absolute rounded-full shadow-[0_0_5px_rgba(30,64,175,0.22)]"
+            style={{ ...style, backgroundColor: particleColor }}
+          />
+        )
+      })
+    const renderSettledBedParticles = (bedHeightPct: number) =>
+      Array.from({ length: settledCount }).map((_, i) => {
+        const diameter = (2.4 + pseudo(i, 21) * 5.2) * scale * (size === 'full' ? 1 : 1.14)
+        const left = 0.5 + pseudo(i, 22) * 99
+        const bottom = pseudo(i, 23) ** 1.45 * Math.max(8, bedHeightPct - 1)
+        return (
+          <div
+            key={`bed-${i}`}
+            className="absolute rounded-full z-20"
+            style={{
+              width: `${diameter}px`,
+              height: `${diameter}px`,
+              left: `${left}%`,
+              bottom: `${bottom}%`,
+              backgroundColor: darkMode ? 'rgba(146, 64, 14, 0.95)' : 'rgba(146, 64, 14, 0.92)',
+              opacity: 0.55 + pseudo(i, 24) * 0.4,
+              boxShadow: '0 0 4px rgba(120, 53, 15, 0.24)',
+            }}
+          />
+        )
+      })
+    const renderFlowStreaks = (speed: 'slow' | 'medium' | 'fast' | 'vertical') => {
+      const count = size === 'full' ? 20 : isSmallSettlingPreview && speed === 'vertical' ? 16 : 12
+      return Array.from({ length: count }).map((_, i) => {
+        const horizontal = speed !== 'vertical'
+        const duration = (
+          speed === 'fast'
+            ? 5.8 + pseudo(i, 31) * 2.2
+            : speed === 'medium'
+              ? 4.6 + pseudo(i, 31) * 1.9
+              : speed === 'vertical'
+                ? 5.2 + pseudo(i, 31) * 2.1
+                : 7.2 + pseudo(i, 31) * 3.0
+        ) * speedScale
+        return (
+          <div
+            key={`streak-${speed}-${i}`}
+            className={`absolute rounded-full ${horizontal ? 'h-[2px] w-1/4' : 'h-1/3 w-[2px]'}`}
+            style={{
+              left: horizontal ? `${pseudo(i, 32) * 100}%` : `${8 + pseudo(i, 32) * 84}%`,
+              top: horizontal ? `${8 + pseudo(i, 33) * 84}%` : `${pseudo(i, 33) * 100}%`,
+              opacity: 0.15 + pseudo(i, 34) * 0.18,
+              backgroundColor: speed === 'vertical' ? 'rgba(180, 83, 9, 0.45)' : 'rgba(255, 255, 255, 0.65)',
+              animation: `${horizontal ? 'flow-horizontal' : 'flow-vertical'} ${duration}s linear infinite`,
+              animationDelay: `${-pseudo(i, 35) * duration}s`,
+            }}
+          />
+        )
+      })
+    }
 
     return (
       <div className="flex flex-col items-center w-full">
@@ -3922,187 +4120,62 @@ export default function MainContent({
                   className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-amber-700 via-amber-600 to-amber-500 z-10"
                   style={{ height: '30%', opacity: 0.7 }}
                 ></div>
-                {[...Array(particleCount)].map((_, i) => {
-                  const sizePx = (0.8 + (i % 3) * 0.4) * 3 * scale
-                  const seed1 = (i * 13 + 19) % 97
-                  const seed2 = (i * 23 + 29) % 89
-                  const seed3 = (i * 17 + 31) % 73
-                  const startLeft = 3 + ((seed1 * seed2) % 94)
-                  const heightSeed = (seed1 * seed2 * seed3) % 100
-                  let particleBottom: number
-                  if (heightSeed < 50) particleBottom = (heightSeed / 50) * 10
-                  else if (heightSeed < 80) particleBottom = 10 + ((heightSeed - 50) / 30) * 10
-                  else particleBottom = 20 + ((heightSeed - 80) / 20) * 10
-                  return (
-                    <div
-                      key={`settled-${i}`}
-                      className="absolute bg-amber-800 rounded-full z-20"
-                      style={{
-                        width: `${sizePx}px`,
-                        height: `${sizePx}px`,
-                        left: `${startLeft}%`,
-                        bottom: `${particleBottom}%`,
-                      }}
-                    ></div>
-                  )
-                })}
+                {renderSettledBedParticles(30)}
+                {renderMovingParticles('settle')}
               </>
             ) : animationType === 'settle-20' ? (
               <>
                 <div
                   className="absolute inset-0 bg-gradient-to-b from-orange-200 via-orange-300 to-orange-400"
                   style={{
-                    animation: 'flow-vertical 3s linear infinite',
+                    animation: `flow-vertical ${size === 'full' ? 8 : size === 'small' ? 8.1 : 6.2}s linear infinite`,
                     backgroundSize: '100% 200%',
                   }}
                 ></div>
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-amber-700 via-amber-600 to-amber-500" style={{ height: '20%' }}></div>
-                {[...Array(20)].map((_, i) => {
-                  const sizePx = (0.8 + (i % 4) * 0.3) * 3 * scale
-                  const seed1 = (i * 17 + 23 + Math.floor(i / 3) * 7) % 97
-                  const seed2 = (i * 31 + 41 + Math.floor(i / 5) * 11) % 89
-                  const seed3 = (i * 13 + 19) % 73
-                  const startLeft = 2 + ((seed1 * seed3) % 96)
-                  const startTop = 2 + ((seed2 * seed3) % 93)
-                  const animationDuration = 3.5
-                  return (
-                    <div
-                      key={i}
-                      className="absolute bg-blue-800 rounded-full"
-                      style={{
-                        width: `${sizePx}px`,
-                        height: `${sizePx}px`,
-                        left: `${startLeft}%`,
-                        top: `${startTop}%`,
-                        animation: `particle-settle-medium ${animationDuration}s ease-in-out infinite`,
-                        animationDelay: `${i * 0.05}s`,
-                      }}
-                    ></div>
-                  )
-                })}
+                {renderFlowStreaks('vertical')}
+                {renderSettledBedParticles(20)}
+                {renderMovingParticles('settle')}
               </>
             ) : animationType === 'settle-10-flow' ? (
               <>
                 <div
                   className="absolute inset-0 bg-gradient-to-b from-yellow-200 via-yellow-300 to-yellow-200"
                   style={{
-                    animation: 'flow-vertical 4s linear infinite',
+                    animation: `flow-vertical ${size === 'full' ? 8.8 : size === 'small' ? 7.4 : 6.8}s linear infinite`,
                     backgroundSize: '100% 200%',
                   }}
                 ></div>
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-amber-700 via-amber-600 to-amber-500" style={{ height: '10%' }}></div>
-                {[...Array(20)].map((_, i) => {
-                  const sizePx = (0.8 + (i % 4) * 0.3) * 3 * scale
-                  const seed1 = (i * 17 + 23 + Math.floor(i / 3) * 7) % 97
-                  const seed2 = (i * 31 + 41 + Math.floor(i / 5) * 11) % 89
-                  const seed3 = (i * 13 + 19) % 73
-                  const startLeft = 2 + ((seed1 * seed3) % 96)
-                  const startTop = 2 + ((seed2 * seed3) % 93)
-                  const animationDuration = 4
-                  return (
-                    <div
-                      key={i}
-                      className="absolute bg-blue-800 rounded-full"
-                      style={{
-                        width: `${sizePx}px`,
-                        height: `${sizePx}px`,
-                        left: `${startLeft}%`,
-                        top: `${startTop}%`,
-                        animation: `particle-settle-light ${animationDuration}s ease-in-out infinite`,
-                        animationDelay: `${i * 0.05}s`,
-                      }}
-                    ></div>
-                  )
-                })}
+                {renderFlowStreaks('vertical')}
+                {renderSettledBedParticles(10)}
+                {renderMovingParticles('settle')}
               </>
             ) : animationType === 'still-flow' ? (
               <>
                 <div className="absolute inset-0 bg-gradient-to-b from-blue-300 via-blue-400 to-blue-300"></div>
-                {[...Array(20)].map((_, i) => {
-                  const sizePx = (0.8 + (i % 4) * 0.3) * 3 * scale
-                  const seed1 = (i * 17 + 23 + Math.floor(i / 3) * 7) % 97
-                  const seed2 = (i * 31 + 41 + Math.floor(i / 5) * 11) % 89
-                  const seed3 = (i * 13 + 19) % 73
-                  const startLeft = 2 + ((seed1 * seed3) % 96)
-                  const startTop = 2 + ((seed2 * seed3) % 93)
-                  const animationDuration = 4 + (i % 5) * 0.4
-                  return (
-                    <div
-                      key={i}
-                      className="absolute bg-blue-800 rounded-full"
-                      style={{
-                        width: `${sizePx}px`,
-                        height: `${sizePx}px`,
-                        left: `${startLeft}%`,
-                        top: `${startTop}%`,
-                        animation: `particle-flow-still ${animationDuration}s ease-in-out infinite`,
-                        animationDelay: `${i * 0.2}s`,
-                      }}
-                    ></div>
-                  )
-                })}
+                {renderFlowStreaks('slow')}
+                {renderMovingParticles('critical')}
               </>
             ) : animationType === 'medium-flow' ? (
               <>
                 {/* 正常流动：液体整体由左向右流动 */}
                 <div
                   className="absolute inset-0 bg-gradient-to-r from-green-300 via-green-400 to-green-300"
-                  style={{ animation: 'flow-horizontal 2s linear infinite', backgroundSize: '200% 100%' }}
+                  style={{ animation: `flow-horizontal ${size === 'full' ? 7.2 : 5.4}s linear infinite`, backgroundSize: '200% 100%' }}
                 ></div>
-                {[...Array(20)].map((_, i) => {
-                  const sizePx = (0.8 + (i % 4) * 0.3) * 3 * scale
-                  const seed1 = (i * 17 + 23 + Math.floor(i / 3) * 7) % 97
-                  const seed2 = (i * 31 + 41 + Math.floor(i / 5) * 11) % 89
-                  const seed3 = (i * 13 + 19) % 73
-                  const startLeft = 2 + ((seed1 * seed3) % 96)
-                  const startTop = 2 + ((seed2 * seed3) % 93)
-                  const animationDuration = 2.5 + (i % 5) * 0.25
-                  return (
-                    <div
-                      key={i}
-                      className="absolute bg-blue-800 rounded-full"
-                      style={{
-                        width: `${sizePx}px`,
-                        height: `${sizePx}px`,
-                        left: `${startLeft}%`,
-                        top: `${startTop}%`,
-                        animation: `particle-flow-medium ${animationDuration}s ease-in-out infinite`,
-                        animationDelay: `${i * 0.15}s`,
-                      }}
-                    ></div>
-                  )
-                })}
+                {renderFlowStreaks('medium')}
+                {renderMovingParticles('flow')}
               </>
             ) : (
               <>
                 {/* 快速流动：液体更快由左向右流动 */}
                 <div
                   className="absolute inset-0 bg-gradient-to-r from-green-300 via-green-400 to-green-300"
-                  style={{ animation: 'flow-horizontal 1.5s linear infinite', backgroundSize: '200% 100%' }}
+                  style={{ animation: `flow-horizontal ${size === 'full' ? 9 : 6.8}s linear infinite`, backgroundSize: '200% 100%' }}
                 ></div>
-                {[...Array(20)].map((_, i) => {
-                  const sizePx = (0.8 + (i % 4) * 0.3) * 3 * scale
-                  const seed1 = (i * 17 + 23 + Math.floor(i / 3) * 7) % 97
-                  const seed2 = (i * 31 + 41 + Math.floor(i / 5) * 11) % 89
-                  const seed3 = (i * 13 + 19) % 73
-                  const startLeft = 2 + ((seed1 * seed3) % 96)
-                  const startTop = 2 + ((seed2 * seed3) % 93)
-                  const animationDuration = 2.0 + (i % 5) * 0.2
-                  return (
-                    <div
-                      key={i}
-                      className="absolute bg-blue-800 rounded-full"
-                      style={{
-                        width: `${sizePx}px`,
-                        height: `${sizePx}px`,
-                        left: `${startLeft}%`,
-                        top: `${startTop}%`,
-                        animation: `particle-flow-fast ${animationDuration}s ease-in-out infinite`,
-                        animationDelay: `${i * 0.12}s`,
-                      }}
-                    ></div>
-                  )
-                })}
+                {renderFlowStreaks('fast')}
+                {renderMovingParticles('flow')}
               </>
             )}
           </div>
@@ -4991,7 +5064,7 @@ export default function MainContent({
       const sectionTitleCls = `text-lg font-bold tracking-tight mb-3 ${darkMode ? 'text-white' : 'text-slate-900'}`
       const bodyCls = `text-sm leading-relaxed space-y-3 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`
       const capCls = `px-3 py-2 text-[11px] shrink-0 ${darkMode ? 'text-gray-400 bg-gray-800/60' : 'text-slate-600 bg-slate-50'}`
-      const researchKickerCls = `text-[11px] font-semibold uppercase tracking-[0.2em] mb-3 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
+      const researchKickerCls = `text-sm sm:text-base font-semibold tracking-[0.08em] mb-4 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
       /** 科研创新中心职能与导读；具体平台技术内容见下方各分块，避免与单中心介绍重复 */
       const researchIntroP1 =
         '科研创新中心负责统筹长沙有色院科技创新与成果转化，对接主业设计咨询、工程总承包与生产运营中的技术需求，在采矿、选矿、冶炼、环保与节能降碳等领域组织课题攻关、标准与知识产权布局。中心与国家企业技术中心、博士后科研工作站及院研发中心、大师工作室、试验基地等协同联动，完善项目策划、过程管理与产学研用衔接，推动科研与工程实践相互支撑。'
@@ -5001,14 +5074,7 @@ export default function MainContent({
       return (
         <div ref={scrollContainerRef} className={mainScrollClassName}>
           <div className={contentWrapperClassName}>
-            <div className="mb-5">
-              <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
-              </h1>
-              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
-              </p>
-            </div>
+            {renderAppHeader()}
 
             <div className={`${mainPanelCardClassName} mb-10`}>
               <p className={researchKickerCls}>
@@ -5027,7 +5093,7 @@ export default function MainContent({
                     Detailed platform descriptions are currently provided in Chinese. Key English headings are shown to keep navigation and context clear.
                   </p>
                 )}
-                <p>{researchIntroP1}</p>
+                <p className="font-medium">{researchIntroP1}</p>
                 <p>{researchIntroP2}</p>
               </div>
             </div>
@@ -5152,7 +5218,7 @@ export default function MainContent({
     // 长沙有色冶金设计研究院公司介绍（首段 Hero + 数据条 + pic1 双段文案 + pic3 分界 + 紧凑联系信息）
     if (aboutDepartment === 'cinf') {
       const sectionTitleCls = `text-lg font-bold tracking-tight mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`
-      const sectionKickerCls = `text-[11px] font-semibold uppercase tracking-[0.2em] mb-3 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
+      const sectionKickerCls = `text-sm sm:text-base font-semibold tracking-[0.08em] mb-4 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
       const panelCls = `rounded-2xl border overflow-hidden shadow-sm ${darkMode ? 'border-gray-600 bg-gray-700/40' : 'border-slate-200 bg-white'}`
       const capCls = `px-3 py-2 text-[11px] shrink-0 ${darkMode ? 'text-gray-400 bg-gray-800/60' : 'text-slate-600 bg-slate-50'}`
       const dividerCls = darkMode ? 'border-gray-600' : 'border-slate-200'
@@ -5173,14 +5239,7 @@ export default function MainContent({
       return (
         <div ref={scrollContainerRef} className={mainScrollClassName}>
           <div className={contentWrapperClassName}>
-            <div className="mb-5">
-              <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
-              </h1>
-              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
-              </p>
-            </div>
+            {renderAppHeader()}
 
             {/* Hero：渐变主视觉，左文右图（建筑效果图）*/}
             <div className={`mb-10 rounded-2xl border px-5 py-7 sm:px-10 sm:py-9 ${
@@ -5209,7 +5268,7 @@ export default function MainContent({
                   <div
                     className={`mt-4 leading-relaxed text-[15px] sm:text-base ${darkMode ? 'text-gray-200' : 'text-slate-800'}`}
                   >
-                    <p>
+                    <p className="font-medium">
                       {language === 'en' && (
                         <span className="mb-3 block">
                           Detailed corporate materials are currently shown in Chinese. This section introduces the institute's history, capabilities, innovation platforms, contact channels, and representative credentials.
@@ -5450,7 +5509,7 @@ export default function MainContent({
         </button>
       )
       const sectionTitleCls = `text-lg font-bold tracking-tight mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`
-      const sectionKickerCls = `text-[11px] font-semibold uppercase tracking-[0.2em] mb-3 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
+      const sectionKickerCls = `text-sm sm:text-base font-semibold tracking-[0.08em] mb-4 ${darkMode ? 'text-blue-400' : 'text-blue-700'}`
       const bodyCls = `text-sm leading-relaxed space-y-3 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`
       const panelCls = `rounded-2xl border overflow-hidden shadow-sm ${darkMode ? 'border-gray-600 bg-gray-700/40' : 'border-slate-200 bg-white'}`
       const handbookSpecs: MunicipalHandbookSpec[] = [
@@ -5470,14 +5529,7 @@ export default function MainContent({
           />
           <div ref={scrollContainerRef} className={mainScrollClassName}>
             <div className={contentWrapperClassName}>
-              <div className="mb-5">
-                <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                  {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
-                </h1>
-                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
-                </p>
-              </div>
+              {renderAppHeader()}
 
               {/* 顶栏 kicker → 下一行左：标题 + 标题下正文；右：手册轮播与标题顶对齐、整体靠右 */}
               <div
@@ -5551,7 +5603,7 @@ export default function MainContent({
                       <div className={`font-semibold mb-1 ${darkMode ? 'text-gray-100' : 'text-slate-900'}`}>
                         中金岭南凡口铅锌矿选矿厂前回水净化系统
                       </div>
-                      <p>
+                    <p className="font-medium">
                         全国首个大规模生物法处理选矿废水示范，设计规模{' '}
                         <InlineMath math="Q=30000\ \mathrm{m^3/d}" />
                         。工艺路线含 <InlineMath math="\mathrm{CO_2}" /> 调节{' '}
@@ -5747,19 +5799,7 @@ export default function MainContent({
     return (
       <div ref={scrollContainerRef} className={mainScrollClassName}>
         <div className={contentWrapperClassName}>
-          {/* Header */}
-          <div className="mb-5">
-            <h1 className={`text-2xl font-bold mb-2 ${
-              darkMode ? 'text-gray-100' : 'text-gray-900'
-            }`}>
-              {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
-            </h1>
-            <p className={`text-xs ${
-              darkMode ? 'text-gray-400' : 'text-gray-500'
-            }`}>
-              {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
-            </p>
-          </div>
+          {renderAppHeader()}
 
           {/* Frame - 了解我们 */}
           <div className={mainPanelCardClassName}>
@@ -7554,18 +7594,7 @@ export default function MainContent({
       )}
       <div className={contentWrapperClassName}>
         {/* Header：大标题下副标题与全站一致，不随视图切换改写 */}
-        <div className="mb-5">
-          <h1 className={`text-2xl font-bold tracking-wide mb-2 ${
-            darkMode ? 'text-gray-100' : 'text-gray-900'
-          }`}>
-            {language === 'en' ? APP_NAME_EN : APP_NAME_ZH}
-          </h1>
-          <p className={`text-xs ${
-            darkMode ? 'text-gray-400' : 'text-gray-500'
-          }`}>
-            {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
-          </p>
-        </div>
+        {renderAppHeader()}
 
         {/* Formula Section with Input Parameters */}
         <div className={mainPanelCardClassName}>
