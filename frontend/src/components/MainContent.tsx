@@ -3769,10 +3769,10 @@ export default function MainContent({
       (window as any).electronAPI.update.getAppVersion().then((version: string) => {
         setCurrentVersion(version)
       }).catch(() => {
-        setCurrentVersion('1.0.2')
+        setCurrentVersion('1.0.3')
       })
     } else {
-      setCurrentVersion('1.0.2')
+      setCurrentVersion('1.0.3')
     }
   }, [])
 

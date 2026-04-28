@@ -1,6 +1,6 @@
 {
   "name": "flow-calculation-tool",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "基于行业标准与设计规范，面向浆体管道水力校核、输送压力及消能等多类计算的专业工具。",
   "main": "electron/main.js",
   "scripts": {

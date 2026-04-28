@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { APP_NAME_EN, APP_NAME_ZH, APP_TAGLINE_MAIN_EN, APP_TAGLINE_ZH } from '../constants/appCopy'
 
+/** 与侧栏一致：frontend 构建后位于站点根目录 */
+const APP_LOGO_SRC = './icon.png'
+
 type LicenseApi = {
   getStatus: () => Promise<{
     ok: boolean
@@ -12,23 +15,10 @@ type LicenseApi = {
 
 const copy = {
   zh: {
-    pageKicker: APP_NAME_ZH,
-    zoneIntroTitle: '产品介绍与授权联络',
-    zoneIntroAuth:
-      '使用本软件需取得与本机绑定的使用许可。请将下方「产品激活」中的设备标识发给授权方申请密钥；取得许可密钥后在同一区域粘贴并完成激活。',
-    contactTitle: '授权方与联络方式',
-    orgName: '长沙有色冶金设计研究院有限公司',
-    orgBlurb:
-      '（简称长沙有色院）创建于1953年，为国家高新技术企业、国家技术创新示范企业、国家企业技术中心；隶属中国铝业集团有限公司。许可相关事宜请通过下列邮箱或「联系开发者」洽询。',
-    addrLabel: '地址',
-    addrLine: '湖南省长沙市雨花区木莲东路299号　邮编 410019',
-    mailGeneral: '综合邮箱',
-    mailMarket: '生产运营中心',
-    mailIntl: '海外业务中心',
-    contactDeveloper: '联系开发者（反馈与本软件授权咨询）',
+    badge: '许可激活',
     zoneActivationTitle: '产品激活',
     activationHint:
-      '复制「设备标识」发送至授权方以获取许可密钥；密钥与当前设备绑定。密钥以 CINF-LIC1 开头，请整段一行粘贴。若从通讯工具复制发生断行，可先粘贴至记事本合并为一行后再粘贴到此处。',
+      '复制「设备标识」发送至授权方以获取许可密钥；密钥与当前设备绑定。密钥以 CINF-LIC1 开头，请整段一行粘贴。',
     deviceLabel: '设备标识',
     copy: '复制',
     copied: '已复制',
@@ -36,24 +26,20 @@ const copy = {
     placeholder: '许可密钥以 CINF-LIC1 开头，整段粘贴即可。',
     activate: '激活',
     activating: '正在激活…',
-    success: '激活成功',
     needElectron: '请在已安装的桌面版中完成激活。浏览器访问无法完成此步骤。',
+    zoneContactTitle: '授权方联络方式',
+    orgName: '长沙有色冶金设计研究院有限公司',
+    orgBlurb:
+      '创建于1953年，隶属中国铝业集团有限公司；为国家高新技术企业、国家技术创新示范企业、国家企业技术中心，建有3个国家级与7个省级科技创新平台。900余名在册职工（专业技术人员800余人），获国家与省部级奖项1300余项、有效专利500余件，业务遍及海内外——依托国家级企业技术中心与长效科研积淀，具备专业工程软件的自主研发与持续迭代能力。',
+    contactRouting:
+      '如需获取本软件使用授权，或咨询软件使用相关问题，请邮件联系下方「开发者」；如有公司业务洽谈、合作与其它综合联络需求，请邮件联系「综合邮箱」。',
+    mailCompanyLabel: '综合邮箱',
+    mailCompanyHint: '公司业务与综合联络',
+    mailDevLabel: '开发者',
+    mailDevHint: '本软件授权及其它相关咨询',
   },
   en: {
-    pageKicker: APP_NAME_EN,
-    zoneIntroTitle: 'Overview & licensing contacts',
-    zoneIntroAuth:
-      'A device-bound license is required. Copy the device ID from the section below and request a key from your provider; paste the license key there to activate.',
-    contactTitle: 'Licensor & contact',
-    orgName: 'Changsha Engineering & Research Institute of Nonferrous Metals Co., Ltd.',
-    orgBlurb:
-      'A national high-tech enterprise and enterprise technology center under Aluminum Corporation of China. For licensing, use the emails below or contact the developer.',
-    addrLabel: 'Address',
-    addrLine: 'No.299 Mulian East Rd., Yuhua District, Changsha, Hunan, China · 410019',
-    mailGeneral: 'General',
-    mailMarket: 'Operations / Market',
-    mailIntl: 'International',
-    contactDeveloper: 'Contact developer (feedback & licensing)',
+    badge: 'License',
     zoneActivationTitle: 'Activation',
     activationHint:
       'Send your device ID to obtain a license key tied to this machine. Paste one full line starting with CINF-LIC1.',
@@ -64,9 +50,45 @@ const copy = {
     placeholder: 'CINF-LIC1.…',
     activate: 'Activate',
     activating: 'Activating…',
-    success: 'Activated',
     needElectron: 'Use the installed desktop app to complete activation.',
+    zoneContactTitle: 'Licensor contact',
+    orgName: 'Changsha Engineering & Research Institute of Nonferrous Metals Co., Ltd.',
+    orgBlurb:
+      'Founded in 1953 under Aluminum Corporation of China; national high-tech enterprise, national technological innovation demonstration enterprise, and national enterprise technology center, with 3 national and 7 provincial S&T innovation platforms. 900+ employees (800+ technical professionals), 1,300+ national/provincial/ministerial awards, 500+ patents, projects worldwide—the enterprise technology center and sustained R&D underpin credible in-house development of professional engineering software.',
+    contactRouting:
+      'For license activation or limited day-to-day questions about this software, email the developer below. For corporate business, partnerships and general enquiries, use the general mailbox.',
+    mailCompanyLabel: 'General email',
+    mailCompanyHint: 'Corporate & general enquiries',
+    mailDevLabel: 'Developer',
+    mailDevHint: 'License activation & limited software support',
   },
+}
+
+function IconShieldCheck(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={props.className} aria-hidden>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m9 12 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconBuilding(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={props.className} aria-hidden>
+      <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 12h4m4 0h4M9 6v2m6-2v2m-6 4v2m6-2v2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function IconMail(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={props.className} aria-hidden>
+      <path d="m22 6-10 7L2 6" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="2" y="4" width="20" height="16" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
 }
 
 export default function LicenseActivation({
@@ -82,11 +104,10 @@ export default function LicenseActivation({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [appVersion, setAppVersion] = useState<string>('')
+  const [logoOk, setLogoOk] = useState(true)
 
-  const mailSubjectDev = encodeURIComponent(`【${APP_NAME_ZH}】软件建议与反馈`)
-  const mailBodyDev = encodeURIComponent(
-    `软件名称：${APP_NAME_ZH}\n\n建议/反馈类型：□ 功能建议  □ 问题反馈  □ 授权咨询  □ 其他\n\n内容说明：\n\n\n\n`
-  )
+  const bodyCls = 'text-[14px] leading-relaxed text-slate-600'
 
   useEffect(() => {
     const api = (typeof window !== 'undefined' && (window as any).electronAPI?.license) as LicenseApi | undefined
@@ -94,6 +115,12 @@ export default function LicenseActivation({
     api.getStatus().then((s) => {
       if (s.machineId) setMachineId(s.machineId)
     })
+  }, [])
+
+  useEffect(() => {
+    const v = (window as { electronAPI?: { update?: { getAppVersion?: () => Promise<string> } } }).electronAPI?.update?.getAppVersion
+    if (!v) return
+    void v().then(setAppVersion).catch(() => {})
   }, [])
 
   const copyId = () => {
@@ -126,109 +153,164 @@ export default function LicenseActivation({
     }
   }
 
-  const mailDevHref = `mailto:xuqianglai@outlook.com?subject=${mailSubjectDev}&body=${mailBodyDev}`
+  const appName = language === 'zh' ? APP_NAME_ZH : APP_NAME_EN
+  const tagline = language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH
+
+  const mailCardCls =
+    'rounded-lg border border-slate-200/90 bg-white px-3.5 py-3 shadow-sm transition-shadow hover:border-blue-200/70 hover:shadow'
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-slate-50 to-white p-6">
-      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-        <div className="px-8 pt-8 pb-2 border-b border-slate-100 bg-white">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t.pageKicker}</p>
-          <p className="text-sm text-slate-500 mt-1">
-            {language === 'en' ? APP_TAGLINE_MAIN_EN : APP_TAGLINE_ZH}
+    <div className="relative isolate box-border min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-[radial-gradient(ellipse_100%_70%_at_50%_-15%,rgba(59,130,246,0.1),transparent)]">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent,rgba(248,250,252,0.9))]" />
+
+      {/* 视口内水平 + 垂直居中；卡片加宽至大屏接近满宽 */}
+      <div className="relative flex min-h-[100dvh] w-full flex-col items-center justify-center px-3 py-8 sm:px-6 sm:py-12">
+        <div className="w-full max-w-[min(92rem,calc(100vw-1.5rem))]">
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xl ring-1 ring-slate-900/[0.06]">
+          {/* 顶栏：软件 Logo + 标题（单行高度尽量紧凑） */}
+          <div className="relative shrink-0 overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-5 py-5 text-white sm:px-8 sm:py-6">
+            <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-blue-500/20 blur-2xl" />
+            <div className="relative flex items-start gap-3 sm:gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/10 ring-1 ring-white/25 sm:h-14 sm:w-14">
+                {logoOk ? (
+                  <img
+                    src={APP_LOGO_SRC}
+                    alt=""
+                    className="h-full w-full object-contain p-1"
+                    onError={() => setLogoOk(false)}
+                  />
+                ) : (
+                  <span className="text-xs font-black tracking-tight text-white">CINF</span>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-blue-100 ring-1 ring-white/20">
+                    {t.badge}
+                  </span>
+                  {appVersion ? (
+                    <span className="text-[11px] tabular-nums text-slate-400">v{appVersion}</span>
+                  ) : null}
+                </div>
+                <h1 className="mt-1 text-xl font-bold leading-tight tracking-tight sm:text-2xl">{appName}</h1>
+                <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-blue-100/95 sm:text-[15px]">{tagline}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* 主体：宽屏双栏并列，减少纵向堆叠 */}
+          <div className="grid min-h-[340px] grid-cols-1 lg:min-h-[380px] lg:grid-cols-2 lg:divide-x lg:divide-slate-100">
+            {/* 产品激活 */}
+            <section className="flex flex-col border-b border-slate-100 p-5 sm:p-7 lg:border-b-0 lg:p-10">
+              <div className="mb-4 flex shrink-0 items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                  <IconShieldCheck className="h-4 w-4" />
+                </span>
+                <h2 className="text-[18px] font-semibold tracking-tight text-slate-900">{t.zoneActivationTitle}</h2>
+              </div>
+              <p className={`mb-5 shrink-0 text-[13px] sm:text-[14px] ${bodyCls}`}>{t.activationHint}</p>
+
+              <div className="mt-auto space-y-4 rounded-lg border border-slate-100 bg-slate-50/90 p-5 ring-1 ring-slate-900/[0.03]">
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{t.deviceLabel}</div>
+                  <div className="flex gap-2">
+                    <div className="flex min-h-[2.25rem] min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden rounded-md border border-slate-200 bg-white px-2.5 py-2 font-mono text-xs text-slate-800 shadow-sm">
+                      <span className="whitespace-nowrap">{machineId || '—'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={copyId}
+                      disabled={!machineId}
+                      className="shrink-0 rounded-md border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {copied ? t.copied : t.copy}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{t.licenseLabel}</div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder={t.placeholder}
+                      spellCheck={false}
+                      autoComplete="off"
+                      className="min-h-[2.25rem] min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/25"
+                    />
+                    <button
+                      type="button"
+                      onClick={activate}
+                      disabled={busy || !input.trim()}
+                      className="inline-flex min-h-[2.25rem] shrink-0 items-center justify-center rounded-md bg-gradient-to-b from-blue-600 to-blue-700 px-5 text-sm font-semibold text-white shadow-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 sm:min-w-[6.5rem]"
+                    >
+                      {busy ? t.activating : t.activate}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {error ? (
+                <div className="mt-3 shrink-0 rounded-md border border-red-200 bg-red-50/95 px-3 py-2.5 text-sm text-red-700">{error}</div>
+              ) : null}
+            </section>
+
+            {/* 授权方 */}
+            <section className="flex flex-col bg-gradient-to-b from-slate-50/95 to-slate-50 p-5 sm:p-7 lg:p-10">
+              <div className="mb-4 flex shrink-0 items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                  <IconBuilding className="h-4 w-4" />
+                </span>
+                <h2 className="text-[18px] font-semibold tracking-tight text-slate-900">{t.zoneContactTitle}</h2>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border-l-[3px] border-blue-600 bg-white py-3.5 pl-4 pr-3.5 shadow-sm ring-1 ring-slate-900/[0.04]">
+                  <p className="text-[15px] font-semibold leading-snug text-slate-900">{t.orgName}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-slate-600">{t.orgBlurb}</p>
+                </div>
+
+                <p className={`text-[13px] leading-relaxed ${bodyCls}`}>{t.contactRouting}</p>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className={mailCardCls}>
+                    <div className="mb-0.5 flex items-center gap-1.5 text-slate-800">
+                      <IconMail className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                      <span className="text-sm font-semibold">{t.mailDevLabel}</span>
+                    </div>
+                    <p className="mb-1.5 text-xs leading-relaxed text-slate-500">{t.mailDevHint}</p>
+                    <a
+                      href="mailto:xuqianglai@outlook.com"
+                      className="break-all text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                    >
+                      xuqianglai@outlook.com
+                    </a>
+                  </div>
+                  <div className={mailCardCls}>
+                    <div className="mb-0.5 flex items-center gap-1.5 text-slate-800">
+                      <IconMail className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                      <span className="text-sm font-semibold">{t.mailCompanyLabel}</span>
+                    </div>
+                    <p className="mb-1.5 text-xs leading-relaxed text-slate-500">{t.mailCompanyHint}</p>
+                    <a
+                      href="mailto:cinf@chinalco.com.cn"
+                      className="break-all text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                    >
+                      cinf@chinalco.com.cn
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <p className="shrink-0 border-t border-slate-100 bg-white px-4 py-2.5 text-center text-xs text-slate-500 sm:text-sm">
+            长沙有色冶金设计研究院有限公司
           </p>
+          </div>
         </div>
-
-        {/* 专区一：产品介绍与联络 */}
-        <section className="px-8 py-6 bg-slate-50/90 border-b border-slate-100">
-          <h2 className="text-base font-semibold text-slate-900 mb-3">{t.zoneIntroTitle}</h2>
-          <p className="text-sm text-slate-600 leading-relaxed mb-5">{t.zoneIntroAuth}</p>
-
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">{t.contactTitle}</h3>
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm shadow-sm">
-            <div className="font-semibold text-slate-900">{t.orgName}</div>
-            <p className="text-slate-600 text-xs leading-relaxed mt-1.5">{t.orgBlurb}</p>
-            <div className="mt-4 grid gap-3 text-xs sm:text-sm">
-              <div>
-                <span className="text-slate-500">{t.addrLabel}：</span>
-                <span className="text-slate-700">{t.addrLine}</span>
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-2">
-                <span className="text-slate-500 shrink-0">{t.mailGeneral}</span>
-                <a href="mailto:cinf@chinalco.com.cn" className="text-blue-600 hover:text-blue-700 break-all">
-                  cinf@chinalco.com.cn
-                </a>
-              </div>
-              {language === 'zh' && (
-                <>
-                  <div className="flex flex-wrap gap-x-4 gap-y-2 items-baseline">
-                    <span className="text-slate-500 shrink-0">{t.mailMarket}</span>
-                    <a href="mailto:cinf_scjy@chinalco.com.cn" className="text-blue-600 hover:text-blue-700 break-all">
-                      cinf_scjy@chinalco.com.cn
-                    </a>
-                  </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-2 items-baseline">
-                    <span className="text-slate-500 shrink-0">{t.mailIntl}</span>
-                    <a href="mailto:cinf_intl@chinalco.com.cn" className="text-blue-600 hover:text-blue-700 break-all">
-                      cinf_intl@chinalco.com.cn
-                    </a>
-                  </div>
-                </>
-              )}
-              <div className="pt-2 border-t border-slate-100 mt-1">
-                <a href={mailDevHref} className="text-blue-600 hover:text-blue-700 font-medium">
-                  {t.contactDeveloper}
-                </a>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 专区二：产品激活（文案与设置页「产品许可」区块对齐） */}
-        <section className="px-8 py-7">
-          <h2 className="text-lg font-bold text-slate-900 mb-2">{t.zoneActivationTitle}</h2>
-          <p className="text-xs text-slate-500 leading-relaxed mb-5">{t.activationHint}</p>
-
-          <div className="mb-4">
-            <div className="text-sm font-medium text-slate-700 mb-2">{t.deviceLabel}</div>
-            <div className="flex gap-2 items-stretch">
-              <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs break-all text-slate-800 min-h-[2.5rem]">
-                {machineId || '—'}
-              </div>
-              <button
-                type="button"
-                onClick={copyId}
-                disabled={!machineId}
-                className="shrink-0 px-3 py-2 rounded-lg bg-slate-100 text-slate-800 text-sm font-medium hover:bg-slate-200 disabled:opacity-50"
-              >
-                {copied ? t.copied : t.copy}
-              </button>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <div className="text-sm font-medium text-slate-700 mb-2">{t.licenseLabel}</div>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={t.placeholder}
-              rows={4}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </div>
-
-          {error && <div className="mb-3 text-sm text-red-600 whitespace-pre-line">{error}</div>}
-
-          <button
-            type="button"
-            onClick={activate}
-            disabled={busy || !input.trim()}
-            className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
-          >
-            {busy ? t.activating : t.activate}
-          </button>
-        </section>
       </div>
     </div>
   )

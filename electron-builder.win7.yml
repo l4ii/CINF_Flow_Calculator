@@ -50,7 +50,8 @@ nsis:
   displayLanguageSelector: false
   include: electron/build/installer.nsh
   warningsAsErrors: false
-  runAfterFinish: false
+  # 完成页「运行应用」复选框（默认可取消勾选）；false 则隐藏该选项
+  runAfterFinish: true
   allowElevation: false
   perMachine: false
   selectPerMachineByDefault: false
