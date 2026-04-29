@@ -99,7 +99,7 @@ def get_formulas():
                     {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
                     {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
                     {"name": "omega", "label": "$\\omega$：似均质中加权平均沉速，单位为 m/s", "unit": "m/s", "description": "似均质中加权平均沉速", },
-                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，请以小数填写；点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
+                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，可手动输入；或点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
                     {"name": "omega_s", "label": "$\\omega_s$：水中甲醛平均沉速，单位为 m/s", "unit": "m/s", "description": "水中甲醛平均沉速", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "coefficient_9_5", "label": "经验系数：默认值 9.5（无量纲）", "unit": "", "description": "经验系数", "default": 9.5}
@@ -114,7 +114,7 @@ def get_formulas():
                     {"name": "D", "label": "$D$：管道内径，单位为 m", "unit": "m", "description": "管道内径", },
                     {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
                     {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
-                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，请以小数填写；点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
+                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，可手动输入；或点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
                     {"name": "d85", "label": "$d_{85}$：特征粒径，单位为 m", "unit": "m", "description": "d85特征粒径", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "coefficient_3_113", "label": "经验系数：默认值 3.113（无量纲）", "unit": "", "description": "经验系数", "default": 3.113}
@@ -129,9 +129,9 @@ def get_formulas():
                     {"name": "D", "label": "$D$：管道内径，单位为 m", "unit": "m", "description": "管道内径", },
                     {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
                     {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
-                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，请以小数填写；点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
+                    {"name": "Cv", "label": "$C_V$：体积浓度（0～1，可手动输入；或点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
                     {"name": "d90", "label": "$d_{90}$：特征粒径，单位为 m", "unit": "m", "description": "d90特征粒径", },
-                    {"name": "lambda_coef", "label": "$\\lambda$：达西摩阻系数，无量纲", "unit": "", "description": "摩擦阻力系数", },
+                    {"name": "lambda_coef", "label": "$\\lambda$：达西摩阻系数（无量纲，可手动输入；或点此栏展开「达西摩阻系数辅助计算」）", "unit": "", "description": "摩擦阻力系数", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "coefficient_2_26", "label": "经验系数：默认值 2.26（无量纲）", "unit": "", "description": "经验系数", "default": 2.26}
                 ]

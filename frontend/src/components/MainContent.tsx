@@ -504,48 +504,78 @@ function darcyLambdaFromRePreview(Re_B: number, epsilon: number, D_n: number): n
   return 1.33036 / Math.log(inner) ** 2
 }
 
-/** 费祥俊 λ 辅助：即时算出 ρ₁、Re_B、λ（与后端分步公式一致，无需请求接口） */
+/** 费祥俊 λ 辅助：分步即时算出 ρ₁、Re_B、λ；各行在满足各自依赖时即可显示（无需一次性填完全部费祥俊参数栏） */
 function computeFeiDarcyAssistPreview(args: {
   D: number | undefined
   rho_g: number | undefined
+  rho_k: number | undefined
   Cv: number | undefined
   feiLambdaAuxV: string
   feiLambdaAuxEta1: string
-  feiLambdaAuxRhoS: string
   feiLambdaAuxEpsilonPreset: SlurryEpsilonPresetKey
   feiLambdaAuxEpsilonCustom: string
-}): { rho_1: number; Re_B: number; lambda: number } | null {
+}): { rho_1: number | null; Re_B: number | null; lambda: number | null } {
   const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
   const V = parseFloat(norm(args.feiLambdaAuxV))
   const eta1 = parseFloat(norm(args.feiLambdaAuxEta1))
-  const rho_s = parseFloat(norm(args.feiLambdaAuxRhoS))
   const epsRaw =
     args.feiLambdaAuxEpsilonPreset === 'custom'
       ? parseFloat(norm(args.feiLambdaAuxEpsilonCustom))
       : SLURRY_EPSILON_PRESET_VALUES[args.feiLambdaAuxEpsilonPreset]
   const eps = Number.isFinite(epsRaw) && epsRaw > 0 ? epsRaw : DEFAULT_SLURRY_EPSILON
 
-  const D = args.D
-  const rho_g = args.rho_g
-  const Cv = args.Cv
-  if (D == null || isNaN(D) || D <= 0) return null
-  if (rho_g == null || isNaN(rho_g) || Cv == null || isNaN(Cv) || Cv < 0 || Cv > 1) return null
-  if (!Number.isFinite(V) || V <= 0 || !Number.isFinite(eta1) || eta1 <= 0 || !Number.isFinite(rho_s) || rho_s <= 0)
-    return null
-
-  const rho_1 = rho_g * Cv + (1 - Cv) * rho_s
-  const Re_B = (V * D * 1000 * rho_1) / eta1
-  if (!Number.isFinite(Re_B) || Re_B <= 0) return null
-
-  const lam = darcyLambdaFromRePreview(Re_B, eps, D)
-  if (!Number.isFinite(lam) || lam <= 0) return null
-
   const r6 = (x: number) => Math.round(x * 1e6) / 1e6
-  return {
-    rho_1: r6(rho_1),
-    Re_B: r6(Re_B),
-    lambda: r6(lam),
+
+  let rho_1: number | null = null
+  const rho_g = args.rho_g
+  const rho_k = args.rho_k
+  const Cv = args.Cv
+  if (
+    rho_g != null &&
+    !isNaN(rho_g) &&
+    rho_k != null &&
+    !isNaN(rho_k) &&
+    rho_k > 0 &&
+    Cv != null &&
+    !isNaN(Cv) &&
+    Cv >= 0 &&
+    Cv <= 1
+  ) {
+    // 辅助面板不再要求手填 ρs：直接用主参数区的 ρg、ρk、Cv 计算混合物密度
+    // 由 ρk = ρg*Cv + (1-Cv)*ρs 得 ρs，再回代求 ρ1（数值上与 ρk 一致）
+    const denom = 1 - Cv
+    const rho_s_derived = Math.abs(denom) > 1e-12 ? (rho_k - rho_g * Cv) / denom : NaN
+    if (Number.isFinite(rho_s_derived) && rho_s_derived > 0) {
+      rho_1 = r6(rho_g * Cv + (1 - Cv) * rho_s_derived)
+    } else if (Cv === 1) {
+      // 极限情形 Cv=1 时混合物全为固相，直接取主参数中的浆体密度
+      rho_1 = r6(rho_k)
+    }
   }
+
+  let Re_B: number | null = null
+  const D = args.D
+  if (
+    rho_1 != null &&
+    D != null &&
+    !isNaN(D) &&
+    D > 0 &&
+    Number.isFinite(V) &&
+    V > 0 &&
+    Number.isFinite(eta1) &&
+    eta1 > 0
+  ) {
+    const re = (V * D * 1000 * rho_1) / eta1
+    if (Number.isFinite(re) && re > 0) Re_B = r6(re)
+  }
+
+  let lambda: number | null = null
+  if (Re_B != null && D != null && !isNaN(D) && D > 0) {
+    const lam = darcyLambdaFromRePreview(Re_B, eps, D)
+    if (Number.isFinite(lam) && lam > 0) lambda = r6(lam)
+  }
+
+  return { rho_1, Re_B, lambda }
 }
 
 /** 清水 $C_h$ 下拉：选项内使用 KaTeX（单位与全站一致：在输入控件外右侧 `text-sm` 展示） */
@@ -644,7 +674,8 @@ function SlurryEpsilonPresetMenu({
 
   const current = SLURRY_EPSILON_MENU_ROWS.find((r) => r.key === presetKey) ?? SLURRY_EPSILON_MENU_ROWS[0]
   const padY = compact ? 'py-2' : 'py-2.5'
-  const proseSize = compact ? 'text-xs' : 'text-sm'
+  const proseSize = compact ? 'text-[13px]' : 'text-sm'
+  const mathSize = compact ? 'text-[13px]' : 'text-sm'
   const btnCls = `w-full text-left px-3 ${padY} border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between gap-2 ${
     darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
   }`
@@ -671,7 +702,9 @@ function SlurryEpsilonPresetMenu({
       >
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className={`${proseSize} ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{current.prose}，</span>
-          <InlineMath math={current.math} />
+          <span className={mathSize}>
+            <InlineMath math={current.math} />
+          </span>
         </span>
         <span className="shrink-0 text-xs opacity-70" aria-hidden>
           {open ? '▲' : '▼'}
@@ -683,7 +716,9 @@ function SlurryEpsilonPresetMenu({
             <li key={row.key} role="option" aria-selected={row.key === presetKey}>
               <button type="button" className={itemCls} onClick={() => { onPick(row.key); setOpen(false) }}>
                 <span className={`${proseSize} ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{row.prose}，</span>
-                <InlineMath math={row.math} />
+                <span className={mathSize}>
+                  <InlineMath math={row.math} />
+                </span>
               </button>
             </li>
           ))}
@@ -1013,14 +1048,11 @@ function FeiDarcyLambdaAssistField({
   onInputBlur,
   placeholder,
   unit,
-  pipeInnerDiameterM,
   assistPreview,
   feiLambdaAuxV,
   setFeiLambdaAuxV,
   feiLambdaAuxEta1,
   setFeiLambdaAuxEta1,
-  feiLambdaAuxRhoS,
-  setFeiLambdaAuxRhoS,
   feiLambdaAuxEpsilonPreset,
   setFeiLambdaAuxEpsilonPreset,
   feiLambdaAuxEpsilonCustom,
@@ -1035,15 +1067,12 @@ function FeiDarcyLambdaAssistField({
   onInputBlur: () => void
   placeholder: string
   unit: ReactNode
-  pipeInnerDiameterM: number | undefined
-  /** 由当前参数即时计算的 ρ₁、Re_B、λ（与后端一致）；不完整时为 null */
-  assistPreview: { rho_1: number; Re_B: number; lambda: number } | null
+  /** 由当前参数分步计算的 ρ₁、Re_B、λ（各行满足依赖即显示；与后端一致） */
+  assistPreview: { rho_1: number | null; Re_B: number | null; lambda: number | null } | null
   feiLambdaAuxV: string
   setFeiLambdaAuxV: (v: string) => void
   feiLambdaAuxEta1: string
   setFeiLambdaAuxEta1: (v: string) => void
-  feiLambdaAuxRhoS: string
-  setFeiLambdaAuxRhoS: (v: string) => void
   feiLambdaAuxEpsilonPreset: SlurryEpsilonPresetKey
   setFeiLambdaAuxEpsilonPreset: (k: SlurryEpsilonPresetKey) => void
   feiLambdaAuxEpsilonCustom: string
@@ -1097,15 +1126,10 @@ function FeiDarcyLambdaAssistField({
     return t || '0'
   }
 
-  const dDisplay =
-    pipeInnerDiameterM != null && Number.isFinite(pipeInnerDiameterM) && pipeInnerDiameterM > 0
-      ? (() => {
-          const t = Math.round(pipeInnerDiameterM * 1e9) / 1e9
-          let s = t.toString()
-          if (s.includes('.')) s = s.replace(/\.?0+$/, '')
-          return s || '0'
-        })()
-      : null
+  const fmtCell = (n: number | null) => (n != null && Number.isFinite(n) ? fmtFeiAssistNumber(n) : '—')
+
+  const preview = assistPreview
+  const hasLambda = preview != null && preview.lambda != null
 
   return (
     <div className="relative min-w-0 flex-1 overflow-visible" ref={wrapRef}>
@@ -1185,7 +1209,7 @@ function FeiDarcyLambdaAssistField({
                   与「浆体摩阻损失」第 4 步采用同一显式{' '}
                   <InlineMath math="\lambda" /> 式（由下方参数得到 <InlineMath math="\mathrm{Re}_B" /> 与{' '}
                   <InlineMath math="\varepsilon/D_n" />）。计算 <InlineMath math="\mathrm{Re}_B" /> 用的混合物密度{' '}
-                  <InlineMath math="\rho_1" /> 与本页 <InlineMath math="C_V" /> 一致。
+                  <InlineMath math="\rho_1" /> 由本页主参数 <InlineMath math="\rho_g,\rho_k,C_V" /> 推得。
                 </>
               )}
             </p>
@@ -1198,21 +1222,6 @@ function FeiDarcyLambdaAssistField({
 
           <div className="space-y-3 px-3 py-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="min-w-0">
-                <label className={labelCls}>
-                  {language === 'en'
-                    ? renderDescriptionWithMath('$D_n$：Pipe I.D.（m，synced from parameter $D$）')
-                    : renderDescriptionWithMath('$D_n$：管道内径（m，与参数区 $D$ 同步）')}
-                </label>
-                <div
-                  className={`rounded-lg border px-2.5 py-2 text-xs font-sans tabular-nums ${
-                    darkMode ? 'border-gray-500 bg-gray-900/60 text-gray-200' : 'border-gray-300 bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  {dDisplay ??
-                    (language === 'en' ? '— (enter pipe inner diameter D in parameters)' : '—（请先在参数中填写管径 D）')}
-                </div>
-              </div>
               <div className="min-w-0">
                 <label className={labelCls}>
                   {language === 'en'
@@ -1249,34 +1258,14 @@ function FeiDarcyLambdaAssistField({
                   <span className={`text-xs shrink-0 ${hintMuted}`}>Pa·s</span>
                 </div>
               </div>
-              <div className="min-w-0">
-                <label className={labelCls}>
-                  {language === 'en'
-                    ? renderDescriptionWithMath('$\\rho_s$：liquid density（t/m³；often 1）')
-                    : renderDescriptionWithMath('$\\rho_s$：液体密度（t/m³，清水常取 1）')}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={feiLambdaAuxRhoS}
-                    onChange={(e) => setFeiLambdaAuxRhoS(e.target.value)}
-                    placeholder={language === 'en' ? 'e.g. 1' : '如 1'}
-                    className={fieldInputCls}
-                  />
-                  <span className={`text-xs shrink-0 ${hintMuted}`}>t/m³</span>
-                </div>
-              </div>
               <div className="min-w-0 sm:col-span-2">
                 <div className={labelCls}>
                   {language === 'en'
                     ? renderDescriptionWithMath('$\\varepsilon$：pipe wall absolute roughness（m）')
                     : renderDescriptionWithMath('$\\varepsilon$：管壁绝对粗糙度（m）')}
                 </div>
-                <div
-                  className={`mt-1 flex flex-col gap-2 sm:flex-row ${feiLambdaAuxEpsilonPreset === 'custom' ? 'sm:items-center' : ''}`}
-                >
-                  <div className="min-w-0 flex-1">
+                <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="min-w-0">
                     <SlurryEpsilonPresetMenu
                       darkMode={darkMode}
                       presetKey={feiLambdaAuxEpsilonPreset}
@@ -1284,17 +1273,21 @@ function FeiDarcyLambdaAssistField({
                       compact
                     />
                   </div>
-                  {feiLambdaAuxEpsilonPreset === 'custom' ? (
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={feiLambdaAuxEpsilonCustom}
-                      onChange={(e) => setFeiLambdaAuxEpsilonCustom(e.target.value)}
-                      className={`w-full min-w-0 sm:w-36 shrink-0 ${fieldInputCls}`}
-                      placeholder="m"
-                      aria-label={language === 'en' ? 'Custom ε (m)' : '自定义 ε（m）'}
-                    />
-                  ) : null}
+                  <div className="min-w-0">
+                    {feiLambdaAuxEpsilonPreset === 'custom' ? (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={feiLambdaAuxEpsilonCustom}
+                        onChange={(e) => setFeiLambdaAuxEpsilonCustom(e.target.value)}
+                        className={`w-full min-w-0 ${fieldInputCls}`}
+                        placeholder="m"
+                        aria-label={language === 'en' ? 'Custom ε (m)' : '自定义 ε（m）'}
+                      />
+                    ) : (
+                      <div className="h-full" />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1307,37 +1300,39 @@ function FeiDarcyLambdaAssistField({
               <div className={`font-semibold ${hintStrong}`}>
                 {language === 'en' ? 'Computed results (live)' : '计算结果'}
               </div>
-              {assistPreview ? (
-                <dl className={`mt-1.5 space-y-1.5 ${hintMuted}`}>
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                    <dt className="font-medium shrink-0">
-                      <InlineMath math="\rho_1" />
-                      <span>{language === 'en' ? ' (mixture density, t/m³)' : '（混合物密度，t/m³）'}</span>
-                    </dt>
-                    <dd className={`text-right font-sans tabular-nums ${hintStrong}`}>{fmtFeiAssistNumber(assistPreview.rho_1)}</dd>
-                  </div>
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                    <dt className="font-medium shrink-0">
-                      <InlineMath math="\mathrm{Re}_B" />
-                      <span>{language === 'en' ? ' (Reynolds number)' : '（雷诺数）'}</span>
-                    </dt>
-                    <dd className={`text-right font-sans tabular-nums ${hintStrong}`}>{fmtFeiAssistNumber(assistPreview.Re_B)}</dd>
-                  </div>
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                    <dt className="font-medium shrink-0">
-                      <InlineMath math="\lambda" />
-                      <span>{language === 'en' ? ' (Darcy friction factor)' : '（达西摩阻数）'}</span>
-                    </dt>
-                    <dd className={`text-right font-sans tabular-nums ${hintStrong}`}>{fmtFeiAssistNumber(assistPreview.lambda)}</dd>
-                  </div>
-                </dl>
-              ) : (
-                <p className={`mt-1.5 leading-snug ${hintMuted}`}>
-                  {language === 'en'
-                    ? 'Enter pipe D and ρ_g, C_V in parameters, plus V, η₁, ρ_s and ε below — ρ₁, Re_B and λ update automatically.'
-                    : '请在参数区填写管径 D、固体密度 ρ_g 与体积浓度 C_V，并填写下方 V、η₁、ρ_s 与 ε；ρ₁、Re_B、λ 将自动算出。'}
-                </p>
-              )}
+              <dl className={`mt-1.5 space-y-1.5 ${hintMuted}`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <dt className={`font-normal shrink-0 ${hintMuted}`}>
+                    <InlineMath math="\rho_1" />
+                    <span>{language === 'en' ? ' (mixture density, t/m³)' : '（混合物密度，t/m³）'}</span>
+                  </dt>
+                  <dd className={`text-right font-normal font-sans tabular-nums ${hintStrong}`}>
+                    {preview ? fmtCell(preview.rho_1) : '—'}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <dt className={`font-normal shrink-0 ${hintMuted}`}>
+                    <InlineMath math="\mathrm{Re}_B" />
+                    <span>{language === 'en' ? ' (Reynolds number)' : '（雷诺数）'}</span>
+                  </dt>
+                  <dd className={`text-right font-normal font-sans tabular-nums ${hintStrong}`}>
+                    {preview ? fmtCell(preview.Re_B) : '—'}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <dt className={`font-normal shrink-0 ${hintMuted}`}>
+                    <InlineMath math="\lambda" />
+                    <span>{language === 'en' ? ' (Darcy)' : '（达西摩阻系数）'}</span>
+                  </dt>
+                  <dd
+                    className={`text-right font-sans tabular-nums ${
+                      hasLambda ? `${hintStrong} font-bold` : `font-normal ${hintMuted}`
+                    }`}
+                  >
+                    {preview ? fmtCell(preview.lambda) : '—'}
+                  </dd>
+                </div>
+              </dl>
             </div>
 
             <p className={`text-[11px] leading-relaxed ${hintMuted}`}>
@@ -1366,13 +1361,13 @@ function FeiDarcyLambdaAssistField({
               </button>
               <button
                 type="button"
-                disabled={!assistPreview}
+                disabled={!hasLambda}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
                   darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  if (!assistPreview) return
+                  if (!hasLambda) return
                   onApplyLambda()
                   setOpen(false)
                 }}
@@ -2030,7 +2025,7 @@ function HydraulicSlopeScopeNote() {
   return (
     <>
       坡度线含几何扬程 <InlineMath math="H" />、沿程损失及按管长比例分摊的 <InlineMath math="P_j" />；总扬程式中的{' '}
-      <InlineMath math="P_n" />（泵站零件）、<InlineMath math="P_z" />（出口余压）为集中项，未画入线内。
+      <InlineMath math="P_n" />（泵站零件）、<InlineMath math="P_z" />（出口余压）为集中项，未计入纵坐标高程线。
     </>
   )
 }
@@ -2220,7 +2215,7 @@ function interpolateTerrainZ(L: number, verts: TerrainVertex[]): number {
   return a.z + t * (b.z - a.z)
 }
 
-/** 最大允许压力运行线：1.5×浆体水力坡度线（水头）− 地形高度 */
+/** 最大允许压力运行线：1.5×浆体水力坡降纵坐标高程 − 地形高度 */
 function hydraulicMaxAllowPressureLineHeadM(headSlurry: number, terrainZ: number): number | undefined {
   if (!Number.isFinite(headSlurry) || !Number.isFinite(terrainZ)) return undefined
   return 1.5 * headSlurry - terrainZ
@@ -2251,32 +2246,6 @@ function computeClearWaterHydraulicDerivativeValues(
   return { H, deltaHw, H0: H + deltaHw }
 }
 
-/** 浆体总扬程页衍生坡度：水头按清水液柱计，与下方坡度图「清水对比线」一致（ρ_w=1 t/m³，i_w=i_k） */
-function computeSlurryTotalHeadHydraulicDerivativeClearValues(
-  params: Record<string, number | undefined>
-): null | { H: number; deltaHw: number; H0: number } {
-  const Lmax = Number(params.L)
-  const rho_w = SLURRY_CHART_CLEAR_WATER_RHO
-  const g = Number(params.g ?? 9.81)
-  const i_k = Number(params.i_k)
-  const P_j = Number(params.P_j ?? 0)
-  const H = Number(params.H)
-  if (
-    !Number.isFinite(Lmax) ||
-    Lmax <= 0 ||
-    !Number.isFinite(rho_w) ||
-    rho_w <= 0 ||
-    !Number.isFinite(g) ||
-    g <= 0 ||
-    !Number.isFinite(i_k) ||
-    !Number.isFinite(H)
-  ) {
-    return null
-  }
-  const deltaHw = clearWaterCumLossKpaAt(Lmax, Lmax, rho_w, g, i_k, P_j) / (rho_w * g)
-  return { H, deltaHw, H0: H + deltaHw }
-}
-
 function fmtHeadM3(x: number): string {
   return Number.isFinite(x) ? x.toFixed(3) : '—'
 }
@@ -2285,15 +2254,11 @@ function fmtHeadM3(x: number): string {
  * 与「中间计算结果」同卡片样式；先公式再按上式代入的数值，用语与式中 H(l)、l 一致。
  */
 function HydraulicDerivativeResultsSection({
-  variant,
   darkMode,
   parameters,
-  language = 'zh',
 }: {
-  variant: 'slurry' | 'clear_water'
   darkMode: boolean
   parameters: Record<string, number | undefined>
-  language?: 'zh' | 'en'
 }) {
   const surfaceCls = darkMode
     ? 'mt-3 p-4 rounded-lg border border-gray-600 bg-gray-800/90'
@@ -2303,118 +2268,14 @@ function HydraulicDerivativeResultsSection({
   const secCls = darkMode ? 'text-gray-200' : 'text-gray-800'
   const numCls = 'font-mono font-semibold tabular-nums'
 
-  if (variant === 'slurry') {
-    const v = computeSlurryTotalHeadHydraulicDerivativeClearValues(parameters)
-    if (!v) return null
-    return (
-      <div className={surfaceCls}>
-        <div className={`text-sm font-medium mb-3 ${titleCls}`}>
-          {language === 'en' ? 'Derived quantities:' : '衍生计算结果：'}
-        </div>
-        <div className={`text-sm font-medium mb-2 ${titleCls}`}>{language === 'en' ? 'Head' : '水头'}</div>
-        <p className={`text-sm mb-4 leading-relaxed ${bodyCls}`}>
-          {language === 'en' ? (
-            <>
-              <InlineMath math="H" /> is the geometric lift. The formulas below give the hydraulic grade{' '}
-              <InlineMath math="H(l)" /> expressed in{' '}
-              <strong>freshwater head</strong> (same as the blue “clear-water” line on the chart): use{' '}
-              <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" /> and <InlineMath math="i_w=i_k" />. Includes{' '}
-              <InlineMath math="H" />, distributed <InlineMath math="P_j" />; excludes <InlineMath math="P_n" />{' '}
-              and <InlineMath math="P_z" />.
-            </>
-          ) : (
-            <>
-              输入 <InlineMath math="H" /> 为几何扬程；下式水力坡度 <InlineMath math="H(l)" /> 按<strong>清水液柱</strong>表述，与下方坡度图中「清水对比线」一致：取{' '}
-              <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />、<InlineMath math="i_w=i_k" />
-              （与当前页浆体沿程系数相同）。含 <InlineMath math="H" />、按管长分摊的 <InlineMath math="P_j" />；不含 <InlineMath math="P_n" />、<InlineMath math="P_z" />。
-            </>
-          )}
-        </p>
-
-        <div className={`text-sm font-medium mb-2 ${secCls}`}>
-          {language === 'en' ? (
-            <>
-              Freshwater head (<InlineMath math="\rho_w=1" />)
-            </>
-          ) : (
-            <>
-              清水液柱（<InlineMath math="\rho_w=1" /> t/m³）
-            </>
-          )}
-        </div>
-        <div className="min-w-0 overflow-x-auto mb-2">
-          <BlockMath math={INTERMEDIATE_HYDRAULIC_CLEAR_WATER_HEAD} />
-        </div>
-        <p className={`text-xs mb-2 ${bodyCls}`}>
-          {language === 'en' ? (
-            <>
-              In the expression above, take <InlineMath math="i_w" /> equal to this page’s <InlineMath math="i_k" />.
-            </>
-          ) : (
-            <>
-              上式中 <InlineMath math="i_w" /> 取本页输入的 <InlineMath math="i_k" />。
-            </>
-          )}
-        </p>
-        <div className={`text-sm font-medium mb-2 ${secCls}`}>
-          {language === 'en' ? 'Substitute current parameters' : '代入当前参数'}
-        </div>
-        <ol className={`text-sm space-y-2 pl-5 list-decimal ${bodyCls}`}>
-          <li>
-            {language === 'en' ? (
-              <>
-                First line at <InlineMath math="l=L_{\max}" />:{' '}
-                <InlineMath math="\Delta h_{\mathrm{w}}(L_{\max})" /> ={' '}
-                <span className={numCls}>{fmtHeadM3(v.deltaHw)}</span> m
-              </>
-            ) : (
-              <>
-                式第一行令 <InlineMath math="l=L_{\max}" />：<InlineMath math="\Delta h_{\mathrm{w}}(L_{\max})" /> ={' '}
-                <span className={numCls}>{fmtHeadM3(v.deltaHw)}</span> m
-              </>
-            )}
-          </li>
-          <li>
-            {language === 'en' ? (
-              <>
-                Second line at <InlineMath math="l=0" /> with <InlineMath math="\Delta h_{\mathrm{w}}(0)=0" />:{' '}
-                <InlineMath math="H(0)=H+\Delta h_{\mathrm{w}}(L_{\max})" /> ={' '}
-                <span className={numCls}>{fmtHeadM3(v.H0)}</span> m
-              </>
-            ) : (
-              <>
-                式第二行令 <InlineMath math="l=0" />，且 <InlineMath math="\Delta h_{\mathrm{w}}(0)=0" />：{' '}
-                <InlineMath math="H(0)=H+\Delta h_{\mathrm{w}}(L_{\max})" /> ={' '}
-                <span className={numCls}>{fmtHeadM3(v.H0)}</span> m
-              </>
-            )}
-          </li>
-          <li>
-            {language === 'en' ? (
-              <>
-                At <InlineMath math="l=L_{\max}" />: <InlineMath math="H(L_{\max})=H" /> ={' '}
-                <span className={numCls}>{fmtHeadM3(v.H)}</span> m
-              </>
-            ) : (
-              <>
-                式第二行令 <InlineMath math="l=L_{\max}" />：<InlineMath math="H(L_{\max})=H" /> ={' '}
-                <span className={numCls}>{fmtHeadM3(v.H)}</span> m
-              </>
-            )}
-          </li>
-        </ol>
-      </div>
-    )
-  }
-
   const v = computeClearWaterHydraulicDerivativeValues(parameters)
   if (!v) return null
   return (
     <div className={surfaceCls}>
       <div className={`text-sm font-medium mb-3 ${titleCls}`}>衍生计算结果：</div>
-      <div className={`text-sm font-medium mb-2 ${titleCls}`}>水头</div>
+      <div className={`text-sm font-medium mb-2 ${titleCls}`}>高程（纵坐标）</div>
       <p className={`text-sm mb-4 leading-relaxed ${bodyCls}`}>
-        输入 <InlineMath math="H" /> 为<strong>扬送清水的几何高度</strong>，与 <InlineMath math="l=L_{\max}" /> 处纵坐标一致；下式为清水坡度线 <InlineMath math="H(l)" />。
+        输入 <InlineMath math="H" /> 为<strong>扬送清水的几何高度</strong>，与 <InlineMath math="l=L_{\max}" /> 处纵坐标一致；下式为清水坡度线的<strong>高程</strong> <InlineMath math="H(l)" />。
       </p>
       <div className="min-w-0 overflow-x-auto mb-2">
         <BlockMath math={INTERMEDIATE_HYDRAULIC_CLEAR_WATER_HEAD} />
@@ -2444,7 +2305,12 @@ const CLEAR_HYDRAULIC_LINE = '#3B82F6'
 const TERRAIN_EXPORT_LINE = '#22c55e'
 const MAX_PRESS_HYDRAULIC_LINE = '#DC2626'
 
-type SlurryHydraulicChartRow = MergedHydraulicRow & { terrainZ?: number; maxPressZ?: number }
+type SlurryHydraulicChartRow = MergedHydraulicRow & {
+  /** 纵坐标：折算清水柱高度 (m)，≈ P/(ρ_w g)，ρ_w=1 t/m³；等于 headSlurry（内层混合水头）× ρ_k */
+  headSlurryDisplay: number
+  terrainZ?: number
+  maxPressZ?: number
+}
 
 type AppliedTerrainState = {
   z0Str: string
@@ -2533,17 +2399,23 @@ function SlurryClearHydraulicGradeChartBlock({
     Number.isFinite(Lmax) && Lmax > 0 && Number.isFinite(dz0) && Number.isFinite(dz1) && draftVerts.length >= 2
 
   const chartRows: SlurryHydraulicChartRow[] = useMemo(() => {
-    if (!terrainDrawOk) return chartData.map((r) => ({ ...r }))
+    const rk = Number(slurryParams.rho_k)
+    const headSlurryToDisplay = (raw: number) =>
+      slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(raw) ? raw * rk : raw
     return chartData.map((r) => {
+      const headSlurryDisplay = headSlurryToDisplay(r.headSlurry)
+      if (!terrainDrawOk) {
+        return { ...r, headSlurryDisplay }
+      }
       const tz = interpolateTerrainZ(r.L, terrainVerts)
-      const maxPressZ = hydraulicMaxAllowPressureLineHeadM(r.headSlurry, tz)
       return {
         ...r,
+        headSlurryDisplay,
         terrainZ: tz,
-        maxPressZ,
+        maxPressZ: hydraulicMaxAllowPressureLineHeadM(headSlurryDisplay, tz),
       }
     })
-  }, [chartData, terrainDrawOk, terrainVerts])
+  }, [chartData, terrainDrawOk, terrainVerts, slurryOk, slurryParams.rho_k])
 
   const hasVisibleTerrain = terrainDrawOk && showTerrainLine
   const hasVisibleMaxPress = terrainDrawOk && showMaxPressLine
@@ -2569,9 +2441,9 @@ function SlurryClearHydraulicGradeChartBlock({
     let lo = Infinity
     let hi = -Infinity
     for (const d of chartRows) {
-      if (showSlurry && slurryOk && Number.isFinite(d.headSlurry)) {
-        lo = Math.min(lo, d.headSlurry)
-        hi = Math.max(hi, d.headSlurry)
+      if (showSlurry && slurryOk && Number.isFinite(d.headSlurryDisplay)) {
+        lo = Math.min(lo, d.headSlurryDisplay)
+        hi = Math.max(hi, d.headSlurryDisplay)
       }
       if (showClear && clearOk && d.headClear != null && Number.isFinite(d.headClear)) {
         lo = Math.min(lo, d.headClear)
@@ -2595,12 +2467,16 @@ function SlurryClearHydraulicGradeChartBlock({
   }, [chartRows, showSlurry, showClear, slurryOk, clearOk, hasVisibleTerrain, hasVisibleMaxPress])
 
   const hydraulicExportYDomain = useMemo(() => {
+    const rk = Number(slurryParams.rho_k)
+    const headSlurryToDisplay = (raw: number) =>
+      slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(raw) ? raw * rk : raw
     let lo = Infinity
     let hi = -Infinity
     for (const d of chartData) {
       if (slurryOk && Number.isFinite(d.headSlurry)) {
-        lo = Math.min(lo, d.headSlurry)
-        hi = Math.max(hi, d.headSlurry)
+        const hd = headSlurryToDisplay(d.headSlurry)
+        lo = Math.min(lo, hd)
+        hi = Math.max(hi, hd)
       }
       if (clearOk && d.headClear != null && Number.isFinite(d.headClear)) {
         lo = Math.min(lo, d.headClear)
@@ -2614,7 +2490,8 @@ function SlurryClearHydraulicGradeChartBlock({
           lo = Math.min(lo, tz)
           hi = Math.max(hi, tz)
         }
-        const maxPressZ = hydraulicMaxAllowPressureLineHeadM(d.headSlurry, tz) ?? NaN
+        const hd = headSlurryToDisplay(d.headSlurry)
+        const maxPressZ = hydraulicMaxAllowPressureLineHeadM(hd, tz) ?? NaN
         if (Number.isFinite(maxPressZ)) {
           lo = Math.min(lo, maxPressZ)
           hi = Math.max(hi, maxPressZ)
@@ -2625,7 +2502,7 @@ function SlurryClearHydraulicGradeChartBlock({
     const span = Math.max(hi - lo, 1e-6)
     const pad = Math.max(span * 0.06, 0.5)
     return { yMin: lo - pad, yMax: hi + pad }
-  }, [chartData, slurryOk, clearOk, terrainDrawOk, terrainVerts])
+  }, [chartData, slurryOk, clearOk, terrainDrawOk, terrainVerts, slurryParams.rho_k])
 
   const minSepL = Math.max(Lmax * 0.008, 1e-6)
 
@@ -2708,8 +2585,7 @@ function SlurryClearHydraulicGradeChartBlock({
     if (!draftPreviewOk) return []
     return chartData.map((r) => {
       const terrainZ = interpolateTerrainZ(r.L, draftVerts)
-      const maxPressZ = hydraulicMaxAllowPressureLineHeadM(r.headSlurry, terrainZ)
-      return { L: r.L, terrainZ, maxPressZ }
+      return { L: r.L, terrainZ }
     })
   }, [draftPreviewOk, chartData, draftVerts])
 
@@ -2721,10 +2597,6 @@ function SlurryClearHydraulicGradeChartBlock({
         lo = Math.min(lo, r.terrainZ)
         hi = Math.max(hi, r.terrainZ)
       }
-      if (r.maxPressZ != null && Number.isFinite(r.maxPressZ)) {
-        lo = Math.min(lo, r.maxPressZ)
-        hi = Math.max(hi, r.maxPressZ)
-      }
     }
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { previewYMin: 0, previewYMax: 1 }
     const span = Math.max(hi - lo, 1e-6)
@@ -2735,7 +2607,14 @@ function SlurryClearHydraulicGradeChartBlock({
   const handleExportChartPNG = () => {
     if (!hydraulicExportYDomain) return
     const dateStr = new Date().toISOString().slice(0, 10)
-    const slurryPts = chartData.map((r: MergedHydraulicRow) => ({ L: r.L, H: r.headSlurry }))
+    const rk = Number(slurryParams.rho_k)
+    const slurryPts = chartData.map((r: MergedHydraulicRow) => ({
+      L: r.L,
+      H:
+        slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(r.headSlurry)
+          ? r.headSlurry * rk
+          : r.headSlurry,
+    }))
     const clearPts: { L: number; H: number }[] =
       clearOk && chartData.every((r: MergedHydraulicRow) => r.headClear != null)
         ? chartData.map((r: MergedHydraulicRow) => ({ L: r.L, H: r.headClear as number }))
@@ -2745,14 +2624,18 @@ function SlurryClearHydraulicGradeChartBlock({
       extra.push({
         curve: chartData.map((r) => ({ L: r.L, H: interpolateTerrainZ(r.L, terrainVerts) })),
         color: TERRAIN_EXPORT_LINE,
-        legend: '地形线（高度）',
+        legend: '地形线（高程）',
       })
     }
     if (terrainDrawOk && showMaxPressLine) {
       extra.push({
         curve: chartData.map((r) => {
           const terrainZ = interpolateTerrainZ(r.L, terrainVerts)
-          const maxPressZ = hydraulicMaxAllowPressureLineHeadM(r.headSlurry, terrainZ) ?? NaN
+          const hd =
+            slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(r.headSlurry)
+              ? r.headSlurry * rk
+              : r.headSlurry
+          const maxPressZ = hydraulicMaxAllowPressureLineHeadM(hd, terrainZ) ?? NaN
           return { L: r.L, H: maxPressZ }
         }),
         color: MAX_PRESS_HYDRAULIC_LINE,
@@ -2763,13 +2646,13 @@ function SlurryClearHydraulicGradeChartBlock({
       curveData: slurryPts,
       secondCurve: clearPts.length > 1 ? clearPts : undefined,
       secondLineColor: CLEAR_HYDRAULIC_LINE,
-      secondLegendText: '清水对比水力坡度线',
+      secondLegendText: '清水水力坡度线',
       extraHydraulicCurves: extra.length ? extra : undefined,
       darkMode,
       title: '浆体与清水对比 · 管道水力坡度线',
-      subtitle: `几何扬程与沿程水头分布：L_max = ${Lmax} m，主刻度间隔 ${stepStr} m（${HYDRAULIC_GRADE_TICK_DIVISIONS} 等分）`,
+      subtitle: `几何扬程与沿程高程分布：L_max = ${Lmax} m，主刻度间隔 ${stepStr} m（${HYDRAULIC_GRADE_TICK_DIVISIONS} 等分）`,
       xAxisLabel: `管长 L (m)\n范围 [0，${Lmax}]；均匀主刻度，步长 ${stepStr} m`,
-      yAxisLabel: `水头 H (m)\n测压管水头；浆体 ρ_k、ρ_s、i_k；清水对比 ρ_w=1 t/m³、i_w=i_k`,
+      yAxisLabel: `高程 (m)\n浆体线为折算清水柱高（P/g，ρ_w=1 t/m³）；清水对比 ρ_w=1、i_w=i_k`,
       lineColor: SLURRY_HYDRAULIC_LINE,
       legendText: '浆体水力坡度线',
       filename: `slurry_clear_hydraulic_grade_${dateStr}.png`,
@@ -2812,29 +2695,32 @@ function SlurryClearHydraulicGradeChartBlock({
         {language === 'en' ? (
           <>
             Axis tick step is <InlineMath math="L_{\max}" /> / {HYDRAULIC_GRADE_TICK_DIVISIONS} ={' '}
-            <span className="font-mono">{stepStr}</span> m. Abscissa <InlineMath math="[0,L_{\max}]" />; hover for head and
-            converted pressure. The <strong className="text-amber-600 dark:text-amber-400">slurry</strong> line follows the
-            slurry total-head model (<InlineMath math="\rho_s,\rho_k,i_k" />
+            <span className="font-mono">{stepStr}</span> m. Abscissa <InlineMath math="[0,L_{\max}]" />; ordinate is{' '}
+            <strong>freshwater-equivalent head</strong> <InlineMath math="P/(\rho_w g)" /> with{' '}
+            <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" /> (slurry line: inner model head × <InlineMath math="\rho_k" />
+            ). Hover shows elevation and pressure (<InlineMath math="P\approx\rho_w g H" />). The{' '}
+            <strong className="text-amber-600 dark:text-amber-400">slurry</strong> line follows the slurry total-head model (
+            <InlineMath math="\rho_s,\rho_k,i_k" />
             ); the <strong className="text-blue-600 dark:text-blue-400">clear-water comparison</strong> uses the same{' '}
-            <InlineMath math="H,L,P_j,g" /> with <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" /> and{' '}
-            <InlineMath math="i_w=i_k" />. Configure <strong className="text-emerald-700 dark:text-emerald-400">terrain</strong>{' '}
-            and the <strong className="text-red-700 dark:text-red-400">max. allowable pressure</strong> line in the editor below
-            the chart note (start/end elevations and optional middle points), then click “Add to main chart”; the preview
-            supports hover readout.
+            <InlineMath math="H,L,P_j,g" /> with <InlineMath math="\rho_w=1" /> and <InlineMath math="i_w=i_k" />. Use the terrain editor
+            below; the <strong>terrain profile preview</strong> is separate until you choose <strong>Add to main chart</strong> (then terrain
+            and the max. allowable line appear on the main chart).
           </>
         ) : (
           <>
             横轴刻度步长由当前输入的 <InlineMath math="L_{\max}" /> 与 {HYDRAULIC_GRADE_TICK_DIVISIONS}{' '}
             等分计算，为 <span className="font-mono">{stepStr}</span> m。横轴 <InlineMath math="[0,L_{\max}]" />
-            ，悬停可读水头与折算压力。
+            ；纵坐标为<strong>折算清水柱高</strong>
+            <InlineMath math="P/(\rho_w g)" />（<InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />
+            ），浆体线为内层水力坡度纵坐标乘以 <InlineMath math="\rho_k" />
+            ；悬停显示高程与压力（<InlineMath math="P\approx\rho_w g H" />）。
             <strong className="text-amber-600 dark:text-amber-400"> 浆体</strong>线按浆体总扬程（
             <InlineMath math="\rho_s,\rho_k,i_k" />
-            ）；<strong className="text-blue-600 dark:text-blue-400"> 清水对比线</strong>按与当前页相同的{' '}
-            <InlineMath math="H,L,P_j,g" />，取 <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />、
-            <InlineMath math="i_w=i_k" />，与清水总扬程模块同一水力坡度模型。
-            <strong className="text-emerald-700 dark:text-emerald-400"> 地形线</strong>与
-            <strong className="text-red-700 dark:text-red-400"> 最大允许压力线</strong>
-            在<strong>图注下方编辑区</strong>配置地形线起点/终点高度与中间点后点击「添加到主图」；预览区可悬停读数。
+            ）；<strong className="text-blue-600 dark:text-blue-400"> 清水对比线</strong>与当前页相同{' '}
+            <InlineMath math="H,L,P_j,g" />，取 <InlineMath math="\rho_w=1" />、<InlineMath math="i_w=i_k" />。
+            <strong className="text-emerald-700 dark:text-emerald-400"> 地形线</strong>在图注下编辑区填写；下方为<strong>地形线预览图</strong>，「
+            <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>添加到主图</strong>
+            」后主图叠加地形与<strong className="text-red-700 dark:text-red-400">最大允许压力线</strong>。
           </>
         )}
       </div>
@@ -2848,11 +2734,15 @@ function SlurryClearHydraulicGradeChartBlock({
         <span>
           {language === 'en' ? (
             <>
-              Slurry end head <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m
+              Slurry line end ordinate (freshwater head) ≈{' '}
+              {Number.isFinite(H_in) && Number.isFinite(rho_k) ? (H_in * rho_k).toFixed(3) : '—'} m; geometric{' '}
+              <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m
             </>
           ) : (
             <>
-              浆体终点水头 <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m
+              浆体线终点纵坐标（折算清水柱）≈{' '}
+              {Number.isFinite(H_in) && Number.isFinite(rho_k) ? (H_in * rho_k).toFixed(3) : '—'} m；几何扬程{' '}
+              <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m
             </>
           )}
         </span>
@@ -2860,12 +2750,12 @@ function SlurryClearHydraulicGradeChartBlock({
           <span className={darkMode ? 'text-blue-300' : 'text-blue-700'}>
             {language === 'en' ? (
               <>
-                Clear-water end head <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m (same static
+                Clear-water line end elevation <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m (same static
                 lift as slurry)
               </>
             ) : (
               <>
-                清水对比线终点水头 <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m（与浆体几何扬程相同）
+                清水水力坡度线终点高程 <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m（与浆体几何扬程相同）
               </>
             )}
           </span>
@@ -2895,7 +2785,7 @@ function SlurryClearHydraulicGradeChartBlock({
               />
               <YAxis
                 label={{
-                  value: '水头 H (m)',
+                  value: language === 'en' ? 'Elevation (m)' : '高程 (m)',
                   angle: -90,
                   position: 'insideLeft',
                   offset: 2,
@@ -2920,21 +2810,19 @@ function SlurryClearHydraulicGradeChartBlock({
                       <div className="mb-1 font-medium">L = {Number.isFinite(Lv) ? Lv.toFixed(3) : String(label)} m</div>
                       {showSlurry &&
                         payload
-                          .filter((p) => p.dataKey === 'headSlurry')
+                          .filter((p) => p.dataKey === 'headSlurryDisplay')
                           .map((p) => {
                             const hm = Number(p.value)
-                            const pk =
-                              Number.isFinite(hm) && Number.isFinite(rho_k) && rho_k > 0 && gSlurry > 0
-                                ? hm * rho_k * gSlurry
-                                : NaN
+                            const pk = Number.isFinite(hm) && gSlurry > 0 ? hm * gSlurry : NaN
                             return (
                               <div key="s" className="text-amber-600 dark:text-amber-400">
-                                {language === 'en' ? 'Slurry grade:' : '浆体水力坡度：'}head{' '}
+                                {language === 'en' ? 'Slurry hydraulic grade:' : '浆体水力坡度：'}
+                                {language === 'en' ? ' elevation ' : ' 高程 '}
                                 {Number.isFinite(hm) ? hm.toFixed(3) : '—'} m
                                 {Number.isFinite(pk)
                                   ? language === 'en'
-                                    ? `, ${pk.toFixed(2)} kPa (ρ_k·g·H)`
-                                    : `，折算压力 ${pk.toFixed(2)} kPa（ρ_k·g·H）`
+                                    ? `, ${pk.toFixed(2)} kPa`
+                                    : `，压力 ${pk.toFixed(2)} kPa`
                                   : null}
                               </div>
                             )
@@ -2951,12 +2839,13 @@ function SlurryClearHydraulicGradeChartBlock({
                                 : NaN
                             return (
                               <div key="c" className="text-blue-600 dark:text-blue-400">
-                                {language === 'en' ? 'Clear-water grade:' : '清水水力坡度：'}head{' '}
+                                {language === 'en' ? 'Clear-water comparison:' : '清水水力坡度：'}
+                                {language === 'en' ? ' elevation ' : ' 高程 '}
                                 {Number.isFinite(hm) ? hm.toFixed(3) : '—'} m
                                 {Number.isFinite(pk)
                                   ? language === 'en'
-                                    ? `, ${pk.toFixed(2)} kPa (ρ_w·g·H)`
-                                    : `，折算压力 ${pk.toFixed(2)} kPa（ρ_w·g·H）`
+                                    ? `, ${pk.toFixed(2)} kPa`
+                                    : `，压力 ${pk.toFixed(2)} kPa`
                                   : null}
                               </div>
                             )
@@ -2968,7 +2857,7 @@ function SlurryClearHydraulicGradeChartBlock({
                             const zv = Number(p.value)
                             return (
                               <div key="t" className="text-emerald-600 dark:text-emerald-400">
-                                {language === 'en' ? 'Terrain elevation:' : '地形高度：'}{' '}
+                                {language === 'en' ? 'Terrain elevation:' : '地形高程：'}{' '}
                                 {Number.isFinite(zv) ? zv.toFixed(3) : '—'} m
                               </div>
                             )
@@ -2980,7 +2869,7 @@ function SlurryClearHydraulicGradeChartBlock({
                             const mv = Number(p.value)
                             return (
                               <div key="m" className="text-red-600 dark:text-red-400">
-                                {language === 'en' ? 'Max. allowable line:' : '最大允许压力线：'}
+                                {language === 'en' ? 'Max. allowable line elevation:' : '最大允许压力线高程：'}
                                 {Number.isFinite(mv) ? mv.toFixed(3) : '—'} m
                               </div>
                             )
@@ -2991,7 +2880,7 @@ function SlurryClearHydraulicGradeChartBlock({
               />
               <Line
                 type="linear"
-                dataKey="headSlurry"
+                dataKey="headSlurryDisplay"
                 name="浆体水力坡度线"
                 stroke={SLURRY_HYDRAULIC_LINE}
                 strokeWidth={2.5}
@@ -3093,7 +2982,7 @@ function SlurryClearHydraulicGradeChartBlock({
               }}
             />
             <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: CLEAR_HYDRAULIC_LINE }} />
-            {language === 'en' ? 'Clear-water comparison grade' : '清水对比水力坡度线'}
+            {language === 'en' ? 'Clear-water comparison grade' : '清水水力坡度线'}
           </label>
           {terrainDrawOk ? (
             <>
@@ -3152,32 +3041,48 @@ function SlurryClearHydraulicGradeChartBlock({
         <HydraulicSlopeScopeNote />{' '}
         {language === 'en' ? (
           <>
-            Slurry-grade inlet head ≈ <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m (slurry column; includes
-            distributed <InlineMath math="P_j" />, Δh_k = {totalLossHeadM.toFixed(1)} m). Clear-water comparison inlet ≈{' '}
-            <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m (freshwater
-            head; Δh_w = {totalLossHeadClearM.toFixed(1)} m). Tooltip pressure uses <InlineMath math="\rho_k g H" /> (slurry)
-            and <InlineMath math="\rho_w g H" /> (clear).
+            Slurry-line inlet ordinate (freshwater head, <InlineMath math="P/(\rho_w g)" />,{' '}
+            <InlineMath math="\rho_w=1" />) ≈{' '}
+            {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
+              ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
+              : '—'}{' '}
+            m (inner mixed head <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
+            {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m ×{' '}
+            <InlineMath math="\rho_k" />; distributed loss incl. <InlineMath math="P_j" /> share ≈{' '}
+            {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
+              ? (totalLossHeadM * rho_k).toFixed(1)
+              : '—'}{' '}
+            m freshwater column). Clear-water comparison inlet ≈ <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
+            {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m (freshwater column;
+            Δh_w = {totalLossHeadClearM.toFixed(1)} m). Hover shows elevation and pressure with{' '}
+            <InlineMath math="P\approx\rho_w g H" /> (<InlineMath math="\rho_w=1" /> for slurry ordinate).
             {terrainDrawOk ? (
               <>
                 {' '}
-                Red line: 1.5× (slurry hydraulic grade head at L) − terrain elevation, along the pipe.
+                Red line: 1.5× (slurry-grade elevation at L) − terrain elevation along the pipe.
               </>
             ) : null}
           </>
         ) : (
           <>
-            浆体坡度线进口端总水头约 <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m（浆体液柱；含{' '}
-            <InlineMath math="P_j" /> 分摊损失水头 {totalLossHeadM.toFixed(1)} m）。清水对比线同端约{' '}
-            <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m（清水液柱；分摊损失水头{' '}
-            {totalLossHeadClearM.toFixed(1)} m）。悬停折算压力按 <InlineMath math="\rho_k g H" />（浆体）、<InlineMath math="\rho_w g H" />（清水对比）换算。
+            浆体线进口端纵坐标（折算清水柱，<InlineMath math="P/(\rho_w g)" />，<InlineMath math="\rho_w=1" />）≈{' '}
+            {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
+              ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
+              : '—'}{' '}
+            m（内层 <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
+            {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k" />
+            ；含 <InlineMath math="P_j" /> 分摊的损失折合清水柱约{' '}
+            {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
+              ? (totalLossHeadM * rho_k).toFixed(1)
+              : '—'}{' '}
+            m）。清水对比线同端约 <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
+            {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m（清水液柱；分摊损失折合{' '}
+            {totalLossHeadClearM.toFixed(1)} m）。悬停显示高程与压力，<InlineMath math="P\approx\rho_w g H" />（浆体纵坐标对应{' '}
+            <InlineMath math="\rho_w=1" />）。
             {terrainDrawOk ? (
               <>
                 {' '}
-                红线按各点「1.5×浆体水力坡度水头（m）−地形高度（m）」计算，随地形线沿程变化。
+                红线按各点「1.5×浆体水力坡降纵坐标（m）−地形高程（m）」计算，随地形线沿程变化。
               </>
             ) : null}
           </>
@@ -3193,93 +3098,203 @@ function SlurryClearHydraulicGradeChartBlock({
           className={`border-b px-4 py-3 ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
         >
           <h3 className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-            {language === 'en' ? 'Terrain & max. allowable pressure line' : '添加地形线与最大允许压力线'}
+            {language === 'en' ? 'Add terrain polyline' : '添加地形线'}
           </h3>
         </div>
         <div className="space-y-4 px-4 py-4">
-          <ul className={`grid gap-2 text-xs sm:grid-cols-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            <li className="flex gap-2">
-              <span
-                className="mt-0.5 h-3 w-8 shrink-0 rounded-sm"
-                style={{ background: TERRAIN_EXPORT_LINE }}
-                aria-hidden
-              />
-              <span>
-                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>
-                  {language === 'en' ? 'Terrain' : '地形线'}
-                </strong>
-                {language === 'en'
-                  ? ': ground elevation vs. pipe length; endpoints at '
-                  : '：地面高度沿管长折线；端点对应 '}
-                <InlineMath math="L=0" /> {language === 'en' ? 'and' : '与'} <InlineMath math="L=L_{\max}" />
-                {language === 'en' ? '.' : '。'}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span className="mt-0.5 h-3 w-8 shrink-0 rounded-sm bg-red-600" aria-hidden />
-              <span>
-                <strong className={darkMode ? 'text-red-300' : 'text-red-800'}>
-                  {language === 'en' ? 'Max. allowable operating pressure line' : '最大允许运行压力线'}
-                </strong>
-                {language === 'en'
-                  ? ': same sampling as terrain; at each L, 1.5× (slurry grade head in m) − terrain elevation (m).'
-                  : '：与地形同一沿程采样；各点为 1.5×浆体水力坡度水头（m）−该点地形高度（m）。'}
-              </span>
-            </li>
-          </ul>
+          <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+            {language === 'en' ? (
+              <>
+                Enter <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>start</strong> and{' '}
+                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>end</strong> elevations (at{' '}
+                <InlineMath math="L=0" /> and <InlineMath math="L=L_{\max}" />) plus optional <strong>middle</strong>{' '}
+                points below. The <strong>terrain profile preview</strong> is shown below. After <strong>Add to main chart</strong>, the main
+                chart adds the max. allowable operating line (1.5× slurry hydraulic-grade elevation − terrain elevation at each{' '}
+                <InlineMath math="L" />
+                ).{' '}
+              </>
+            ) : (
+              <>
+                在同一区域填写<strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>起点</strong>、
+                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>终点</strong>高程（对应{' '}
+                <InlineMath math="L=0" /> 与 <InlineMath math="L=L_{\max}" />
+                ）及可选<strong>中间控制点</strong>。下方为<strong>地形线预览图</strong>。点击「
+                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>添加到主图</strong>
+                」后，主图将自动叠加<strong className="text-red-600 dark:text-red-400">最大允许压力线</strong>（各点 1.5×
+                浆体水力坡降纵坐标高程 − 该点地形高程）。
+              </>
+            )}
+          </p>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block min-w-0">
-              <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                {language === 'en' ? 'Terrain start elevation:' : '地形线起点高度：'}
-              </span>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={draftZ0Str}
-                  onChange={(e) => setDraftZ0Str(e.target.value)}
-                  placeholder={
-                    language === 'en' ? 'Terrain start elevation, e.g. 12.5' : '地形线起点高度，如 12.5'
-                  }
-                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
-                    darkMode
-                      ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
-                      : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
-                  }`}
-                />
-                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+          <div
+            className={`space-y-3 rounded-lg border p-3 sm:p-4 ${darkMode ? 'border-gray-600 bg-gray-900/30' : 'border-gray-200 bg-gray-50'}`}
+          >
+            <div className={`text-xs font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              {language === 'en' ? 'Terrain vertices (start, end & middles)' : '地形折线：起点、终点与中间点'}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block min-w-0">
+                <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {language === 'en' ? 'Terrain start elevation:' : '地形线起点高度：'}
+                </span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={draftZ0Str}
+                    onChange={(e) => setDraftZ0Str(e.target.value)}
+                    placeholder={
+                      language === 'en' ? 'Terrain start elevation, e.g. 12.5' : '地形线起点高度，如 12.5'
+                    }
+                    className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                      darkMode
+                        ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
+                        : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
+                    }`}
+                  />
+                  <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+                </div>
+              </label>
+              <label className="block min-w-0">
+                <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {language === 'en' ? 'Terrain end elevation:' : '地形线终点高度：'}
+                </span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={draftZ1Str}
+                    onChange={(e) => setDraftZ1Str(e.target.value)}
+                    placeholder={
+                      language === 'en' ? 'Terrain end elevation, e.g. 11.8' : '地形线终点高度，如 11.8'
+                    }
+                    className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                      darkMode
+                        ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
+                        : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
+                    }`}
+                  />
+                  <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+                </div>
+              </label>
+              <label className="block min-w-0">
+                <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {language === 'en' ? 'Middle point: pipe length L' : '中间点：管长 L'}
+                </span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={manualLStr}
+                    onChange={(e) => setManualLStr(e.target.value)}
+                    className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                      darkMode
+                        ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
+                        : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
+                    }`}
+                  />
+                  <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+                </div>
+              </label>
+              <label className="block min-w-0">
+                <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {language === 'en' ? 'Elevation z' : '高程 z'}
+                </span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={manualZStr}
+                    onChange={(e) => setManualZStr(e.target.value)}
+                    className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                      darkMode
+                        ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
+                        : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
+                    }`}
+                  />
+                  <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
+                </div>
+              </label>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleAddManualMiddle}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                {language === 'en' ? 'Add middle point' : '添加中间点'}
+              </button>
+            </div>
+
+          <details
+            className={`rounded-lg border text-sm ${darkMode ? 'border-gray-600 bg-gray-900/30' : 'border-gray-200 bg-white'}`}
+          >
+            <summary
+              className={`cursor-pointer select-none px-3 py-2 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+            >
+              {language === 'en' ? 'Bulk paste (L, z per line)' : '批量粘贴中间点（每行：L、高程）'}
+            </summary>
+            <div className={`space-y-2 border-t px-3 py-3 ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+              <p className={`text-[11px] leading-relaxed ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                {language === 'en'
+                  ? 'Two columns per line: L and elevation; paste from spreadsheets; a header row is auto-skipped.'
+                  : '每行两列：管长 L、高程；可从表格复制；首行若为文字表头会自动跳过。'}
+              </p>
+              <textarea
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                rows={3}
+                placeholder={'L\tz\n500\t12.5\n1200\t11.8'}
+                className={`w-full rounded-md border px-2 py-2 font-mono text-xs ${
+                  darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-300 bg-white'
+                }`}
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleApplyBulkTerrain}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  {language === 'en' ? 'Apply' : '添加'}
+                </button>
               </div>
-            </label>
-            <label className="block min-w-0">
-              <span className={`mb-1 block text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                {language === 'en' ? 'Terrain end elevation:' : '地形线终点高度：'}
-              </span>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={draftZ1Str}
-                  onChange={(e) => setDraftZ1Str(e.target.value)}
-                  placeholder={
-                    language === 'en' ? 'Terrain end elevation, e.g. 11.8' : '地形线终点高度，如 11.8'
-                  }
-                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
-                    darkMode
-                      ? 'border-gray-500 bg-gray-900 text-gray-100 placeholder:text-gray-500'
-                      : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-400'
-                  }`}
-                />
-                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
-              </div>
-            </label>
+            </div>
+          </details>
+
+          {sortedDraftMiddles.length > 0 ? (
+            <ul
+              className={`divide-y overflow-hidden rounded-lg border text-xs ${
+                darkMode ? 'divide-gray-600 border-gray-600' : 'divide-gray-200 border-gray-200'
+              }`}
+            >
+              {sortedDraftMiddles.map((p) => (
+                <li
+                  key={p.id ?? `${p.L}-${p.z}`}
+                  className="flex items-center justify-between gap-2 px-3 py-2"
+                >
+                  <span className={`tabular-nums ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    L = {p.L.toFixed(2)} m，{language === 'en' ? 'z' : '高程'} = {p.z.toFixed(3)} m
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMiddle(p.id)}
+                    className="shrink-0 text-red-500 hover:underline"
+                  >
+                    {language === 'en' ? 'Remove' : '删除'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {editorErr ? <p className="text-sm text-red-500 dark:text-red-400">{editorErr}</p> : null}
           </div>
 
           <div className={`rounded-lg border ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
             <div
               className={`border-b px-3 py-2 text-xs font-medium ${darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-600'}`}
             >
-              预览
+              {language === 'en' ? 'Terrain profile preview' : '地形线预览图'}
             </div>
             <div className="p-2 sm:p-3">
               <div
@@ -3287,18 +3302,21 @@ function SlurryClearHydraulicGradeChartBlock({
               >
                 <p className={`tabular-nums ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   {appliedTerrain ? (
-                    <>主图已叠加（{appliedTerrain.middlePts.length} 个中间点）。</>
-                  ) : (
-                    <>未叠加到主图。</>
-                  )}
+                    <>
+                      {language === 'en' ? 'Main chart: terrain applied (' : '主图已叠加（'}
+                      {appliedTerrain.middlePts.length}
+                      {language === 'en' ? ' middle points).' : ' 个中间点）。'}
+                    </>
+                  ) : null}
                 </p>
                 <div className={`text-right text-xs tabular-nums sm:shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   {previewHover ? (
                     <span>
-                      L = {previewHover.L.toFixed(3)} m，高度 = {previewHover.z.toFixed(3)} m
+                      L = {previewHover.L.toFixed(3)} m，{language === 'en' ? 'elevation' : '高程'}={' '}
+                      {previewHover.z.toFixed(3)} m
                     </span>
                   ) : (
-                    <span className="opacity-60">悬停预览</span>
+                    <span className="opacity-60">{language === 'en' ? 'Hover preview' : '悬停预览'}</span>
                   )}
                 </div>
               </div>
@@ -3333,7 +3351,7 @@ function SlurryClearHydraulicGradeChartBlock({
                       <YAxis
                         domain={[previewYMin, previewYMax]}
                         label={{
-                          value: '高度 (m)',
+                          value: language === 'en' ? 'Elevation (m)' : '高程 (m)',
                           angle: -90,
                           position: 'insideLeft',
                           offset: 2,
@@ -3377,7 +3395,7 @@ function SlurryClearHydraulicGradeChartBlock({
                                     {Number((payload[0].payload as { L: number }).L).toFixed(3)} m
                                   </div>
                                   <div>
-                                    高度 ={' '}
+                                    {language === 'en' ? 'Elevation' : '高程'} ={' '}
                                     {Number((payload[0].payload as { terrainZ: number }).terrainZ).toFixed(
                                       3
                                     )}{' '}
@@ -3395,16 +3413,6 @@ function SlurryClearHydraulicGradeChartBlock({
                         name="地形"
                         stroke={TERRAIN_EXPORT_LINE}
                         strokeWidth={2.5}
-                        dot={false}
-                        connectNulls
-                        isAnimationActive={false}
-                      />
-                      <Line
-                        type="linear"
-                        dataKey="maxPressZ"
-                        name="最大允许运行压力线"
-                        stroke={MAX_PRESS_HYDRAULIC_LINE}
-                        strokeWidth={2}
                         dot={false}
                         connectNulls
                         isAnimationActive={false}
@@ -3429,119 +3437,10 @@ function SlurryClearHydraulicGradeChartBlock({
                     <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: TERRAIN_EXPORT_LINE }} />
                     {language === 'en' ? 'Terrain' : '地形线'}
                   </div>
-                  <div className={`flex items-center gap-2 text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    <span className="h-2.5 w-6 shrink-0 rounded-full" style={{ background: MAX_PRESS_HYDRAULIC_LINE }} />
-                    {language === 'en' ? 'Max. allowable operating line' : '最大允许运行压力线'}
-                  </div>
                 </div>
               ) : null}
             </div>
           </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="block min-w-0 flex-1">
-              <span className={`mb-1 block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>管长 L</span>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={manualLStr}
-                  onChange={(e) => setManualLStr(e.target.value)}
-                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
-                    darkMode
-                      ? 'border-gray-500 bg-gray-900 text-gray-100'
-                      : 'border-gray-200 bg-white text-gray-900'
-                  }`}
-                />
-                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
-              </div>
-            </label>
-            <label className="block min-w-0 flex-1">
-              <span className={`mb-1 block text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>高度</span>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={manualZStr}
-                  onChange={(e) => setManualZStr(e.target.value)}
-                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm tabular-nums ${
-                    darkMode
-                      ? 'border-gray-500 bg-gray-900 text-gray-100'
-                      : 'border-gray-200 bg-white text-gray-900'
-                  }`}
-                />
-                <span className={`shrink-0 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>m</span>
-              </div>
-            </label>
-            <button
-              type="button"
-              onClick={handleAddManualMiddle}
-              className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              添加中间点
-            </button>
-          </div>
-
-          {sortedDraftMiddles.length > 0 ? (
-            <ul
-              className={`divide-y overflow-hidden rounded-lg border text-xs ${
-                darkMode ? 'divide-gray-600 border-gray-600' : 'divide-gray-200 border-gray-200'
-              }`}
-            >
-              {sortedDraftMiddles.map((p) => (
-                <li
-                  key={p.id ?? `${p.L}-${p.z}`}
-                  className="flex items-center justify-between gap-2 px-3 py-2"
-                >
-                  <span className={`tabular-nums ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    L = {p.L.toFixed(2)} m，高度 = {p.z.toFixed(3)} m
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMiddle(p.id)}
-                    className="shrink-0 text-red-500 hover:underline"
-                  >
-                    删除
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          {editorErr ? <p className="text-sm text-red-500 dark:text-red-400">{editorErr}</p> : null}
-
-          <details
-            className={`rounded-lg border text-sm ${darkMode ? 'border-gray-600 bg-gray-900/30' : 'border-gray-200 bg-gray-50'}`}
-          >
-            <summary
-              className={`cursor-pointer select-none px-3 py-2 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
-            >
-              批量粘贴
-            </summary>
-            <div className={`space-y-2 border-t px-3 py-3 ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
-              <p className={`text-[11px] leading-relaxed ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                每行两列，管长 L、高度；可从表格直接复制粘贴；首行若为文字表头会自动跳过；
-              </p>
-              <textarea
-                value={bulkText}
-                onChange={(e) => setBulkText(e.target.value)}
-                rows={3}
-                placeholder={'L\tz\n500\t12.5\n1200\t11.8'}
-                className={`w-full rounded-md border px-2 py-2 font-mono text-xs ${
-                  darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-300 bg-white'
-                }`}
-              />
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleApplyBulkTerrain}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                >
-                  添加
-                </button>
-              </div>
-            </div>
-          </details>
 
           <div className="flex flex-col items-end gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {appliedTerrain ? (
@@ -3627,9 +3526,9 @@ function ClearWaterHydraulicGradeChartBlock({
       curveData: chartData.map((r) => ({ L: r.L, H: r.headClear })),
       darkMode,
       title: '清水管道 · 水力坡度线',
-      subtitle: `清水输送水头分布：L_max = ${Lmax} m，主刻度间隔 ${stepStr} m；ρ_w = ${rho_w} t/m³，g = ${g} m/s²`,
+      subtitle: `清水输送高程分布：L_max = ${Lmax} m，主刻度间隔 ${stepStr} m；ρ_w = ${rho_w} t/m³，g = ${g} m/s²`,
       xAxisLabel: `管长 L (m)\n范围 [0，${Lmax}]；均匀主刻度，步长 ${stepStr} m`,
-      yAxisLabel: `水头 H (m)\n测压管水头（清水柱）；含 H、ρ_w g i_w L 与按管长分摊的 P_j`,
+      yAxisLabel: `高程 (m)\n测压管水头（清水柱）折算至纵坐标；含 H、ρ_w g i_w L 与按管长分摊的 P_j`,
       lineColor: CLEAR_HYDRAULIC_LINE,
       legendText: '清水水力坡度线',
       filename: `clear_water_hydraulic_grade_${dateStr}.png`,
@@ -3662,7 +3561,7 @@ function ClearWaterHydraulicGradeChartBlock({
       </div>
       <div className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
         横轴刻度步长由当前输入的 <InlineMath math="L_{\max}" /> 与 {HYDRAULIC_GRADE_TICK_DIVISIONS}{' '}
-        等分计算，为 <span className="font-mono">{stepStr}</span> m。横轴 <InlineMath math="[0,L_{\max}]" />，悬停可读水头与折算压力。
+        等分计算，为 <span className="font-mono">{stepStr}</span> m。横轴 <InlineMath math="[0,L_{\max}]" />，纵坐标为<strong>高程</strong>，悬停可读折算压力。
         <strong className="text-blue-600 dark:text-blue-400"> 清水</strong>线按本页清水总扬程：<InlineMath math="\rho_w" />、<InlineMath math="g" />、<InlineMath math="i_w" />
         与扬送清水的几何高度 <InlineMath math="H" />、管长 <InlineMath math="L_{\max}" />、<InlineMath math="P_j" />；沿程损失按{' '}
         <InlineMath math="\rho_w g i_w l + P_j\cdot(l/L_{\max})" /> 折合为清水柱高后画入纵坐标，与上方「衍生计算结果」公式一致。
@@ -3673,7 +3572,7 @@ function ClearWaterHydraulicGradeChartBlock({
         </span>
         <span>刻度步长 = {stepStr} m</span>
         <span>
-          清水终点水头 <InlineMath math="H" /> = {Number.isFinite(H) ? H.toFixed(3) : '—'} m
+          清水终点高程 <InlineMath math="H" /> = {Number.isFinite(H) ? H.toFixed(3) : '—'} m
         </span>
         <span>
           <InlineMath math="\rho_w" /> = {clearParams.rho_w ?? 1} t/m³
@@ -3701,7 +3600,7 @@ function ClearWaterHydraulicGradeChartBlock({
             />
             <YAxis
               label={{
-                value: '水头 H (m)',
+                value: '高程 (m)',
                 angle: -90,
                 position: 'insideLeft',
                 offset: 2,
@@ -3728,8 +3627,8 @@ function ClearWaterHydraulicGradeChartBlock({
                   <div className={boxCls}>
                     <div className="mb-1 font-medium">L = {Number.isFinite(Lv) ? Lv.toFixed(3) : String(label)} m</div>
                     <div className="text-blue-600 dark:text-blue-400">
-                      清水水力坡度：水头 {Number.isFinite(hm) ? hm.toFixed(3) : '—'} m
-                      {Number.isFinite(pk) ? `，折算压力 ${pk.toFixed(2)} kPa（ρ_w·g·H）` : null}
+                      清水水力坡度：高程 {Number.isFinite(hm) ? hm.toFixed(3) : '—'} m
+                      {Number.isFinite(pk) ? `，压力 ${pk.toFixed(2)} kPa` : null}
                     </div>
                   </div>
                 )
@@ -3750,7 +3649,7 @@ function ClearWaterHydraulicGradeChartBlock({
       </div>
       <div className={`mt-3 pt-3 border-t text-xs leading-relaxed ${darkMode ? 'border-gray-500 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
         <span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>图注：</span>
-        <HydraulicSlopeScopeNote /> 进口端总水头 <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
+        <HydraulicSlopeScopeNote /> 进口端纵坐标高程 <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
         {Number.isFinite(H + totalLossHeadM) ? (H + totalLossHeadM).toFixed(1) : '—'} m。
       </div>
     </div>
@@ -4097,7 +3996,6 @@ export default function MainContent({
   /** 费祥俊公式：按浆体摩阻达西法辅助求 λ（Re_B → step3） */
   const [feiLambdaAuxV, setFeiLambdaAuxV] = useState('')
   const [feiLambdaAuxEta1, setFeiLambdaAuxEta1] = useState('')
-  const [feiLambdaAuxRhoS, setFeiLambdaAuxRhoS] = useState('1')
   const [feiLambdaAuxEpsilonPreset, setFeiLambdaAuxEpsilonPreset] =
     useState<SlurryEpsilonPresetKey>(DEFAULT_SLURRY_EPSILON_PRESET)
   const [feiLambdaAuxEpsilonCustom, setFeiLambdaAuxEpsilonCustom] = useState('0.0002')
@@ -4188,10 +4086,10 @@ export default function MainContent({
     return computeFeiDarcyAssistPreview({
       D: parameters['D'],
       rho_g: parameters['rho_g'],
+      rho_k: parameters['rho_k'],
       Cv: parameters['Cv'],
       feiLambdaAuxV,
       feiLambdaAuxEta1,
-      feiLambdaAuxRhoS,
       feiLambdaAuxEpsilonPreset,
       feiLambdaAuxEpsilonCustom,
     })
@@ -4199,10 +4097,10 @@ export default function MainContent({
     formula?.id,
     parameters.D,
     parameters.rho_g,
+    parameters.rho_k,
     parameters.Cv,
     feiLambdaAuxV,
     feiLambdaAuxEta1,
-    feiLambdaAuxRhoS,
     feiLambdaAuxEpsilonPreset,
     feiLambdaAuxEpsilonCustom,
   ])
@@ -5447,18 +5345,18 @@ export default function MainContent({
 
   const applyFeiLambdaFromAssist = () => {
     const p = feiLambdaAssistPreview
-    if (!p) return
-    writeFeiLambdaCoefFromPreview(p)
+    if (!p || p.lambda == null) return
+    writeFeiLambdaCoefFromPreview({ lambda: p.lambda })
   }
 
   // 锁定后：费祥俊 λ 在用户未手写覆盖时，随管径/C_V 与辅助量自动重算（与面板实时预览同源）
   useEffect(() => {
     if (formula?.id !== 'fei_xiangjun' || lockedVc === null || !autoCalculateRef || feiLambdaManualRef.current) return
-    if (!feiLambdaAssistPreview) return
+    if (feiLambdaAssistPreview?.lambda == null) return
     const timer = window.setTimeout(() => {
       const p = feiLambdaAssistPreviewRef.current
-      if (!p) return
-      writeFeiLambdaCoefFromPreview(p)
+      if (!p?.lambda) return
+      writeFeiLambdaCoefFromPreview({ lambda: p.lambda })
     }, 500)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -9891,9 +9789,7 @@ export default function MainContent({
                           {result.result?.H_total ?? '—'}
                         </span>
                         <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {language === 'en'
-                            ? 'kPa (gauge, consistent with process basis)'
-                            : 'kPa（千帕，表压/工艺一致）'}
+                          {language === 'en' ? 'kPa' : 'kPa（千帕）'}
                         </div>
                         {result.result?.H_total != null &&
                           parameters['rho_k'] != null &&
@@ -9902,8 +9798,8 @@ export default function MainContent({
                             <span className={`block text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                               {language === 'en' ? (
                                 <>
-                                  Equivalent slurry head (<InlineMath math="P_k/(\rho_k g)" />
-                                  ): ≈{' '}
+                                  Equivalent slurry head (<InlineMath math="P_k/(\rho_k g)" />,{' '}
+                                  <InlineMath math="\rho_k" /> = {Number(parameters['rho_k'])} t/m³): ≈{' '}
                                   <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                     {kPaToFluidHeadM(
                                       Number(result.result.H_total),
@@ -9915,8 +9811,8 @@ export default function MainContent({
                                 </>
                               ) : (
                                 <>
-                                  折合浆体液柱高度（<InlineMath math="P_k/(\rho_k g)" />
-                                  ）：约{' '}
+                                  折合浆体液柱高度（<InlineMath math="P_k/(\rho_k g)" />，<InlineMath math="\rho_k" /> ={' '}
+                                  {Number(parameters['rho_k'])} t/m³）：约{' '}
                                   <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                     {kPaToFluidHeadM(
                                       Number(result.result.H_total),
@@ -9971,48 +9867,15 @@ export default function MainContent({
                     result.result?.intermediate &&
                     (() => {
                       const im = result.result.intermediate
-                      const gVal = Number(parameters['g'] ?? 9.81)
-                      const frictionSub =
-                        im.friction_pressure != null && !isNaN(Number(im.friction_pressure)) ? (
-                          <span
-                            className={`block text-xs mt-0.5 font-normal ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                          >
-                            ≈{' '}
-                            {kPaToFluidHeadM(
-                              Number(im.friction_pressure),
-                              SLURRY_CHART_CLEAR_WATER_RHO,
-                              gVal
-                            )}{' '}
-                            m（清水液柱，<InlineMath math="\rho_w=1" /> t/m³）
-                          </span>
-                        ) : null
                       return renderIntermediateResultsBlock(
                         [
                           ['gravity_pressure', `${String(im.gravity_pressure ?? '—')} kPa`],
-                          [
-                            'friction_pressure',
-                            <span className="block">
-                              {String(im.friction_pressure ?? '—')} kPa
-                              {frictionSub}
-                            </span>,
-                          ],
-                          ['P_j', `${String(im.P_j ?? '—')} kPa`],
-                          ['P_n', `${String(im.P_n ?? '—')} kPa`],
-                          ['P_z', `${String(im.P_z ?? '—')} kPa`],
+                          ['friction_pressure', `${String(im.friction_pressure ?? '—')} kPa`],
                         ],
                         'slurry_total_head',
                         'white'
                       )
                     })()}
-
-                  {result?.success && (
-                    <HydraulicDerivativeResultsSection
-                      variant="slurry"
-                      darkMode={darkMode}
-                      parameters={parameters}
-                      language={language}
-                    />
-                  )}
 
                   {result?.success && (
                     <SlurryClearHydraulicGradeChartBlock
@@ -10072,7 +9935,7 @@ export default function MainContent({
                   {renderPrimaryResultCallout({
                     nameZh: '清水管道输送压力（总扬程压力形式）',
                     symbolMath: 'P_w',
-                    unitZh: 'kPa（千帕，表压/工艺一致）',
+                    unitZh: 'kPa（千帕）',
                     bordered: true,
                     value: result?.success ? (
                       <div className="space-y-2">
@@ -10084,8 +9947,8 @@ export default function MainContent({
                           !isNaN(Number(parameters['rho_w'])) &&
                           !isNaN(Number(result.result.H_total)) && (
                             <span className={`block text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                              折合清水液柱高度（<InlineMath math="P_w/(\rho_w g)" />
-                              ）：约{' '}
+                              折合清水液柱高度（<InlineMath math="P_w/(\rho_w g)" />，<InlineMath math="\rho_w" /> ={' '}
+                              {Number(parameters['rho_w'])} t/m³）：约{' '}
                               <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                 {kPaToFluidHeadM(
                                   Number(result.result.H_total),
@@ -10108,38 +9971,10 @@ export default function MainContent({
                     result.result?.intermediate &&
                     (() => {
                       const im = result.result.intermediate
-                      const rho_w = parameters['rho_w']
-                      const gVal = Number(parameters['g'] ?? 9.81)
-                      const frictionSub =
-                        im.friction_pressure != null &&
-                        rho_w != null &&
-                        !isNaN(Number(rho_w)) &&
-                        !isNaN(Number(im.friction_pressure)) ? (
-                          <span
-                            className={`block text-xs mt-0.5 font-normal ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                          >
-                            ≈{' '}
-                            {kPaToFluidHeadM(
-                              Number(im.friction_pressure),
-                              Number(rho_w),
-                              gVal
-                            )}{' '}
-                            m（<InlineMath math="\rho_w" />）
-                          </span>
-                        ) : null
                       return renderIntermediateResultsBlock(
                         [
                           ['gravity_pressure', `${String(im.gravity_pressure ?? '—')} kPa`],
-                          [
-                            'friction_pressure',
-                            <span className="block">
-                              {String(im.friction_pressure ?? '—')} kPa
-                              {frictionSub}
-                            </span>,
-                          ],
-                          ['P_j', `${String(im.P_j ?? '—')} kPa`],
-                          ['P_n', `${String(im.P_n ?? '—')} kPa`],
-                          ['P_z', `${String(im.P_z ?? '—')} kPa`],
+                          ['friction_pressure', `${String(im.friction_pressure ?? '—')} kPa`],
                         ],
                         'clear_water_total_head',
                         'white'
@@ -10147,7 +9982,7 @@ export default function MainContent({
                     })()}
 
                   {result?.success && (
-                    <HydraulicDerivativeResultsSection variant="clear_water" darkMode={darkMode} parameters={parameters} />
+                    <HydraulicDerivativeResultsSection darkMode={darkMode} parameters={parameters} />
                   )}
 
                   {result?.success && (
@@ -11997,22 +11832,7 @@ export default function MainContent({
                         darkMode ? 'text-gray-200' : 'text-gray-700'
                       }`}
                     >
-                      {formula?.id === 'fei_xiangjun' && param.name === 'lambda_coef' ? (
-                        <>
-                          <span className="block">
-                            {renderDescriptionWithMath(displayParamLabelFromApi(param.label || param.name, param.unit))}
-                          </span>
-                          <span
-                            className={`mt-0.5 block text-[11px] font-normal leading-snug ${
-                              darkMode ? 'text-gray-400' : 'text-gray-600'
-                            }`}
-                          >
-                            {language === 'en'
-                              ? '(Dimensionless—enter as a decimal; click here to expand the Darcy friction-factor assist panel.)'
-                              : '（无量纲，请以小数填写；点此栏展开「达西摩阻系数辅助计算」）'}
-                          </span>
-                        </>
-                      ) : formula?.id === 'liu_dezhong' && param.name === 'omega'
+                      {formula?.id === 'liu_dezhong' && param.name === 'omega'
                         ? renderDescriptionWithMath('$\\omega$：似均质中加权平均沉速，单位为 m/s')
                         : formula?.id === 'liu_dezhong' && param.name === 'omega_s'
                           ? renderDescriptionWithMath('$\\omega_s$：水中加权平均沉速，单位为 m/s')
@@ -12115,7 +11935,6 @@ export default function MainContent({
                         onInputBlur={() => handleParameterBlur('lambda_coef')}
                         placeholder={ph}
                         assistPreview={feiLambdaAssistPreview}
-                        pipeInnerDiameterM={parameters['D']}
                         unit={
                           shouldShowParameterUnitSuffix(param.unit) ? (
                             <span
@@ -12131,8 +11950,6 @@ export default function MainContent({
                         setFeiLambdaAuxV={setFeiLambdaAuxV}
                         feiLambdaAuxEta1={feiLambdaAuxEta1}
                         setFeiLambdaAuxEta1={setFeiLambdaAuxEta1}
-                        feiLambdaAuxRhoS={feiLambdaAuxRhoS}
-                        setFeiLambdaAuxRhoS={setFeiLambdaAuxRhoS}
                         feiLambdaAuxEpsilonPreset={feiLambdaAuxEpsilonPreset}
                         setFeiLambdaAuxEpsilonPreset={setFeiLambdaAuxEpsilonPreset}
                         feiLambdaAuxEpsilonCustom={feiLambdaAuxEpsilonCustom}

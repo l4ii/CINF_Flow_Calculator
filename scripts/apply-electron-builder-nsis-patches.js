@@ -158,7 +158,7 @@ function patchInstallSection() {
   const uninstallBlock =
     '; [FlowCal v2] stage: clean old version\n' +
     '${IfNot} ${Silent}\n' +
-    '  DetailPrint "正在清理旧版本（如有）..."\n' +
+    '  DetailPrint "正在清理旧版本..."\n' +
     '  SetDetailsPrint none\n' +
     '${endif}\n' +
     uninstallAnchor
