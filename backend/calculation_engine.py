@@ -452,19 +452,34 @@ class CalculationEngine:
         }
 
     def _darcy_lambda_from_re(self, Re_B: float, epsilon: float, D_n: float):
-        """由 Re_B、ε、D_n 求 λ 及流态标签。"""
+        """由 Re_B、ε、D_n 求 λ、流态标签，及本步公式分解用中间量（湍流显式式各项）。"""
         if Re_B < 2000:
             lam = 64.0 / Re_B
             flow_regime = "层流"
-        else:
-            eps_term = (epsilon / (3.7 * D_n)) if epsilon else 1e-10
-            re_term = 5.7385 / (Re_B ** 0.9)
-            inner = eps_term + re_term
-            if inner <= 0:
-                raise ValueError("达西摩阻系数计算项无效")
-            lam = 1.33036 / (math.log(inner) ** 2)
-            flow_regime = "湍流"
-        return lam, flow_regime
+            extra = {
+                "flow_regime": flow_regime,
+                "darcy_formula_branch": "laminar",
+            }
+            return lam, flow_regime, extra
+        eps_term = (epsilon / (3.7 * D_n)) if epsilon else 1e-10
+        re_term = 5.7385 / (Re_B ** 0.9)
+        inner = eps_term + re_term
+        if inner <= 0:
+            raise ValueError("达西摩阻系数计算项无效")
+        ln_inner = math.log(inner)
+        ln_sq = ln_inner ** 2
+        lam = 1.33036 / ln_sq
+        flow_regime = "湍流"
+        extra = {
+            "flow_regime": flow_regime,
+            "darcy_formula_branch": "swamee_jain",
+            "epsilon_over_37D": self._safe_round(eps_term, 12),
+            "swamee_jain_re_term": self._safe_round(re_term, 12),
+            "colebrook_ln_argument": self._safe_round(inner, 12),
+            "colebrook_ln": self._safe_round(ln_inner, 12),
+            "colebrook_ln_squared": self._safe_round(ln_sq, 12),
+        }
+        return lam, flow_regime, extra
 
     def _calculate_darcy_friction_step1_rho1(self, params):
         """仅算混合物密度 ρ₁（t/m³）：直填 ρ₁ 或由 ρ_g、ρ_s、C1v 推算。"""
@@ -487,7 +502,7 @@ class CalculationEngine:
         if rho_g <= 0 or rho_s <= 0:
             raise ValueError("ρ_g、ρ_s 必须大于 0")
         if C1v < 0 or C1v > 1:
-            raise ValueError("液相体积浓度 C1v 应在 0～1 之间")
+            raise ValueError("浆体体积浓度 C₁V（固体体积占浆体总体积比例）应在 0～1 之间")
         term_liquid = rho_g * C1v
         term_solid = (1.0 - C1v) * rho_s
         rho_1_t = term_liquid + term_solid
@@ -553,15 +568,14 @@ class CalculationEngine:
         if Re_B_val is None or not isinstance(Re_B_val, (int, float)) or Re_B_val <= 0 or math.isnan(Re_B_val):
             raise ValueError("本步需要雷诺数 Re_B。请先完成上一步或在本步直接填写。")
         Re_B = float(Re_B_val)
-        lam, flow_regime = self._darcy_lambda_from_re(Re_B, float(epsilon or 0.0002), float(D_n))
+        lam, flow_regime, im_extra = self._darcy_lambda_from_re(Re_B, float(epsilon or 0.0002), float(D_n))
+        out_im = dict(im_extra)
+        out_im["step_C_lambda"] = lam
         return {
             "lambda_coef": self._safe_round(lam, 12),
             "Re_B": self._safe_round(Re_B, 12),
             "unit": "",
-            "intermediate": {
-                "flow_regime": flow_regime,
-                "step_C_lambda": lam,
-            },
+            "intermediate": out_im,
         }
 
     def _calculate_darcy_friction(self, params):

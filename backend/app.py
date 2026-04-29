@@ -43,6 +43,45 @@ def add_cors_headers(response):
     return response
 
 calculation_engine = CalculationEngine()
+
+
+def classify_locked_vc_animation(new_vc, locked_vc):
+    """
+    锁定临界流速对比时的前端动画分档（与历代 inv_ratio=locked/new 阈值 0.3/0.6/0.9/1.1/1.5 完全等价，
+    这里用 r=new_vc/locked_vc 显式写出，避免维护时颠倒）。
+
+    工程含义：新算得的 Vc 相对锁定值越大，通常表示当前条件下需更高运行流速才达临界，沉积/沉降风险越高；
+    Vc 明显低于锁定时，更易悬浮，流动条件相对更有利。
+
+    验收示例（locked=1.0）：
+    - new=4.0 → r=4.0 → settle-30（严重沉降档）
+    - new=2.0 → r=2.0 → settle-20
+    - new=0.5 → r=0.5 → fast-flow（快速流动档）
+    """
+    try:
+        nv = float(new_vc)
+        lv = float(locked_vc)
+    except (TypeError, ValueError):
+        return None
+    if lv <= 0 or nv <= 0:
+        return None
+    r = nv / lv
+    t03 = 1.0 / 0.3
+    t06 = 1.0 / 0.6
+    t09 = 1.0 / 0.9
+    t11 = 1.0 / 1.1
+    t15 = 1.0 / 1.5
+    if r > t03:
+        return 'settle-30'
+    if r > t06:
+        return 'settle-20'
+    if r > t09:
+        return 'settle-10-flow'
+    if r >= t11 and r <= t09:
+        return 'still-flow'
+    if r >= t15 and r < t11:
+        return 'medium-flow'
+    return 'fast-flow'
 word_exporter = WordExporter()
 
 @app.route('/api/formulas', methods=['GET'])
@@ -298,21 +337,13 @@ def calculate():
         velocity_ratio = None
         if locked_vc is not None and result.get('Vc') is not None:
             new_vc = result.get('Vc')
-            velocity_ratio = new_vc / locked_vc
-            
-            # 根据比例判断动画类型
-            if velocity_ratio < 0.3:
-                animation_type = 'settle-30'
-            elif velocity_ratio < 0.6:
-                animation_type = 'settle-20'
-            elif velocity_ratio < 0.9:
-                animation_type = 'settle-10-flow'
-            elif velocity_ratio <= 1.1:
-                animation_type = 'still-flow'
-            elif velocity_ratio <= 1.5:
-                animation_type = 'medium-flow'
-            else:
-                animation_type = 'fast-flow'
+            try:
+                lv_coerced = float(locked_vc)
+            except (TypeError, ValueError):
+                lv_coerced = None
+            if lv_coerced is not None and lv_coerced > 0 and new_vc is not None:
+                velocity_ratio = float(new_vc) / lv_coerced
+                animation_type = classify_locked_vc_animation(new_vc, lv_coerced)
         
         return jsonify({
             "success": True,

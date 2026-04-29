@@ -156,23 +156,20 @@ code {
   }
 }
 
-/* 临界状态：颗粒轻微悬浮、缓慢漂移，避免机械同步 */
+/* 临界状态：颗粒轻微悬浮、缓慢向右漂移（与管流方向一致，无左向分量） */
 @keyframes particle-critical-drift {
   0% {
     transform: translate3d(0, 0, 0) scale(0.92);
     opacity: 0.55;
   }
-  35% {
-    transform: translate3d(var(--particle-drift-x, 8px), var(--particle-drift-y, 4px), 0) scale(1);
+  45% {
+    transform: translate3d(var(--particle-drift-x, 10px), var(--particle-drift-y, 3px), 0) scale(1);
     opacity: 0.95;
   }
-  70% {
-    transform: translate3d(calc(var(--particle-drift-x, 8px) * 0.45), calc(var(--particle-drift-y, 4px) * -0.6), 0) scale(0.96);
-    opacity: 0.78;
-  }
   100% {
-    transform: translate3d(0, 0, 0) scale(0.92);
-    opacity: 0.55;
+    transform: translate3d(calc(var(--particle-drift-x, 10px) * 1.15), calc(var(--particle-drift-y, 3px) * 0.35), 0)
+      scale(0.94);
+    opacity: 0.62;
   }
 }
 
@@ -253,13 +250,9 @@ code {
     transform: translate3d(0, 0, 0) scale(0.92);
     opacity: 0.55;
   }
-  50% {
-    transform: translate3d(8px, 4px, 0) scale(1);
-    opacity: 0.95;
-  }
   100% {
-    transform: translate3d(0, 0, 0) scale(0.92);
-    opacity: 0.55;
+    transform: translate3d(22px, 4px, 0) scale(1);
+    opacity: 0.88;
   }
 }
 
