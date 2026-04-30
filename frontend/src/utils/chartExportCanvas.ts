@@ -141,10 +141,12 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
 
   const isHydraulic = !!hydraulicLayout
   const hasBottomLegend = isHydraulic
-  /** 水力坡度图：为 X 轴刻度、底部图例、多行 X 轴标题预留空间，避免与曲线区重叠 */
+  const xAxisCaptionLines = Math.max(1, xAxisLabel.split('\n').length)
+  /** 水力坡度图：为 X 轴刻度、底部图例、X 轴标题预留空间（随标题行数伸缩） */
+  const hydraulicAxisCaptionH = 14 + xAxisCaptionLines * 15
   const hydraulicBelowPlot =
     hasBottomLegend
-      ? 26 /* X 刻度数字 */ + 28 /* 图例行 */ + 60 /* 轴标题多行（约 4 行×15px） */ + 10 /* 底边距 */
+      ? 26 /* X 刻度数字 */ + 28 /* 图例行 */ + hydraulicAxisCaptionH + 10 /* 底边距 */
       : 0
   /** 水力坡度：宽约 1200px；总高度含底部图例区 */
   const width = widthOpt ?? (isHydraulic ? 1200 : 1600)
@@ -351,7 +353,7 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
   ctx.rotate(-Math.PI / 2)
   ctx.textAlign = 'center'
   ctx.fillStyle = muted
-  ctx.font = CANVAS_FONT_ITALIC
+  ctx.font = isHydraulic ? CANVAS_FONT_SM : CANVAS_FONT_ITALIC
   const yLines = yAxisLabel.split('\n')
   const yLineH = 15
   const yStart = (-(yLines.length - 1) * yLineH) / 2
@@ -359,6 +361,8 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
     ctx.fillText(line.trim(), 0, yStart + i * yLineH)
   })
   ctx.restore()
+
+  const hydraulicXAxisFont = isHydraulic ? CANVAS_FONT_SM : CANVAS_FONT_ITALIC
 
   // 图例：在水力坡度图中置于 X 刻度下方、轴标题上方，避免压住横轴标签
   const hydraulicTickBand = 26
@@ -400,14 +404,14 @@ export function downloadScientificHlChartPng(options: ScientificHlChartOptions):
 
   // X 轴标题（多行）：紧挨画布下沿之上，在图例下方区域
   ctx.fillStyle = muted
-  ctx.font = CANVAS_FONT_ITALIC
+  ctx.font = hydraulicXAxisFont
   ctx.textBaseline = 'top'
   ctx.textAlign = 'center'
   const xLabelY =
     isHydraulic
       ? bottom + hydraulicTickBand + hydraulicLegendBand + 4
       : height - margin.bottom + 18
-  wrapFillText(ctx, xAxisLabel, left + plotW / 2, xLabelY, plotW - 8, 15, muted, CANVAS_FONT_ITALIC)
+  wrapFillText(ctx, xAxisLabel, left + plotW / 2, xLabelY, plotW - 15, 15, muted, hydraulicXAxisFont)
 
   if (!isHydraulic) {
     let legY = top + 12

@@ -2363,6 +2363,7 @@ function SlurryClearHydraulicGradeChartBlock({
   const [previewHover, setPreviewHover] = useState<{ L: number; z: number } | null>(null)
   const [showTerrainLine, setShowTerrainLine] = useState(true)
   const [showMaxPressLine, setShowMaxPressLine] = useState(true)
+  const [bulkPasteOpen, setBulkPasteOpen] = useState(false)
 
   const { data: chartData, slurryOk, clearOk } = useMemo(
     () => buildMergedSlurryClearHydraulicData(Lmax, slurryParams, HYDRAULIC_GRADE_CURVE_POINTS),
@@ -2514,6 +2515,7 @@ function SlurryClearHydraulicGradeChartBlock({
     }
     setEditorErr(null)
     setDraftMiddlePts(r.pts)
+    setBulkPasteOpen(false)
   }
 
   const handleAddManualMiddle = () => {
@@ -2649,10 +2651,9 @@ function SlurryClearHydraulicGradeChartBlock({
       secondLegendText: '清水水力坡度线',
       extraHydraulicCurves: extra.length ? extra : undefined,
       darkMode,
-      title: '浆体与清水对比 · 管道水力坡度线',
-      subtitle: `几何扬程与沿程高程分布：L_max = ${Lmax} m，主刻度间隔 ${stepStr} m（${HYDRAULIC_GRADE_TICK_DIVISIONS} 等分）`,
-      xAxisLabel: `管长 L (m)\n范围 [0，${Lmax}]；均匀主刻度，步长 ${stepStr} m`,
-      yAxisLabel: `高程 (m)\n浆体线为折算清水柱高（P/g，ρ_w=1 t/m³）；清水对比 ρ_w=1、i_w=i_k`,
+      title: language === 'en' ? 'Hydraulic grade line' : '水力坡度线',
+      xAxisLabel: language === 'en' ? 'Pipe length (m)' : '管长 (m)',
+      yAxisLabel: language === 'en' ? 'Elevation (m)' : '高程 (m)',
       lineColor: SLURRY_HYDRAULIC_LINE,
       legendText: '浆体水力坡度线',
       filename: `slurry_clear_hydraulic_grade_${dateStr}.png`,
@@ -2669,17 +2670,9 @@ function SlurryClearHydraulicGradeChartBlock({
 
   return (
     <div className={`rounded-xl border-2 p-5 mt-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mb-3">
         <div className={`text-lg font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-          {language === 'en' ? (
-            <>
-              Hydraulic grade line – <InlineMath math="L" />
-            </>
-          ) : (
-            <>
-              水力坡度线 – <InlineMath math="L" />
-            </>
-          )}
+          {language === 'en' ? 'Hydraulic grade line' : '水力坡度线'}
         </div>
         <button
           type="button"
@@ -2691,76 +2684,123 @@ function SlurryClearHydraulicGradeChartBlock({
           {language === 'en' ? 'Export PNG' : '导出图片'}
         </button>
       </div>
-      <div className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-        {language === 'en' ? (
-          <>
-            Axis tick step is <InlineMath math="L_{\max}" /> / {HYDRAULIC_GRADE_TICK_DIVISIONS} ={' '}
-            <span className="font-mono">{stepStr}</span> m. Abscissa <InlineMath math="[0,L_{\max}]" />; ordinate is{' '}
-            <strong>freshwater-equivalent head</strong> <InlineMath math="P/(\rho_w g)" /> with{' '}
-            <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" /> (slurry line: inner model head × <InlineMath math="\rho_k" />
-            ). Hover shows elevation and pressure (<InlineMath math="P\approx\rho_w g H" />). The{' '}
-            <strong className="text-amber-600 dark:text-amber-400">slurry</strong> line follows the slurry total-head model (
-            <InlineMath math="\rho_s,\rho_k,i_k" />
-            ); the <strong className="text-blue-600 dark:text-blue-400">clear-water comparison</strong> uses the same{' '}
-            <InlineMath math="H,L,P_j,g" /> with <InlineMath math="\rho_w=1" /> and <InlineMath math="i_w=i_k" />. Use the terrain editor
-            below; the <strong>terrain profile preview</strong> is separate until you choose <strong>Add to main chart</strong> (then terrain
-            and the max. allowable line appear on the main chart).
-          </>
-        ) : (
-          <>
-            横轴刻度步长由当前输入的 <InlineMath math="L_{\max}" /> 与 {HYDRAULIC_GRADE_TICK_DIVISIONS}{' '}
-            等分计算，为 <span className="font-mono">{stepStr}</span> m。横轴 <InlineMath math="[0,L_{\max}]" />
-            ；纵坐标为<strong>折算清水柱高</strong>
-            <InlineMath math="P/(\rho_w g)" />（<InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />
-            ），浆体线为内层水力坡度纵坐标乘以 <InlineMath math="\rho_k" />
-            ；悬停显示高程与压力（<InlineMath math="P\approx\rho_w g H" />）。
-            <strong className="text-amber-600 dark:text-amber-400"> 浆体</strong>线按浆体总扬程（
-            <InlineMath math="\rho_s,\rho_k,i_k" />
-            ）；<strong className="text-blue-600 dark:text-blue-400"> 清水对比线</strong>与当前页相同{' '}
-            <InlineMath math="H,L,P_j,g" />，取 <InlineMath math="\rho_w=1" />、<InlineMath math="i_w=i_k" />。
-            <strong className="text-emerald-700 dark:text-emerald-400"> 地形线</strong>在图注下编辑区填写；下方为<strong>地形线预览图</strong>，「
-            <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>添加到主图</strong>
-            」后主图叠加地形与<strong className="text-red-700 dark:text-red-400">最大允许压力线</strong>。
-          </>
-        )}
-      </div>
-      <div className={`flex flex-wrap gap-x-5 gap-y-1 text-xs mb-3 px-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-        <span>
-          <InlineMath math="L_{\max}" /> = {Lmax} m
-        </span>
-        <span>
-          {language === 'en' ? 'Tick step =' : '刻度步长 ='} {stepStr} m
-        </span>
-        <span>
-          {language === 'en' ? (
-            <>
-              Slurry line end ordinate (freshwater head) ≈{' '}
-              {Number.isFinite(H_in) && Number.isFinite(rho_k) ? (H_in * rho_k).toFixed(3) : '—'} m; geometric{' '}
-              <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m
-            </>
-          ) : (
-            <>
-              浆体线终点纵坐标（折算清水柱）≈{' '}
-              {Number.isFinite(H_in) && Number.isFinite(rho_k) ? (H_in * rho_k).toFixed(3) : '—'} m；几何扬程{' '}
-              <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m
-            </>
-          )}
-        </span>
-        {clearOk ? (
-          <span className={darkMode ? 'text-blue-300' : 'text-blue-700'}>
-            {language === 'en' ? (
-              <>
-                Clear-water line end elevation <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m (same static
-                lift as slurry)
-              </>
-            ) : (
-              <>
-                清水水力坡度线终点高程 <InlineMath math="H" /> = {Number.isFinite(H_in) ? H_in.toFixed(3) : '—'} m（与浆体几何扬程相同）
-              </>
-            )}
-          </span>
-        ) : null}
-      </div>
+
+      <details
+        className={`mb-3 rounded-lg border text-xs ${
+          darkMode ? 'border-gray-500 bg-gray-800/40' : 'border-gray-200 bg-gray-50/90'
+        }`}
+      >
+        <summary
+          className={`cursor-pointer select-none px-3 py-2 font-medium [&::-webkit-details-marker]:hidden ${
+            darkMode ? 'text-gray-200' : 'text-gray-700'
+          }`}
+        >
+          {language === 'en' ? 'Chart notes' : '读图说明'}
+        </summary>
+        <div
+          className={`space-y-4 border-t px-3 py-3 leading-relaxed ${
+            darkMode ? 'border-gray-500 text-gray-400' : 'border-gray-200 text-gray-600'
+          }`}
+        >
+          <div>
+            <div
+              className={`mb-2 text-[11px] font-semibold uppercase tracking-wide ${
+                darkMode ? 'text-gray-300' : 'text-gray-500'
+              }`}
+            >
+              {language === 'en' ? 'Axes & curves' : '坐标与曲线'}
+            </div>
+            <div className="space-y-2">
+              {language === 'en' ? (
+                <>
+                  <p>
+                    Abscissa <InlineMath math="[0,L_{\max}]" />; tick step{' '}
+                    <span className="font-mono">{stepStr}</span> m. Ordinate: freshwater-equivalent head{' '}
+                    <InlineMath math="P/(\rho_w g)" /> with <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" /> (slurry: model head ×{' '}
+                    <InlineMath math="\rho_k" />
+                    ). Hover shows elevation and pressure.
+                  </p>
+                  <p>
+                    <strong className="text-amber-600 dark:text-amber-400">Slurry</strong> line uses this page’s slurry total-head model;{' '}
+                    <strong className="text-blue-600 dark:text-blue-400">clear-water comparison</strong> uses the same{' '}
+                    <InlineMath math="H,L,P_j,g" /> with <InlineMath math="\rho_w=1" />, <InlineMath math="i_w=i_k" />.
+                  </p>
+                  <p>
+                    Terrain is edited below; preview is separate until{' '}
+                    <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>Add to main chart</strong>, then terrain and the max.
+                    allowable line overlay the plot.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    横轴 <InlineMath math="[0,L_{\max}]" />，主刻度步长 <span className="font-mono">{stepStr}</span> m。纵坐标为折算清水柱{' '}
+                    <InlineMath math="P/(\rho_w g)" />（<InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />
+                    ），浆体线为模型水头 × <InlineMath math="\rho_k" />；悬停可读高程与压力。
+                  </p>
+                  <p>
+                    <strong className="text-amber-600 dark:text-amber-400">浆体线</strong>按本页浆体总扬程；
+                    <strong className="text-blue-600 dark:text-blue-400">清水对比线</strong>与当前页相同 <InlineMath math="H,L,P_j,g" />，取{' '}
+                    <InlineMath math="\rho_w=1" />、<InlineMath math="i_w=i_k" />。
+                  </p>
+                  <p>
+                    地形在下方编辑；预览与主图分离，点击「
+                    <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>添加到主图</strong>
+                    」后叠加地形与最大允许压力线。
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <div
+              className={`mb-2 text-[11px] font-semibold uppercase tracking-wide ${
+                darkMode ? 'text-gray-300' : 'text-gray-500'
+              }`}
+            >
+              {language === 'en' ? 'Caption & inlet heads' : '图注与进口端'}
+            </div>
+            <div className="space-y-2">
+              <HydraulicSlopeScopeNote />{' '}
+              {language === 'en' ? (
+                <>
+                  <p>
+                    Slurry-line inlet ordinate (freshwater head, <InlineMath math="P/(\rho_w g)" />, <InlineMath math="\rho_w=1" />) ≈{' '}
+                    {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
+                      ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
+                      : '—'}{' '}
+                    m (inner <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
+                    {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k" />
+                    ; <InlineMath math="P_j" /> share ≈{' '}
+                    {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k) ? (totalLossHeadM * rho_k).toFixed(1) : '—'} m column).
+                    Clear-water inlet ≈ <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
+                    {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m (Δh_w ={' '}
+                    {totalLossHeadClearM.toFixed(1)} m).
+                    {terrainDrawOk ? <> Max. allowable line: 1.5× (slurry-grade elevation) − terrain.</> : null}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    浆体线进口纵坐标（折算清水柱）≈{' '}
+                    {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
+                      ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
+                      : '—'}{' '}
+                    m（内层 <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
+                    {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k" />
+                    ；<InlineMath math="P_j" /> 分摊损失折合约{' '}
+                    {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k) ? (totalLossHeadM * rho_k).toFixed(1) : '—'} m）。清水对比线同端 ≈{' '}
+                    <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
+                    {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m（分摊折合{' '}
+                    {totalLossHeadClearM.toFixed(1)} m）。
+                    {terrainDrawOk ? <> 最大允许压力线：各点 1.5×浆体坡度纵坐标 − 地形高程。</> : null}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </details>
 
       <div className="flex flex-col gap-3">
         <div id="slurry-hydraulic-grade-chart" className="min-h-[380px] min-w-0 w-full">
@@ -2774,7 +2814,7 @@ function SlurryClearHydraulicGradeChartBlock({
                 ticks={xTicks}
                 allowDecimals
                 label={{
-                  value: '管长 L (m)',
+                  value: language === 'en' ? 'Pipe length (m)' : '管长 (m)',
                   position: 'insideBottom',
                   offset: -12,
                   style: { fill: darkMode ? '#9CA3AF' : '#6B7280', fontSize: 12, fontStyle: 'italic' },
@@ -3033,62 +3073,6 @@ function SlurryClearHydraulicGradeChartBlock({
         </div>
       </div>
 
-
-      <div className={`mt-3 pt-3 border-t text-xs leading-relaxed ${darkMode ? 'border-gray-500 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-        <span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-          {language === 'en' ? 'Note: ' : '图注：'}
-        </span>
-        <HydraulicSlopeScopeNote />{' '}
-        {language === 'en' ? (
-          <>
-            Slurry-line inlet ordinate (freshwater head, <InlineMath math="P/(\rho_w g)" />,{' '}
-            <InlineMath math="\rho_w=1" />) ≈{' '}
-            {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
-              ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
-              : '—'}{' '}
-            m (inner mixed head <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m ×{' '}
-            <InlineMath math="\rho_k" />; distributed loss incl. <InlineMath math="P_j" /> share ≈{' '}
-            {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
-              ? (totalLossHeadM * rho_k).toFixed(1)
-              : '—'}{' '}
-            m freshwater column). Clear-water comparison inlet ≈ <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m (freshwater column;
-            Δh_w = {totalLossHeadClearM.toFixed(1)} m). Hover shows elevation and pressure with{' '}
-            <InlineMath math="P\approx\rho_w g H" /> (<InlineMath math="\rho_w=1" /> for slurry ordinate).
-            {terrainDrawOk ? (
-              <>
-                {' '}
-                Red line: 1.5× (slurry-grade elevation at L) − terrain elevation along the pipe.
-              </>
-            ) : null}
-          </>
-        ) : (
-          <>
-            浆体线进口端纵坐标（折算清水柱，<InlineMath math="P/(\rho_w g)" />，<InlineMath math="\rho_w=1" />）≈{' '}
-            {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
-              ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
-              : '—'}{' '}
-            m（内层 <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k" />
-            ；含 <InlineMath math="P_j" /> 分摊的损失折合清水柱约{' '}
-            {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
-              ? (totalLossHeadM * rho_k).toFixed(1)
-              : '—'}{' '}
-            m）。清水对比线同端约 <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
-            {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m（清水液柱；分摊损失折合{' '}
-            {totalLossHeadClearM.toFixed(1)} m）。悬停显示高程与压力，<InlineMath math="P\approx\rho_w g H" />（浆体纵坐标对应{' '}
-            <InlineMath math="\rho_w=1" />）。
-            {terrainDrawOk ? (
-              <>
-                {' '}
-                红线按各点「1.5×浆体水力坡降纵坐标（m）−地形高程（m）」计算，随地形线沿程变化。
-              </>
-            ) : null}
-          </>
-        )}
-      </div>
-
       <div
         className={`mt-4 overflow-hidden rounded-xl border ${
           darkMode ? 'border-gray-500 bg-gray-800/90' : 'border-gray-200 bg-white'
@@ -3105,23 +3089,15 @@ function SlurryClearHydraulicGradeChartBlock({
           <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
             {language === 'en' ? (
               <>
-                Enter <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>start</strong> and{' '}
-                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>end</strong> elevations (at{' '}
-                <InlineMath math="L=0" /> and <InlineMath math="L=L_{\max}" />) plus optional <strong>middle</strong>{' '}
-                points below. The <strong>terrain profile preview</strong> is shown below. After <strong>Add to main chart</strong>, the main
-                chart adds the max. allowable operating line (1.5× slurry hydraulic-grade elevation − terrain elevation at each{' '}
-                <InlineMath math="L" />
-                ).{' '}
+                Start/end elevations at <InlineMath math="L=0" /> and <InlineMath math="L=L_{\max}" />, optional middles. Preview below;{' '}
+                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>Add to main chart</strong> overlays terrain and the max.
+                allowable line.
               </>
             ) : (
               <>
-                在同一区域填写<strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>起点</strong>、
-                <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>终点</strong>高程（对应{' '}
-                <InlineMath math="L=0" /> 与 <InlineMath math="L=L_{\max}" />
-                ）及可选<strong>中间控制点</strong>。下方为<strong>地形线预览图</strong>。点击「
+                填写起点、终点（<InlineMath math="L=0" />、<InlineMath math="L=L_{\max}" />）及可选中间点；下方预览。「
                 <strong className={darkMode ? 'text-gray-200' : 'text-gray-800'}>添加到主图</strong>
-                」后，主图将自动叠加<strong className="text-red-600 dark:text-red-400">最大允许压力线</strong>（各点 1.5×
-                浆体水力坡降纵坐标高程 − 该点地形高程）。
+                」后主图叠加地形与最大允许压力线。
               </>
             )}
           </p>
@@ -3216,50 +3192,58 @@ function SlurryClearHydraulicGradeChartBlock({
                 </div>
               </label>
             </div>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleAddManualMiddle}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                {language === 'en' ? 'Add middle point' : '添加中间点'}
-              </button>
-            </div>
-
-          <details
-            className={`rounded-lg border text-sm ${darkMode ? 'border-gray-600 bg-gray-900/30' : 'border-gray-200 bg-white'}`}
-          >
-            <summary
-              className={`cursor-pointer select-none px-3 py-2 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
-            >
-              {language === 'en' ? 'Bulk paste (L, z per line)' : '批量粘贴中间点（每行：L、高程）'}
-            </summary>
-            <div className={`space-y-2 border-t px-3 py-3 ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
-              <p className={`text-[11px] leading-relaxed ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                {language === 'en'
-                  ? 'Two columns per line: L and elevation; paste from spreadsheets; a header row is auto-skipped.'
-                  : '每行两列：管长 L、高程；可从表格复制；首行若为文字表头会自动跳过。'}
-              </p>
-              <textarea
-                value={bulkText}
-                onChange={(e) => setBulkText(e.target.value)}
-                rows={3}
-                placeholder={'L\tz\n500\t12.5\n1200\t11.8'}
-                className={`w-full rounded-md border px-2 py-2 font-mono text-xs ${
-                  darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-300 bg-white'
-                }`}
-              />
-              <div className="flex justify-end">
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
-                  onClick={handleApplyBulkTerrain}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                  onClick={() => setBulkPasteOpen((open) => !open)}
+                  aria-expanded={bulkPasteOpen}
+                  className={`text-left text-xs underline-offset-2 hover:underline ${
+                    darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'
+                  }`}
                 >
-                  {language === 'en' ? 'Apply' : '添加'}
+                  {language === 'en' ? 'Bulk paste middles' : '批量粘贴中间点'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddManualMiddle}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  {language === 'en' ? 'Add middle point' : '添加中间点'}
                 </button>
               </div>
+              {bulkPasteOpen ? (
+                <div
+                  className={`space-y-2 rounded-lg border p-3 ${
+                    darkMode ? 'border-gray-600 bg-gray-900/30' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <p className={`text-[11px] leading-relaxed ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                    {language === 'en'
+                      ? 'Two columns per line: L and elevation; paste from spreadsheets; a header row is auto-skipped.'
+                      : '每行两列：管长 L、高程；可从表格复制；首行若为文字表头会自动跳过。'}
+                  </p>
+                  <textarea
+                    value={bulkText}
+                    onChange={(e) => setBulkText(e.target.value)}
+                    rows={3}
+                    placeholder={'L\tz\n500\t12.5\n1200\t11.8'}
+                    className={`w-full rounded-md border px-2 py-2 font-mono text-xs ${
+                      darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-300 bg-white'
+                    }`}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkTerrain}
+                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                    >
+                      {language === 'en' ? 'Apply' : '添加'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-          </details>
 
           {sortedDraftMiddles.length > 0 ? (
             <ul
@@ -3335,7 +3319,7 @@ function SlurryClearHydraulicGradeChartBlock({
                         ticks={xTicks}
                         allowDecimals
                         label={{
-                          value: '管长 L (m)',
+                          value: language === 'en' ? 'Pipe length (m)' : '管长 (m)',
                           position: 'insideBottom',
                           offset: -14,
                           style: {
@@ -3525,10 +3509,9 @@ function ClearWaterHydraulicGradeChartBlock({
     downloadScientificHlChartPng({
       curveData: chartData.map((r) => ({ L: r.L, H: r.headClear })),
       darkMode,
-      title: '清水管道 · 水力坡度线',
-      subtitle: `清水输送高程分布：L_max = ${Lmax} m，主刻度间隔 ${stepStr} m；ρ_w = ${rho_w} t/m³，g = ${g} m/s²`,
-      xAxisLabel: `管长 L (m)\n范围 [0，${Lmax}]；均匀主刻度，步长 ${stepStr} m`,
-      yAxisLabel: `高程 (m)\n测压管水头（清水柱）折算至纵坐标；含 H、ρ_w g i_w L 与按管长分摊的 P_j`,
+      title: '水力坡度线',
+      xAxisLabel: '管长 (m)',
+      yAxisLabel: '高程 (m)',
       lineColor: CLEAR_HYDRAULIC_LINE,
       legendText: '清水水力坡度线',
       filename: `clear_water_hydraulic_grade_${dateStr}.png`,
@@ -3545,10 +3528,8 @@ function ClearWaterHydraulicGradeChartBlock({
 
   return (
     <div className={`rounded-xl border-2 p-5 mt-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
-      <div className="flex items-center justify-between mb-1">
-        <div className={`text-lg font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-          清水水力坡度线 – <InlineMath math="L" />
-        </div>
+      <div className="flex items-center justify-between mb-3">
+        <div className={`text-lg font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>水力坡度线</div>
         <button
           type="button"
           onClick={handleExportChartPNG}
@@ -3559,25 +3540,61 @@ function ClearWaterHydraulicGradeChartBlock({
           导出图片
         </button>
       </div>
-      <div className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-        横轴刻度步长由当前输入的 <InlineMath math="L_{\max}" /> 与 {HYDRAULIC_GRADE_TICK_DIVISIONS}{' '}
-        等分计算，为 <span className="font-mono">{stepStr}</span> m。横轴 <InlineMath math="[0,L_{\max}]" />，纵坐标为<strong>高程</strong>，悬停可读折算压力。
-        <strong className="text-blue-600 dark:text-blue-400"> 清水</strong>线按本页清水总扬程：<InlineMath math="\rho_w" />、<InlineMath math="g" />、<InlineMath math="i_w" />
-        与扬送清水的几何高度 <InlineMath math="H" />、管长 <InlineMath math="L_{\max}" />、<InlineMath math="P_j" />；沿程损失按{' '}
-        <InlineMath math="\rho_w g i_w l + P_j\cdot(l/L_{\max})" /> 折合为清水柱高后画入纵坐标，与上方「衍生计算结果」公式一致。
-      </div>
-      <div className={`flex flex-wrap gap-x-5 gap-y-1 text-xs mb-3 px-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-        <span>
-          <InlineMath math="L_{\max}" /> = {Lmax} m
-        </span>
-        <span>刻度步长 = {stepStr} m</span>
-        <span>
-          清水终点高程 <InlineMath math="H" /> = {Number.isFinite(H) ? H.toFixed(3) : '—'} m
-        </span>
-        <span>
-          <InlineMath math="\rho_w" /> = {clearParams.rho_w ?? 1} t/m³
-        </span>
-      </div>
+
+      <details
+        className={`mb-3 rounded-lg border text-xs ${
+          darkMode ? 'border-gray-500 bg-gray-800/40' : 'border-gray-200 bg-gray-50/90'
+        }`}
+      >
+        <summary
+          className={`cursor-pointer select-none px-3 py-2 font-medium [&::-webkit-details-marker]:hidden ${
+            darkMode ? 'text-gray-200' : 'text-gray-700'
+          }`}
+        >
+          读图说明
+        </summary>
+        <div
+          className={`space-y-4 border-t px-3 py-3 leading-relaxed ${
+            darkMode ? 'border-gray-500 text-gray-400' : 'border-gray-200 text-gray-600'
+          }`}
+        >
+          <div>
+            <div
+              className={`mb-2 text-[11px] font-semibold uppercase tracking-wide ${
+                darkMode ? 'text-gray-300' : 'text-gray-500'
+              }`}
+            >
+              坐标与曲线
+            </div>
+            <div className="space-y-2">
+              <p>
+                横轴 <InlineMath math="[0,L_{\max}]" />，主刻度步长 <span className="font-mono">{stepStr}</span> m。纵坐标为<strong>高程</strong>
+                ，悬停可读折算压力。
+              </p>
+              <p>
+                <strong className="text-blue-600 dark:text-blue-400">清水线</strong>按本页清水总扬程：
+                <InlineMath math="\rho_w" />、<InlineMath math="g" />、<InlineMath math="i_w" />、几何高度 <InlineMath math="H" />、管长{' '}
+                <InlineMath math="L_{\max}" />、<InlineMath math="P_j" />；沿程损失按{' '}
+                <InlineMath math="\rho_w g i_w l + P_j\cdot(l/L_{\max})" /> 折合为清水柱高后计入纵坐标。
+              </p>
+            </div>
+          </div>
+          <div>
+            <div
+              className={`mb-2 text-[11px] font-semibold uppercase tracking-wide ${
+                darkMode ? 'text-gray-300' : 'text-gray-500'
+              }`}
+            >
+              图注与进口端
+            </div>
+            <p>
+              <HydraulicSlopeScopeNote /> 进口端纵坐标高程 <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
+              {Number.isFinite(H + totalLossHeadM) ? (H + totalLossHeadM).toFixed(1) : '—'} m。
+            </p>
+          </div>
+        </div>
+      </details>
+
       <div id="clear-hydraulic-grade-chart" className="min-h-[380px] w-full">
         <ResponsiveContainer width="100%" height={550}>
           <LineChart data={chartData} margin={{ top: 8, right: 20, left: 8, bottom: 20 }}>
@@ -3589,7 +3606,7 @@ function ClearWaterHydraulicGradeChartBlock({
               ticks={xTicks}
               allowDecimals
               label={{
-                value: '管长 L (m)',
+                value: '管长 (m)',
                 position: 'insideBottom',
                 offset: -12,
                 style: { fill: darkMode ? '#9CA3AF' : '#6B7280', fontSize: 12, fontStyle: 'italic' },
@@ -3646,11 +3663,6 @@ function ClearWaterHydraulicGradeChartBlock({
             />
           </LineChart>
         </ResponsiveContainer>
-      </div>
-      <div className={`mt-3 pt-3 border-t text-xs leading-relaxed ${darkMode ? 'border-gray-500 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-        <span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>图注：</span>
-        <HydraulicSlopeScopeNote /> 进口端纵坐标高程 <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
-        {Number.isFinite(H + totalLossHeadM) ? (H + totalLossHeadM).toFixed(1) : '—'} m。
       </div>
     </div>
   )
@@ -4549,10 +4561,10 @@ export default function MainContent({
       (window as any).electronAPI.update.getAppVersion().then((version: string) => {
         setCurrentVersion(version)
       }).catch(() => {
-        setCurrentVersion('1.0.3')
+        setCurrentVersion('1.0.4')
       })
     } else {
-      setCurrentVersion('1.0.3')
+      setCurrentVersion('1.0.4')
     }
   }, [])
 
