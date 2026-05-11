@@ -4,3 +4,6 @@ python-docx==1.1.0
 numpy==1.26.2
 matplotlib>=3.7.0
 pyinstaller>=6.0.0
+# llama-cpp-python：Windows 上若无 MSVC/C++ 构建工具，请用上游 CPU 预编译 wheel（勿仅从源码构建）：
+#   pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.0

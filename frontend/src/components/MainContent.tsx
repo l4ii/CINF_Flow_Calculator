@@ -21,7 +21,9 @@ import {
   APP_ORG_NAME_EN,
   APP_TAGLINE_MAIN_EN,
   APP_TAGLINE_ZH,
+  APP_VERSION,
 } from '../constants/appCopy';
+import { buildFormulaDescriptionSnippet, useAssistantSnapshotOptional } from '../context/AssistantContext';
 
 /** API 中 unit 为 decimal 时表示无量纲小数：输入框后不再展示英文「decimal」 */
 function isApiDecimalUnit(unit: string | undefined | null): boolean {
@@ -3904,6 +3906,39 @@ export default function MainContent({
   const liuOmegaDL = formula ? (liuOmegaDLByFormula[formula.id] ?? null) : null
   const kronodzeStep2Ready = formula ? (kronodzeStep2ReadyMap[formula.id] || false) : false
   const kronodzeStep3Visible = formula ? (kronodzeStep3VisibleMap[formula.id] || false) : false
+  const { setAssistantSnapshot } = useAssistantSnapshotOptional()
+
+  useEffect(() => {
+    const p = formula ? { ...(formulaParameters[formula.id] ?? {}) } : {}
+    setAssistantSnapshot({
+      currentView,
+      aboutDepartment,
+      language: language ?? 'zh',
+      formula: formula
+        ? {
+            id: formula.id,
+            name: formula.name,
+            descriptionSnippet: buildFormulaDescriptionSnippet(formula.description),
+          }
+        : null,
+      parameters: p,
+      lastCalculation: result,
+      lockedVc,
+    })
+  }, [
+    setAssistantSnapshot,
+    currentView,
+    aboutDepartment,
+    language,
+    formula?.id,
+    formula?.name,
+    formula?.description,
+    formulaParameters,
+    formulaResults,
+    result,
+    lockedVc,
+  ])
+
   const isSlurryAccelFormula = formula?.id === 'slurry_accel_energy'
   // 名称「浆体消能」作为兜底：防止列表顺序/旧数据导致 id 异常时仍走加速流接口
   /** 缩径消能（原浆体消能计算） */
@@ -4561,10 +4596,10 @@ export default function MainContent({
       (window as any).electronAPI.update.getAppVersion().then((version: string) => {
         setCurrentVersion(version)
       }).catch(() => {
-        setCurrentVersion('1.0.4')
+        setCurrentVersion(APP_VERSION)
       })
     } else {
-      setCurrentVersion('1.0.4')
+      setCurrentVersion(APP_VERSION)
     }
   }, [])
 

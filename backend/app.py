@@ -12,6 +12,7 @@ from flask_cors import CORS
 from calculation_engine import CalculationEngine
 from word_export import WordExporter
 from datetime import datetime
+from assistant_api import register_assistant_routes
 
 app = Flask(__name__)
 
@@ -83,6 +84,7 @@ def classify_locked_vc_animation(new_vc, locked_vc):
         return 'medium-flow'
     return 'fast-flow'
 word_exporter = WordExporter()
+register_assistant_routes(app)
 
 @app.route('/api/formulas', methods=['GET'])
 def get_formulas():

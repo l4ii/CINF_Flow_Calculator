@@ -4,3 +4,6 @@ python-docx==1.1.0
 numpy==1.24.4
 matplotlib>=3.7.0
 pyinstaller>=6.0.0
+# 嵌入式助手：Windows 建议用 CPU 预编译 wheel，避免本机缺少编译器时 pip 源码构建失败：
+#   pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.0

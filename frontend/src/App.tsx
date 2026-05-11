@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
+import AssistantPanel from './components/AssistantPanel'
 import LicenseActivation from './components/LicenseActivation'
+import { AssistantProvider } from './context/AssistantContext'
 import { FormulaInfo, FlowState } from './types'
 import { API_BASE_URL, API_TIMEOUT } from './config/api'
 import { APP_TITLE_MAIN_EN, APP_TITLE_MAIN_ZH, APP_TAGLINE_MAIN_EN, APP_TAGLINE_ZH } from './constants/appCopy'
@@ -349,31 +351,41 @@ function App() {
   }
 
   return (
-    <div className={`flex h-screen overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      <Sidebar 
-        formulas={formulas}
-        selectedFormula={selectedFormula}
-        onFormulaSelect={handleFormulaSelect}
-        darkMode={darkMode}
-        language={language}
-        onShowAbout={handleShowAbout}
-        onShowSettings={handleShowSettings}
-        currentView={currentView}
-        aboutDepartment={aboutDepartment}
-      />
-      <div className="flex-[4] min-w-0 min-h-0 flex flex-col overflow-hidden">
-        <MainContent 
-          formula={selectedFormula}
+    <AssistantProvider>
+      <Fragment>
+        <div className={`flex h-screen overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+          <Sidebar 
+            formulas={formulas}
+            selectedFormula={selectedFormula}
+            onFormulaSelect={handleFormulaSelect}
+            darkMode={darkMode}
+            language={language}
+            onShowAbout={handleShowAbout}
+            onShowSettings={handleShowSettings}
+            currentView={currentView}
+            aboutDepartment={aboutDepartment}
+          />
+          <div className="flex-[4] min-w-0 min-h-0 flex flex-col overflow-hidden">
+            <MainContent 
+              formula={selectedFormula}
+              darkMode={darkMode}
+              currentView={currentView}
+              aboutDepartment={aboutDepartment}
+              language={language}
+              onDarkModeChange={setDarkMode}
+              onLanguageChange={setLanguage}
+              onLicenseResolved={() => setLicenseGate('ok')}
+            />
+          </div>
+        </div>
+        <AssistantPanel
+          formulas={formulas}
           darkMode={darkMode}
-          currentView={currentView}
-          aboutDepartment={aboutDepartment}
           language={language}
-          onDarkModeChange={setDarkMode}
-          onLanguageChange={setLanguage}
-          onLicenseResolved={() => setLicenseGate('ok')}
+          onFormulaSelect={handleFormulaSelect}
         />
-      </div>
-    </div>
+      </Fragment>
+    </AssistantProvider>
   )
 }
 

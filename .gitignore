@@ -90,3 +90,6 @@ scripts/license-private.pem
 # Large original source images (backed up by scripts/build-research-thumbs.py)
 # 仅保留压缩后的高清图与缩略图进仓库；原图 ~40MB 不入库
 frontend/public/_originals/
+
+# 嵌入式助手 GGUF 权重（离线安装介质另带；勿提交大体量文件）
+backend/models/*.gguf
