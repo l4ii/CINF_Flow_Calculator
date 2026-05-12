@@ -77,6 +77,36 @@ let splashWindow
 const isDev = !app.isPackaged
 const APP_DISPLAY_NAME = 'CINF长沙院浆体计算软件'
 
+function parseEnvBool(raw) {
+  if (typeof raw !== 'string') return null
+  const v = raw.trim().toLowerCase()
+  if (!v) return null
+  if (['1', 'true', 'yes', 'on'].includes(v)) return true
+  if (['0', 'false', 'no', 'off'].includes(v)) return false
+  return null
+}
+
+function resolveLocalAiDeploymentEnabled() {
+  try {
+    const pkgPath = path.join(__dirname, '..', 'package.json')
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+      if (typeof pkg.cinfAssistantLocalDeploy === 'boolean') {
+        return pkg.cinfAssistantLocalDeploy
+      }
+    }
+  } catch (_) {
+    /* ignore and fallback */
+  }
+  const envPreferred =
+    parseEnvBool(process.env.CINF_ASSISTANT_LOCAL_DEPLOYMENT) ??
+    parseEnvBool(process.env.CINF_PACK_LOCAL_AI)
+  if (envPreferred !== null) return envPreferred
+  return true
+}
+
+const LOCAL_AI_DEPLOYMENT_ENABLED = resolveLocalAiDeploymentEnabled()
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
@@ -300,26 +330,28 @@ function findBackendExecutable() {
   // 生产环境：优先策略随系统内核变化（见下方注释）
   if (!isDev) {
     const bundledPython = getResourcePath('backend', 'python38', 'python.exe')
+    // 注意顺序：onedir（dist/backend/backend.exe）必须优先于 onefile（dist/backend.exe）。
+    // 若两种产物同时存在，否则会一直跑 onefile（Temp\_MEI*），与「已改为 onedir 打包」的预期不一致。
     const possibleExePaths = [
+      getResourcePath('backend', 'dist', 'backend', 'backend.exe'),
       getResourcePath('backend', 'dist', 'backend.exe'),
       getResourcePath('backend', 'backend.exe'),
     ]
 
-    // ★ Win10+：优先 backend.exe（dist:win:full 产物，自带 Flask 等依赖）。
-    //   若仍优先 python38，嵌入式 Python 往往未 pip 安装依赖，运行 app.py 会立即失败。
-    // ★ Win7（内核 ≤6.1）：优先 python38，避免新版 Python 打的 exe 缺 api-ms-win-core-path-l1-1-0.dll 等。
+    // 始终优先 PyInstaller 打包的 backend（含 Flask 与 llama_cpp）；安装包不再分发 .py 源码。
+    // Win7：若系统无法运行该 exe，再回退内置 Python 3.8（仅当安装包仍带 app.py 时可用；现以 exe 为主）。
     const tryWin7Order = isWindows7KernelOrOlder()
-
-    if (tryWin7Order && fs.existsSync(bundledPython)) {
-      console.log('Win7/旧内核：优先使用内置 Python 3.8:', bundledPython)
-      return bundledPython
-    }
 
     for (const exePath of possibleExePaths) {
       if (fs.existsSync(exePath)) {
         console.log('找到打包的后端可执行文件:', exePath)
         return exePath
       }
+    }
+
+    if (tryWin7Order && fs.existsSync(bundledPython)) {
+      console.log('Win7/旧内核：未找到 backend.exe，尝试内置 Python 3.8（无 app.py 时无法启动，请重新打包并包含 dist/backend.exe）:', bundledPython)
+      return bundledPython
     }
 
     if (!tryWin7Order && fs.existsSync(bundledPython)) {
@@ -534,6 +566,29 @@ function startBackend() {
     const spawnCwd = backendProcessArgs.length === 0 ? backendDir : appRoot
     console.log(`工作目录: ${spawnCwd}`)
 
+    const backendEnv = {
+      ...process.env,
+      // assistant_api：GGUF / models / knowledge 路径解析（尤其对 PyInstaller backend.exe）
+      CINF_RESOURCE_ROOT: backendDir,
+      CINF_ASSISTANT_LOCAL_DEPLOYMENT: LOCAL_AI_DEPLOYMENT_ENABLED ? '1' : '0',
+    }
+    console.log('[后端] 本地 AI 部署开关:', LOCAL_AI_DEPLOYMENT_ENABLED ? 'ON' : 'OFF')
+    if (!isDev) {
+      // 客户机优先稳态：避免 status 探针在少数环境触发原生初始化访问冲突。
+      if (!backendEnv.CINF_LLAMACPP_NATIVE_PROBE) backendEnv.CINF_LLAMACPP_NATIVE_PROBE = '0'
+      // 降低 OpenMP/线程争用概率；用户可通过外部环境变量覆盖。
+      if (!backendEnv.CINF_LLAMACPP_N_THREADS) backendEnv.CINF_LLAMACPP_N_THREADS = '1'
+      if (!backendEnv.CINF_LLAMACPP_N_THREADS_BATCH) backendEnv.CINF_LLAMACPP_N_THREADS_BATCH = '1'
+    }
+    try {
+      const ggufDefault = path.join(backendDir, 'models', 'assistant.gguf')
+      if (fs.existsSync(ggufDefault)) {
+        backendEnv.CINF_LLAMACPP_GGUF = ggufDefault
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
     let settled = false
     function settleOk(tag) {
       if (settled) return
@@ -551,6 +606,7 @@ function startBackend() {
       cwd: spawnCwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: useShell,
+      env: backendEnv,
     })
     
     let backendOutput = ''
@@ -635,8 +691,8 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173')
     // 需要调试时可在控制台或菜单中手动打开 DevTools
   } else {
-    // 生产环境：前端在 extraResources 的 frontend-dist（resources/frontend-dist），安装即覆盖，避免旧版缓存
-    const indexPath = path.join(process.resourcesPath, 'frontend-dist', 'index.html')
+    // 生产环境：前端在 app.asar 内 frontend/dist（见 electron-builder.yml files 映射）
+    const indexPath = path.join(app.getAppPath(), 'frontend', 'dist', 'index.html')
     if (!fs.existsSync(indexPath)) {
       dialog.showErrorBox('启动失败', `未找到前端页面：\n${indexPath}\n\n请重新安装或使用 start.bat 启动。`)
       app.quit()
@@ -644,7 +700,7 @@ function createWindow() {
     }
     // 清空会话缓存，避免 userData 里旧缓存导致一直看到旧页面
     mainWindow.webContents.session.clearCache().then(() => {
-      const buildIdPath = path.join(process.resourcesPath, 'frontend-dist', 'build.json')
+      const buildIdPath = path.join(app.getAppPath(), 'frontend', 'dist', 'build.json')
       let buildId = ''
       try {
         if (fs.existsSync(buildIdPath)) {

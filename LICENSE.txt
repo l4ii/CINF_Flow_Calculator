@@ -1,7 +1,7 @@
 CINF长沙院浆体计算软件 软件许可协议
 
 软件名称：CINF长沙院浆体计算软件
-版本号：1.0.3
+版本号：1.1.1
 著作权人：(C) 2026 长沙有色冶金设计研究院有限公司
 
 一、软件说明
@@ -31,7 +31,7 @@ CINF长沙院浆体计算软件 软件许可协议
 CINF Slurry Calculation Software - Software License Agreement (English)
 
 Software: CINF Slurry Calculation Software
-Version: 1.0.3
+Version: 1.1.1
 Copyright: (C) 2026 Changsha Nonferrous Metallurgical Design & Research Institute Co., Ltd.
 
 I. Software Description

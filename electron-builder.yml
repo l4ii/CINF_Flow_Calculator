@@ -1,4 +1,7 @@
-# 必须在项目根目录执行 electron-builder（npm run dist:win），这样 extraResources 的 from: frontend/dist 才会解析为根目录下的 frontend/dist
+# 必须在项目根目录执行 electron-builder（npm run dist:win），以便正确解析 frontend/dist、backend/extraResources 等路径。
+# Windows 变体配置文件（均 extends 本文件或 win7 基座）：
+#   electron-builder.win.no-ai.yml / electron-builder.win.qwen.yml
+#   electron-builder.win7.yml + electron-builder.win7.no-ai.yml / electron-builder.win7.qwen.yml
 appId: com.changsha.pipeline.calc
 productName: CINF长沙院浆体计算软件
 copyright: Copyright © 2026 长沙有色冶金设计研究院有限公司
@@ -24,11 +27,15 @@ publish:
   owner: l4ii
   repo: CINF_Flow_Calculator
 
-# 前端不放进 asar，改由 extraResources 放到 resources/frontend-dist，安装时必被覆盖，避免旧缓存/旧 asar 导致看到旧版
+# 前端打进 app.asar（frontend/dist → asar 内 frontend/dist），减少安装目录 resources 下的明文脚本；仍为安装即替换整份 asar，避免旧缓存。
 files:
   - electron/**
-  - backend/**
-  - "!backend/python38/**"
+  - from: frontend/dist
+    to: frontend/dist
+    filter:
+      - "**/*"
+  # backend 仅在 extraResources → resources/backend；若再打進 app.asar 会与 resources 内 backend.exe/GGUF 整份重复（体积接近翻倍）
+  - "!backend/**"
   - requirements.txt
   - package.json
   - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
@@ -114,24 +121,27 @@ deb:
     - python3-pip
 
 extraResources:
-  # 前端构建产物放到 resources/frontend-dist，主进程从这里加载，安装即覆盖
-  - from: frontend/dist
-    to: frontend-dist
   # 安装包图标等（打包后运行时窗口图标从 resources/build 读取）
   - from: electron/build
     to: build
-  # 包含后端文件（优先使用打包的exe，如果没有则使用源代码）
+  # 仅打包可执行文件与数据目录，不包含 .py 源码（运行时以 PyInstaller backend.exe 提供功能）
   - from: backend
     to: backend
     filter:
-      - "**/*.py"
       - "**/*.exe"
       - "**/dist/**"
+      - "**/assistant_knowledge/**/*.txt"
+      - "**/assistant_knowledge/**/*.md"
       - "!python38/**"
       - "!**/__pycache__/**"
       - "!**/*.pyc"
       - "!**/build/**"
       - "!**/*.spec"
       - "!**/build_backend.py"
+  # 助手 GGUF：构建前由 npm 脚本运行 scripts/stage-pack-resources.js 写入（绕过 .gitignore）
+  - from: build/pack-resources/backend/models
+    to: backend/models
+    filter:
+      - "**/*.gguf"
   - from: requirements.txt
     to: requirements.txt

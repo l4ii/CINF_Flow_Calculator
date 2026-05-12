@@ -1,5 +1,5 @@
-# Win7/8 兼容版打包配置：输出到 release-win7；安装包文件名为 ASCII（见主 yml 说明）
-# 需配合 Electron 22 使用（npm run dist:win:legacy）
+# Win7/8 兼容打包基座：输出 release-win7；Electron 22（npm run dist:win7:noai | dist:win7:ai）。
+# 变体：electron-builder.win7.no-ai.yml、electron-builder.win7.qwen.yml（extends 本文件）
 appId: com.changsha.pipeline.calc
 productName: CINF长沙院浆体计算软件
 copyright: Copyright © 2026 长沙有色冶金设计研究院有限公司
@@ -10,8 +10,12 @@ directories:
 
 files:
   - electron/**
-  - backend/**
-  - "!backend/python38/**"
+  - from: frontend/dist
+    to: frontend/dist
+    filter:
+      - "**/*"
+  # 与主配置一致：backend 只走 extraResources，避免 backend.exe 等在 app.asar 与 resources 双份
+  - "!backend/**"
   - requirements_win7.txt
   - package.json
   - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
@@ -64,22 +68,24 @@ publish:
   channel: win7
 
 extraResources:
-  - from: frontend/dist
-    to: frontend-dist
   - from: electron/build
     to: build
   - from: backend
     to: backend
     filter:
-      - "**/*.py"
       - "**/*.exe"
       - "**/dist/**"
+      - "**/assistant_knowledge/**/*.txt"
+      - "**/assistant_knowledge/**/*.md"
       - "!**/__pycache__/**"
       - "!**/*.pyc"
       - "!**/build/**"
       - "!**/*.spec"
       - "!**/build_backend.py"
-  # 内置 Python 3.8（Win7 兼容），若无此文件夹则跳过
+  - from: build/pack-resources/backend/models
+    to: backend/models
+    filter:
+      - "**/*.gguf"
   - from: backend/python38
     to: backend/python38
     filter: ["**/*"]

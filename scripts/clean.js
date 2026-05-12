@@ -128,26 +128,39 @@ function forceRemoveWinUnpackedOnly(relativeReleaseDir) {
   sleepMs(500)
 }
 
+const WIN_PACK_OUT_DIRS = ['release', 'release-win7', 'release-qwen', 'release-win7-qwen']
+
 function main() {
   const arg = process.argv[2]
-  // release: 只清 release；release-win7: 只清 release-win7；frontend: 只清 frontend/dist；legacy: 只清 release-win7+frontend（不动 release）
-  const onlyRelease = arg === 'release' || arg === 'release-win7'
-  const releaseDir = arg === 'release-win7' ? 'release-win7' : 'release'
+  // release / release-qwen / release-win7 / release-win7-qwen: 仅清对应产出目录
+  // frontend: 只清 frontend/dist
+  // legacy: release-win7 + frontend（旧习惯，仍保留）
+  // legacy-qwen: release-win7-qwen + frontend
+  // 无参：清 release、release-win7、release-qwen、release-win7-qwen、frontend/dist
   const legacyClean = arg === 'legacy'
+  const legacyQwenClean = arg === 'legacy-qwen'
   const frontendOnly = arg === 'frontend'
+  const releaseDirArg = ['release', 'release-win7', 'release-qwen', 'release-win7-qwen'].includes(arg)
+    ? arg
+    : null
+
+  const onlyRelease = releaseDirArg !== null
+  const releaseDir = releaseDirArg || 'release'
 
   const toClean = legacyClean
     ? ['release-win7', 'frontend/dist']
-    : frontendOnly
-      ? ['frontend/dist']
-      : onlyRelease
-        ? [releaseDir]
-        : ['release', 'release-win7', 'frontend/dist']
+    : legacyQwenClean
+      ? ['release-win7-qwen', 'frontend/dist']
+      : frontendOnly
+        ? ['frontend/dist']
+        : onlyRelease
+          ? [releaseDir]
+          : ['release', 'release-win7', 'release-qwen', 'release-win7-qwen', 'frontend/dist']
   toClean.forEach((name) => {
     const dir = path.join(root, name)
     if (!fs.existsSync(dir)) return
     console.log('清理:', dir)
-    if (process.platform === 'win32' && (name === 'release' || name === 'release-win7')) forceRemoveWin(name)
+    if (process.platform === 'win32' && WIN_PACK_OUT_DIRS.includes(name)) forceRemoveWin(name)
     else removeDir(dir)
   })
   console.log('清理完成')

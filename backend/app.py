@@ -1,6 +1,10 @@
 import os
 import sys
 
+from win_llama_runtime_env import apply_if_windows
+
+apply_if_windows()
+
 # 打包后 Electron 用「python.exe + app.py 绝对路径」启动时，部分嵌入式 Python 的 sys.path
 # 可能不含本文件所在目录，导致同目录下的 calculation_engine 等无法导入。
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -95,14 +99,14 @@ def get_formulas():
                 "id": "liu_dezhong",
                 "name": "刘德忠公式",
                 "formula": "Vc = 9.5 * [g*D*(Δρ/ρ)*ω]^(1/3) * Cv^(1/6) * (ω_s/ω)^(1/6)",
-                "description": "本模型由刘德忠教授提出，是中国浆体管道设计中的主流经验公式之一。其核心思想基于浆体的整体沉降特性，通过引入似均质中加权平均沉速（$\\omega$）与水中甲醛平均沉速（$\\omega_s$）这两个关键实验参数，来综合反映固体颗粒群的干涉沉降行为。该公式尤其适用于细颗粒（如$d<2\\text{mm}$）含量较高、级配相对均匀的浆体，计算结果与中国工程实践贴合紧密。使用本公式前，建议结合试验或辅助计算获取可靠的$\\omega$与$\\omega_s$值。",
+                "description": "本模型由刘德忠教授提出，是中国浆体管道设计中的主流经验公式之一。其核心思想基于浆体的整体沉降特性，通过引入似均质中加权平均沉速（$\\omega$）与水中加权平均沉速（$\\omega_s$）这两个关键实验参数，来综合反映固体颗粒群的干涉沉降行为。该公式尤其适用于细颗粒（如$d<2\\text{mm}$）含量较高、级配相对均匀的浆体，计算结果与中国工程实践贴合紧密。使用本公式前，建议结合试验或辅助计算获取可靠的$\\omega$与$\\omega_s$值。",
                 "parameters": [
                     {"name": "D", "label": "$D$：管道内径，单位为 m", "unit": "m", "description": "管道内径", },
                     {"name": "rho_g", "label": "$\\rho_g$：固体密度，单位为 t/m³", "unit": "t/m³", "description": "固体密度", },
                     {"name": "rho_k", "label": "$\\rho_k$：浆体密度，单位为 t/m³", "unit": "t/m³", "description": "浆体密度", },
                     {"name": "omega", "label": "$\\omega$：似均质中加权平均沉速，单位为 m/s", "unit": "m/s", "description": "似均质中加权平均沉速", },
                     {"name": "Cv", "label": "$C_V$：体积浓度（0～1，可手动输入；或点此栏展开「体积浓度辅助计算」）", "unit": "", "description": "体积浓度", },
-                    {"name": "omega_s", "label": "$\\omega_s$：水中甲醛平均沉速，单位为 m/s", "unit": "m/s", "description": "水中甲醛平均沉速", },
+                    {"name": "omega_s", "label": "$\\omega_s$：水中加权平均沉速，单位为 m/s", "unit": "m/s", "description": "水中加权平均沉速", },
                     {"name": "g", "label": "$g$：重力加速度，单位为 m/s²", "unit": "m/s²", "description": "重力加速度", "default": 9.81},
                     {"name": "coefficient_9_5", "label": "经验系数：默认值 9.5（无量纲）", "unit": "", "description": "经验系数", "default": 9.5}
                 ]
@@ -184,7 +188,7 @@ def get_formulas():
                     "摩阻系数 $\\lambda$ 由混合物雷诺数 $Re_B$、管壁绝对粗糙度 $\\varepsilon$ 与管径 $D_n$ 等按步骤 4 所选显式关系确定；"
                     "$\\rho_g$、$\\rho_s$、$\\rho_1$ 均以 t/m³ 计，雷诺数按 $Re_B = V D_n \\cdot 1000\\rho_1 / \\eta_1$ 计算，"
                     "程序将 $\\rho_1$ 换为 SI 密度（kg/m³）后与动力粘度 $\\eta_1$（Pa·s）配套；"
-                    "混合物密度 $\\rho_1$ 亦可由 $\\rho_1 = \\rho_g C_{1V} + (1-C_{1V})\\rho_s$ 求得（步骤 2）；"
+                    "混合物密度 $\\rho_1$ 在本工作流中优先可由本页步骤 2 直填；若按式计算，则 $\\rho_1 = \\rho_g C_{1V} + (1-C_{1V})\\rho_{k,\\mathrm{浆}}$（其中 $\\rho_{k,\\mathrm{浆}}$ 即步骤 1 求得的浆体密度，界面键名为 $\\rho_k$，与步骤 1 输入栏的清水密度 $\\rho_s$ 不是同一量）；"
                     "浆体密度 $\\rho_k$ 由固体质量浓度 $C_w$ 与液、固相密度按本页第一步关系确定。\n\n"
                     "若设计、试验或文献已给出 $\\rho_k$、$\\lambda$、$\\rho_1$ 或 $Re_B$ 等可靠取值，可在对应步骤直接采用；"
                     "程序仅在前序步骤完成且目标输入栏为空时写入结果，不覆盖用户已填或已改数值。"

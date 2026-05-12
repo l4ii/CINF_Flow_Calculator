@@ -311,16 +311,22 @@ const SLURRY_FRICTION_CHAIN_IDS = [
 
 const SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS = [
   {
+    name: 'rho_1' as const,
+    label: '$\\rho_1$：混合物密度（可选，与下方三栏二选一）',
+    unit: 't/m³',
+    placeholder: '可选；直填 ρ₁ 时，下方 ρ_g、ρ_k、C_{1V} 可留空',
+  },
+  {
     name: 'rho_g' as const,
     label: '$\\rho_g$：固体密度',
     unit: 't/m³',
     placeholder: '固体密度，如2.5',
   },
   {
-    name: 'rho_s' as const,
-    label: '$\\rho_s$：浆体密度',
+    name: 'rho_k' as const,
+    label: '$\\rho_k$：浆体密度（步骤1结果，勿填清水密度）',
     unit: 't/m³',
-    placeholder: '浆体密度，如1.2',
+    placeholder: '步骤1「浆体密度」ρ_k，如1.47',
   },
   {
     name: 'C1v' as const,
@@ -338,22 +344,28 @@ const SLURRY_FRICTION_WF_DARCY_RE_FIELDS = [
     placeholder: '混合物密度，如1.35',
   },
   {
+    name: 'Re_B' as const,
+    label: '$Re_B$：雷诺数（可选）',
+    unit: '无量纲',
+    placeholder: '已知 Re_B 时可直填；填写后本步可不填 V、D_n、η₁',
+  },
+  {
     name: 'V' as const,
     label: '$V$：断面平均流速',
     unit: 'm/s',
-    placeholder: '断面平均流速，如2',
+    placeholder: '未直填 Re_B 时必填，如2',
   },
   {
     name: 'D_n' as const,
     label: '$D_n$：管道内径',
     unit: 'm',
-    placeholder: '管道内径，如0.2',
+    placeholder: '未直填 Re_B 时必填，如0.2',
   },
   {
     name: 'eta_1' as const,
     label: '$\\eta_1$：混合物动力粘度',
     unit: 'Pa·s',
-    placeholder: '混合物动力粘度，如0.001',
+    placeholder: '未直填 Re_B 时必填，如0.001',
   },
 ]
 
@@ -446,7 +458,7 @@ const SLURRY_FRICTION_WF_STEP_INTROS: Record<
   step1:
     '依据固体质量浓度 $C_w$ 与固体密度 $\\rho_g$、清水密度 $\\rho_s$，按质量加权关系求浆体密度 $\\rho_k$（t/m³）。若浆体密度（$\\rho_k$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「5.水力坡降（$i_k$）」中直接输入。',
   darcy_rho1:
-    '依据固体密度 $\\rho_g$、液体密度 $\\rho_s$ 与全部浆体似均质体积浓度 $C_{1V}$（即固体体积占总体体积的比例），按体积加权求混合物密度 $\\rho_1$（t/m³）。计算结果自动传递至后续雷诺数计算所需参数集；若混合物密度（$\\rho_1$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「3 雷诺数（$Re_B$）」中直接输入。',
+    '可先直填混合物密度 $\\rho_1$（与本节首栏「可选」一致）；否则依据固体密度 $\\rho_g$、步骤1求得的浆体密度 $\\rho_k$（勿与步骤1输入栏的清水密度 $\\rho_s$ 混淆）与 $C_{1V}$，按 $\\rho_1 = \\rho_g C_{1V} + (1-C_{1V})\\rho_k$ 计算（t/m³）。结果写入后续「雷诺数」所用参数；若 $\\rho_1$ 已知，也可跳过本步并在「3 雷诺数（$Re_B$）」中直接填写。',
   darcy_re:
     '雷诺数是表征管道内流体流动状态的关键无量纲数，是计算摩阻损失的基础参数。该公式采用工程常用的显式近似形式（基于雷诺数定义 $Re=\\rho w D/\\mu$ 推导），直接求解流区的摩阻系数。同时体现了“密度、流速、管径、动力粘度”对流态的综合影响。若雷诺数（$Re_B$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「4.达西摩阻系数（$\\lambda$）」中直接输入。',
   darcy_lambda:
@@ -1432,15 +1444,15 @@ function computeLiuBinghamOmegaFromAux(params: {
   return Math.round(w_i * 1e6) / 1e6
 }
 
-/** 与 LiuDezhongOmegaSStokesField 内联计算一致；d 为颗粒粒径 m，mu_w 为动力粘度 Pa·s */
+/** 与 LiuDezhongOmegaSStokesField 内联计算一致；d_mm 为颗粒粒径 mm（内部换算 m），mu_w 为动力粘度 Pa·s */
 function computeLiuStokesOmegaSFromAux(params: {
   rho_g: number
   rho_w: number
   g: number
-  d: number
+  d_mm: number
   mu_w: number
 }): number | null {
-  const { rho_g, rho_w, g, d, mu_w } = params
+  const { rho_g, rho_w, g, d_mm, mu_w } = params
   if (
     !Number.isFinite(rho_g) ||
     !Number.isFinite(rho_w) ||
@@ -1448,15 +1460,16 @@ function computeLiuStokesOmegaSFromAux(params: {
     rho_w <= 0 ||
     !Number.isFinite(g) ||
     g <= 0 ||
-    !Number.isFinite(d) ||
-    d <= 0 ||
+    !Number.isFinite(d_mm) ||
+    d_mm <= 0 ||
     !Number.isFinite(mu_w) ||
     mu_w <= 0
   ) {
     return null
   }
+  const d_m = d_mm / 1000
   const rhoDiffKgM3 = (rho_g - rho_w) * 1000
-  const omegaS = (g * rhoDiffKgM3 * d ** 2) / (18 * mu_w)
+  const omegaS = (g * rhoDiffKgM3 * d_m ** 2) / (18 * mu_w)
   if (!Number.isFinite(omegaS)) return null
   return Math.round(omegaS * 1e6) / 1e6
 }
@@ -1706,7 +1719,7 @@ function LiuDezhongOmegaBinghamField({
               <div className={hintMuted}>
                 <InlineMath math="D_L" /> ={' '}
                 {Number.isFinite(D_L) ? <span className="font-mono font-semibold text-inherit">{String(Math.round(D_L * 1e9) / 1e9)}</span> : '—'}{' '}
-                m；<InlineMath math="d_i" /> = <InlineMath math="D_L" />；<InlineMath math="\omega_L" /> ={' '}
+                mm；<InlineMath math="d_i" /> = <InlineMath math="D_L" />；<InlineMath math="\omega_L" /> ={' '}
                 {Number.isFinite(W_L) ? <span className="font-mono font-semibold text-inherit">{String(Math.round(W_L * 1e9) / 1e9)}</span> : '—'}{' '}
                 m/s
               </div>
@@ -1786,7 +1799,7 @@ function LiuDezhongOmegaSStokesField({
   unit: ReactNode
   parameters: Record<string, number | undefined>
   dLFromOmega: number | null
-  onApplyOmegaS: (omegaSStr: string, meta?: { d: number }) => void
+  onApplyOmegaS: (omegaSStr: string, meta?: { dMm: number }) => void
 }) {
   const [open, setOpen] = useState(false)
   const [rhoGStr, setRhoGStr] = useState('')
@@ -1830,7 +1843,8 @@ function LiuDezhongOmegaSStokesField({
   const rhoG = parseFloat(norm(rhoGStr))
   const rhoW = parseFloat(norm(rhoWStr))
   const gVal = parseFloat(norm(gStr))
-  const dVal = parseFloat(norm(dStr))
+  const dValMm = parseFloat(norm(dStr))
+  const dValM = Number.isFinite(dValMm) ? dValMm / 1000 : NaN
   const muW = parseFloat(norm(muWStr))
 
   const ok =
@@ -1840,13 +1854,13 @@ function LiuDezhongOmegaSStokesField({
     rhoW > 0 &&
     Number.isFinite(gVal) &&
     gVal > 0 &&
-    Number.isFinite(dVal) &&
-    dVal > 0 &&
+    Number.isFinite(dValMm) &&
+    dValMm > 0 &&
     Number.isFinite(muW) &&
     muW > 0
 
   const rhoDiffKgM3 = ok ? (rhoG - rhoW) * 1000 : NaN
-  const omegaS = ok ? (gVal * rhoDiffKgM3 * dVal ** 2) / (18 * muW) : NaN
+  const omegaS = ok ? (gVal * rhoDiffKgM3 * dValM ** 2) / (18 * muW) : NaN
   const omegaSRounded = Number.isFinite(omegaS) ? Math.round(omegaS * 1e6) / 1e6 : NaN
 
   const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
@@ -1919,7 +1933,7 @@ function LiuDezhongOmegaSStokesField({
 
           <div className="space-y-3 px-3 py-3">
             <p className={`text-[10px] leading-snug ${hintMuted}`}>
-              <InlineMath math="\rho_g" />、<InlineMath math="\rho_w" />、<InlineMath math="g" /> 与本页输入联动；<InlineMath math="d" /> 默认取上一步 <InlineMath math="d_L" />。
+              <InlineMath math="\rho_g" />、<InlineMath math="\rho_w" />、<InlineMath math="g" /> 与本页输入联动；<InlineMath math="d" /> 默认取上一步 <InlineMath math="d_L" />（mm），计算时按 <InlineMath math="d/1000" /> 换算为 m。
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
@@ -1938,9 +1952,9 @@ function LiuDezhongOmegaSStokesField({
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="d" />：颗粒粒径 · m
+                  <InlineMath math="d" />：颗粒粒径 · mm
                 </span>
-                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={dStr} onChange={(e) => setDStr(e.target.value)} className={subInputCls} placeholder="颗粒粒径d（默认取d_L）" />
+                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={dStr} onChange={(e) => setDStr(e.target.value)} className={subInputCls} placeholder="颗粒粒径d（默认取d_L，单位mm）" />
               </div>
               <div>
                 <span className={`text-xs font-medium ${hintStrong}`}>
@@ -1990,7 +2004,7 @@ function LiuDezhongOmegaSStokesField({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   if (!Number.isFinite(omegaSRounded) || !ok) return
-                  onApplyOmegaS(String(omegaSRounded), { d: dVal })
+                  onApplyOmegaS(String(omegaSRounded), { dMm: dValMm })
                   setOpen(false)
                 }}
               >
@@ -4410,7 +4424,8 @@ export default function MainContent({
 
       // 浆体摩阻工作流（达西分步）中间量
       'term_rho_g_C1v': '固相体积项',
-      'term_1minusC1v_rho_s': '固相体积项',
+      'term_1minusC1v_rho_k': '浆体体积项',
+      'term_1minusC1v_rho_s': '浆体体积项',
       'rho_1_kg_m3': 'SI 密度',
       're_numerator_V_D_rho_kg': '雷诺分子项',
       'mixture_rho_1': '所用混合物密度',
@@ -4484,7 +4499,8 @@ export default function MainContent({
       'denominator': '2gD \\cdot \\rho_s',
       'denom': '\\frac{C_w}{\\rho_g} + \\frac{1-C_w}{\\rho_s}',
       'term_rho_g_C1v': '\\rho_g \\cdot C_{1v}',
-      'term_1minusC1v_rho_s': '(1-C_{1v})\\cdot\\rho_s',
+      'term_1minusC1v_rho_k': '(1-C_{1v})\\cdot\\rho_k',
+      'term_1minusC1v_rho_s': '(1-C_{1v})\\cdot\\rho_k',
       'rho_1_kg_m3': '1000\\rho_1\\ \\mathrm{(kg/m^3)}',
       're_numerator_V_D_rho_kg': 'V \\cdot D_n \\cdot 1000\\rho_1',
       'mixture_rho_1': '\\rho_1',
@@ -5429,22 +5445,26 @@ export default function MainContent({
       if (!liuOmegaSManualRef.current) {
         const rg = parameters.rho_g
         const rk = parameters.rho_k
-        const d = liuStokesDForAutoRef.current ?? parameters.D
+        const dMm =
+          liuStokesDForAutoRef.current ??
+          (parameters.D != null && !isNaN(Number(parameters.D))
+            ? Number(parameters.D) * 1000
+            : undefined)
         const mu = parameters.eta_1 != null && !isNaN(parameters.eta_1) ? parameters.eta_1 : 0.001
         const g = parameters.g ?? 9.81
         if (
           rg != null &&
           rk != null &&
-          d != null &&
+          dMm != null &&
           !isNaN(rg) &&
           !isNaN(rk) &&
-          !isNaN(Number(d))
+          !isNaN(Number(dMm))
         ) {
           const ws = computeLiuStokesOmegaSFromAux({
             rho_g: rg,
             rho_w: rk,
             g,
-            d: Number(d),
+            d_mm: Number(dMm),
             mu_w: mu,
           })
           if (ws != null) {
@@ -5551,56 +5571,91 @@ export default function MainContent({
     }))
   }
 
+  /** 与界面显示一致：优先已解析数，其次从当前输入框原文解析（避免未 blur 时提交缺参）。 */
+  const getWorkflowNumeric = (subId: string, name: string): number | undefined => {
+    const pm = formulaParameters[subId] as Record<string, number | undefined> | undefined
+    const parsed = pm?.[name]
+    if (parsed !== undefined && parsed !== null && typeof parsed === 'number' && !isNaN(parsed)) {
+      return parsed
+    }
+    const raw = formulaRawInputs[subId]?.[name]
+    if (raw === undefined || String(raw).trim() === '') return undefined
+    const normalized = normalizeDecimalInput(String(raw).trim())
+    if (normalized === '-' || normalized === '.' || normalized === '-.') return undefined
+    if (!/^-?\d+(\.\d*)?$/.test(normalized)) return undefined
+    const numValue = parseFloat(normalized)
+    if (isNaN(numValue)) return undefined
+    return Math.round(numValue * 1e6) / 1e6
+  }
+
   const validateFrictionSubStep = (subId: string): string | null => {
-    const darcy = formulaParameters['darcy_friction'] || {}
-    const p = formulaParameters[subId] || {}
     if (subId === 'density_mixing') {
-      const Cw = p['C_w']
-      if (Cw == null || isNaN(Cw) || Cw < 0 || Cw > 1) return '步骤1：C_w 须在 0～1 之间（小数，如 0.35）'
-      if (p['rho_g'] == null || isNaN(p['rho_g']!) || p['rho_g']! <= 0) return '步骤1：请填写 ρ_g'
-      if (p['rho_s'] == null || isNaN(p['rho_s']!) || p['rho_s']! <= 0) return '步骤1：请填写 ρ_s'
+      const Cw = getWorkflowNumeric('density_mixing', 'C_w')
+      if (Cw == null || isNaN(Cw) || Cw < 0 || Cw > 1) {
+        return '步骤1：含水率 C_w 须在 0～1 之间（小数，如 0.35）'
+      }
+      const rg = getWorkflowNumeric('density_mixing', 'rho_g')
+      if (rg == null || rg <= 0) return '步骤1：请填写固体密度 ρ_g'
+      const rs = getWorkflowNumeric('density_mixing', 'rho_s')
+      if (rs == null || rs <= 0) return '步骤1：请填写清水密度 ρ_s'
       return null
     }
     if (subId === 'darcy_friction_step1_rho1') {
-      const hasStepA = [darcy['rho_g'], darcy['rho_s'], darcy['C1v']].every((v) => v != null && !isNaN(v!))
-      if (!hasStepA) return '步骤2：请填写 ρ_g、ρ_s、C1v'
-      return null
+      const rho1 =
+        getWorkflowNumeric('darcy_friction', 'rho_1') ?? getWorkflowNumeric('darcy_friction', 'rho_l')
+      if (rho1 != null && rho1 > 0) return null
+      const rg = getWorkflowNumeric('darcy_friction', 'rho_g')
+      const rk = getWorkflowNumeric('darcy_friction', 'rho_k')
+      const c1 =
+        getWorkflowNumeric('darcy_friction', 'C1v') ??
+        getWorkflowNumeric('darcy_friction', 'C_lv') ??
+        getWorkflowNumeric('darcy_friction', 'Clv')
+      if (rg != null && rk != null && c1 != null) return null
+      return '步骤2：请直填首栏混合物密度 ρ₁，或填写固体密度 ρ_g、步骤1浆体密度 ρ_k、似均质体积浓度 C_{1V}'
     }
     if (subId === 'darcy_friction_step2_re') {
-      const rho1 = darcy['rho_1']
+      const rho1 = getWorkflowNumeric('darcy_friction', 'rho_1')
       if (rho1 == null || isNaN(rho1) || rho1 <= 0) {
-        return '步骤3：请填写 ρ₁（t/m³）；可由步骤 2 结果导入，或在本步输入'
+        return '步骤3：请填写「混合物密度 ρ₁」（t/m³）；可由步骤2计算写入，或在本步参数表填写'
       }
-      if (darcy['V'] == null || isNaN(darcy['V']!)) return '步骤3：请填写断面平均流速 V'
-      if (darcy['D_n'] == null || isNaN(darcy['D_n']!) || darcy['D_n']! <= 0) {
-        return '步骤3：请填写管道内径 D_n'
-      }
-      if (darcy['eta_1'] == null || isNaN(darcy['eta_1']!) || darcy['eta_1']! <= 0) {
-        return '步骤3：请填写混合物动力粘度 η₁（Pa·s）'
-      }
+      const reB = getWorkflowNumeric('darcy_friction', 'Re_B')
+      if (reB != null && !isNaN(reB) && reB > 0) return null
+      const V = getWorkflowNumeric('darcy_friction', 'V')
+      if (V == null || isNaN(V)) return '步骤3：请填写断面平均流速 V（未直填 Re_B 时必填）'
+      const Dn = getWorkflowNumeric('darcy_friction', 'D_n')
+      if (Dn == null || isNaN(Dn) || Dn <= 0) return '步骤3：请填写管道内径 D_n'
+      const eta = getWorkflowNumeric('darcy_friction', 'eta_1')
+      if (eta == null || isNaN(eta) || eta <= 0) return '步骤3：请填写混合物动力粘度 η₁（Pa·s）'
       return null
     }
     if (subId === 'darcy_friction_step3_lambda') {
-      const Dn = darcy['D_n']
+      const Dn = getWorkflowNumeric('darcy_friction', 'D_n')
       if (Dn == null || isNaN(Dn) || Dn <= 0) return '步骤4：请填写管道内径 D_n'
-      const ReB = darcy['Re_B']
+      const ReB = getWorkflowNumeric('darcy_friction', 'Re_B')
       if (ReB == null || isNaN(ReB) || ReB <= 0) {
-        return '步骤4：请填写 Re_B；可取步骤 3 计算结果，或先完成步骤 3'
+        return '步骤4：请填写雷诺数 Re_B；可取步骤 3 计算结果，或先完成步骤 3'
       }
       return null
     }
     if (subId === 'slurry_friction_loss') {
-      const rhoK = p['rho_k']
-      if (rhoK == null || isNaN(rhoK) || rhoK <= 0) return '步骤5：请填写 ρ_k；可取步骤 1 计算结果'
-      for (const name of ['lambda_coef', 'V', 'D'] as const) {
-        const v = p[name]
-        if (v == null || isNaN(v)) return `步骤5：请填写 ${name}`
-        if (name === 'D' && v === 0) return '步骤5：管道内径 D 不能为 0'
-        if (name === 'lambda_coef' && v <= 0) return '步骤5：λ 必须大于 0'
+      const rhoK = getWorkflowNumeric('slurry_friction_loss', 'rho_k')
+      if (rhoK == null || isNaN(rhoK) || rhoK <= 0) {
+        return '步骤5：请填写浆体密度 ρ_k（与步骤1浆体密度同义，t/m³）'
       }
-      const rhoS = p['rho_s']
-      if (rhoS != null && !isNaN(rhoS) && rhoS <= 0) return '步骤5：水密度 ρ_s 须大于 0'
-      const gVal = p['g']
+      const step5Names: Record<'lambda_coef' | 'V' | 'D', string> = {
+        lambda_coef: '达西摩阻系数 λ',
+        V: '断面平均流速 V',
+        D: '管道内径 D',
+      }
+      for (const name of ['lambda_coef', 'V', 'D'] as const) {
+        const v = getWorkflowNumeric('slurry_friction_loss', name)
+        if (v == null || isNaN(v)) return `步骤5：请填写 ${step5Names[name]}`
+        if (name === 'D' && v === 0) return '步骤5：管道内径 D 不能为 0'
+        if (name === 'lambda_coef' && v <= 0) return '步骤5：达西摩阻系数 λ 必须大于 0'
+      }
+      const rhoS = getWorkflowNumeric('slurry_friction_loss', 'rho_s')
+      if (rhoS != null && !isNaN(rhoS) && rhoS <= 0) return '步骤5：液体密度 ρ_s 须大于 0'
+      const gVal = getWorkflowNumeric('slurry_friction_loss', 'g')
       if (gVal != null && !isNaN(gVal) && gVal <= 0) return '步骤5：重力加速度 g 须大于 0'
       return null
     }
@@ -5613,15 +5668,12 @@ export default function MainContent({
       await showAppAlert('参数校验', err)
       return
     }
-    const dm = formulaParameters['density_mixing'] || {}
-    const darcy = formulaParameters['darcy_friction'] || {}
-    const sflP = formulaParameters['slurry_friction_loss'] || {}
-    const p = formulaParameters[subId] || {}
 
     const validParameters: Record<string, number> = {}
     if (subId === 'density_mixing') {
-      for (const [key, value] of Object.entries(dm)) {
-        if (value !== undefined && value !== null && !isNaN(value as number)) validParameters[key] = value as number
+      for (const key of ['C_w', 'rho_g', 'rho_s'] as const) {
+        const v = getWorkflowNumeric('density_mixing', key)
+        if (v !== undefined && !isNaN(v)) validParameters[key] = v
       }
     } else if (
       subId === 'darcy_friction_step1_rho1' ||
@@ -5629,30 +5681,39 @@ export default function MainContent({
       subId === 'darcy_friction_step3_lambda'
     ) {
       if (subId === 'darcy_friction_step1_rho1') {
-        for (const key of ['rho_g', 'rho_s', 'C1v'] as const) {
-          const value = darcy[key]
-          if (value !== undefined && value !== null && !isNaN(value as number)) {
-            validParameters[key] = value as number
-          }
+        const r1 =
+          getWorkflowNumeric('darcy_friction', 'rho_1') ?? getWorkflowNumeric('darcy_friction', 'rho_l')
+        if (r1 != null && r1 > 0) {
+          validParameters.rho_1 = r1
+        } else {
+          const rg = getWorkflowNumeric('darcy_friction', 'rho_g')
+          const rk = getWorkflowNumeric('darcy_friction', 'rho_k')
+          const c1 =
+            getWorkflowNumeric('darcy_friction', 'C1v') ??
+            getWorkflowNumeric('darcy_friction', 'C_lv') ??
+            getWorkflowNumeric('darcy_friction', 'Clv')
+          if (rg !== undefined && !isNaN(rg)) validParameters.rho_g = rg
+          if (rk !== undefined && !isNaN(rk)) validParameters.rho_k = rk
+          if (c1 !== undefined && !isNaN(c1)) validParameters.C1v = c1
         }
       } else if (subId === 'darcy_friction_step2_re') {
-        for (const key of ['rho_1', 'V', 'D_n', 'eta_1'] as const) {
-          const value = darcy[key]
-          if (value !== undefined && value !== null && !isNaN(value as number)) {
-            validParameters[key] = value as number
-          }
+        for (const key of ['rho_1', 'V', 'D_n', 'eta_1', 'Re_B'] as const) {
+          const value = getWorkflowNumeric('darcy_friction', key)
+          if (value !== undefined && !isNaN(value)) validParameters[key] = value
         }
       } else {
-        for (const [key, value] of Object.entries(darcy)) {
-          if (value !== undefined && value !== null && !isNaN(value as number)) validParameters[key] = value as number
+        for (const key of ['Re_B', 'D_n', 'epsilon'] as const) {
+          const value = getWorkflowNumeric('darcy_friction', key)
+          if (value !== undefined && !isNaN(value)) validParameters[key] = value
         }
       }
       if (subId === 'darcy_friction_step3_lambda' && validParameters['epsilon'] === undefined) {
         validParameters['epsilon'] = DEFAULT_SLURRY_EPSILON
       }
     } else if (subId === 'slurry_friction_loss') {
-      for (const [key, value] of Object.entries(sflP)) {
-        if (value !== undefined && value !== null && !isNaN(value)) validParameters[key] = value as number
+      for (const key of ['rho_k', 'lambda_coef', 'V', 'D', 'rho_s', 'g'] as const) {
+        const value = getWorkflowNumeric('slurry_friction_loss', key)
+        if (value !== undefined && !isNaN(value)) validParameters[key] = value
       }
       if (validParameters['rho_s'] === undefined) {
         validParameters['rho_s'] = 1
@@ -5688,8 +5749,8 @@ export default function MainContent({
 
       if (subId === 'density_mixing' && res?.rho_k != null) {
         const rk = Number(res.rho_k)
-        const rhoG = p['rho_g']
-        const rhoS = p['rho_s']
+        const rhoG = validParameters['rho_g']
+        const rhoS = validParameters['rho_s']
         setFormulaParameters((prev) => {
           const sfl = { ...(prev.slurry_friction_loss || {}) }
           sfl.rho_k = rk
@@ -5700,8 +5761,8 @@ export default function MainContent({
           if ((darcyN.rho_g == null || isNaN(darcyN.rho_g)) && rhoG != null && !isNaN(rhoG)) {
             darcyN.rho_g = r6(rhoG)
           }
-          if ((darcyN.rho_s == null || isNaN(darcyN.rho_s)) && rhoS != null && !isNaN(rhoS)) {
-            darcyN.rho_s = r6(rhoS)
+          if (darcyN.rho_k == null || isNaN(darcyN.rho_k)) {
+            darcyN.rho_k = r6(rk)
           }
           return { ...prev, slurry_friction_loss: sfl, darcy_friction: darcyN }
         })
@@ -5715,8 +5776,8 @@ export default function MainContent({
           if ((darcyR.rho_g == null || darcyR.rho_g === '') && rhoG != null && !isNaN(rhoG)) {
             darcyR.rho_g = String(r6(rhoG))
           }
-          if ((darcyR.rho_s == null || darcyR.rho_s === '') && rhoS != null && !isNaN(rhoS)) {
-            darcyR.rho_s = String(r6(rhoS))
+          if (darcyR.rho_k == null || darcyR.rho_k === '') {
+            darcyR.rho_k = String(r6(rk))
           }
           return { ...prev, slurry_friction_loss: sfl, darcy_friction: darcyR }
         })
@@ -5760,6 +5821,7 @@ export default function MainContent({
         const lam = Number(res.lambda_coef)
         setFormulaParameters((prev) => {
           const dart = prev.darcy_friction || {}
+          const dmNow = prev.density_mixing || {}
           const sfl = { ...(prev.slurry_friction_loss || {}) }
           if (sfl.lambda_coef == null || isNaN(sfl.lambda_coef)) sfl.lambda_coef = lam
           if ((sfl.V == null || isNaN(sfl.V)) && dart.V != null && !isNaN(dart.V)) {
@@ -5768,13 +5830,14 @@ export default function MainContent({
           if ((sfl.D == null || isNaN(sfl.D)) && dart.D_n != null && !isNaN(dart.D_n)) {
             sfl.D = r6(dart.D_n)
           }
-          if ((sfl.rho_s == null || isNaN(sfl.rho_s)) && dart.rho_s != null && !isNaN(dart.rho_s)) {
-            sfl.rho_s = r6(dart.rho_s)
+          if ((sfl.rho_s == null || isNaN(sfl.rho_s)) && dmNow.rho_s != null && !isNaN(dmNow.rho_s)) {
+            sfl.rho_s = r6(dmNow.rho_s)
           }
           return { ...prev, slurry_friction_loss: sfl }
         })
         setFormulaRawInputs((prev) => {
           const darcyR = prev.darcy_friction || {}
+          const dmR = prev.density_mixing || {}
           const sfl = { ...(prev.slurry_friction_loss || {}) }
           if (sfl.lambda_coef == null || sfl.lambda_coef === '') sfl.lambda_coef = String(lam)
           if ((sfl.V == null || sfl.V === '') && darcyR.V != null && darcyR.V !== '') {
@@ -5783,8 +5846,8 @@ export default function MainContent({
           if ((sfl.D == null || sfl.D === '') && darcyR.D_n != null && darcyR.D_n !== '') {
             sfl.D = String(r6(Number(darcyR.D_n)))
           }
-          if ((sfl.rho_s == null || sfl.rho_s === '') && darcyR.rho_s != null && darcyR.rho_s !== '') {
-            sfl.rho_s = String(r6(Number(darcyR.rho_s)))
+          if ((sfl.rho_s == null || sfl.rho_s === '') && dmR.rho_s != null && dmR.rho_s !== '') {
+            sfl.rho_s = String(r6(Number(dmR.rho_s)))
           }
           return { ...prev, slurry_friction_loss: sfl }
         })
@@ -8945,7 +9008,7 @@ export default function MainContent({
                   {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.darcy_rho1)}
                 </p>
                 <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <BlockMath math="\rho_1 = \rho_g \cdot C_{1v} + (1 - C_{1v}) \cdot \rho_s" />
+                  <BlockMath math="\rho_1 = \rho_g \cdot C_{1V} + (1 - C_{1V}) \cdot \rho_k" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   {SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS.map(({ name, label, unit, placeholder }) => {
@@ -9020,13 +9083,13 @@ export default function MainContent({
                   const r = formulaResults['darcy_friction_step1_rho1']!.result
                   const im = r?.intermediate as Record<string, unknown> | undefined
                   const tL = im?.term_rho_g_C1v
-                  const tS = im?.term_1minusC1v_rho_s
+                  const tS = im?.term_1minusC1v_rho_k ?? im?.term_1minusC1v_rho_s
                   const mid: [string, string][] = []
                   if (tL != null && !isNaN(Number(tL))) {
                     mid.push(['term_rho_g_C1v', `${fmtDissipation(Number(tL))} t/m³`])
                   }
                   if (tS != null && !isNaN(Number(tS))) {
-                    mid.push(['term_1minusC1v_rho_s', `${fmtDissipation(Number(tS))} t/m³`])
+                    mid.push(['term_1minusC1v_rho_k', `${fmtDissipation(Number(tS))} t/m³`])
                   }
                   return (
                     <>
@@ -11963,8 +12026,8 @@ export default function MainContent({
                         dLFromOmega={liuOmegaDL}
                         onApplyOmegaS={(s, meta) => {
                           liuOmegaSManualRef.current = false
-                          if (meta?.d != null && Number.isFinite(meta.d) && meta.d > 0) {
-                            liuStokesDForAutoRef.current = meta.d
+                          if (meta?.dMm != null && Number.isFinite(meta.dMm) && meta.dMm > 0) {
+                            liuStokesDForAutoRef.current = meta.dMm
                           }
                           const n = parseFloat(normalizeDecimalInput(String(s).trim()))
                           if (!Number.isFinite(n)) return

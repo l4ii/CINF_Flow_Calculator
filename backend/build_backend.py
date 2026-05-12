@@ -63,6 +63,11 @@ def restore_pathlib_backport(renamed):
         except Exception as e:
             print(f"WARNING: 无法恢复 {bak} -> {orig}: {e}")
 
+
+def local_ai_pack_enabled() -> bool:
+    raw = os.environ.get("CINF_PACK_LOCAL_AI", "1").strip().lower()
+    return raw not in ("0", "false", "off", "no")
+
 def main():
     # 若曾误把 Anaconda lib 下的 pathlib.py 改名为 pathlib.py.backup，先提示恢复
     anaconda_lib = r"C:\ProgramData\anaconda3\lib"
@@ -112,10 +117,23 @@ def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(current_dir)
 
+    pack_local_ai = local_ai_pack_enabled()
+    if pack_local_ai:
+        try:
+            import llama_cpp  # noqa: F401
+        except Exception as e:
+            restore_pathlib_backport(renamed)
+            print("ERROR: 当前 Python 环境无法导入 llama_cpp（嵌入式助手需要 llama-cpp-python）。")
+            print("请参考 requirements.txt / backend/README_ASSISTANT_LLM.txt，在 Windows 上优先使用上游 CPU wheel：")
+            print('  pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu')
+            print(f"详情: {e}")
+            sys.exit(1)
+
+    onefile_mode = os.environ.get("CINF_PYINSTALLER_MODE", "onefile").strip().lower() != "onedir"
+
     args = [
         'app.py',
         '--name=backend',
-        '--onefile',
         '--clean',
         '--noconsole',
         '--hidden-import=flask',
@@ -126,10 +144,24 @@ def main():
         '--hidden-import=calculation_engine',
         '--hidden-import=word_export',
         '--hidden-import=export_markdown',
+        '--hidden-import=assistant_api',
+        '--hidden-import=win_llama_runtime_env',
         '--collect-all=flask',
         '--collect-all=flask_cors',
         '--collect-all=matplotlib',
     ]
+    if pack_local_ai:
+        args.extend(
+            [
+                '--hidden-import=llama_cpp',
+                '--hidden-import=llama_cpp.llama_cpp',
+                '--collect-all=llama_cpp',
+            ]
+        )
+    if onefile_mode:
+        args.append('--onefile')
+    else:
+        args.append('--onedir')
     
     # 不排除 pathlib：Python 3.4+ 标准库的 pathlib 必须随包打包，否则 exe 启动报 "No module named 'pathlib'"
     # 通过 hide_pathlib_backport 已隐藏 site-packages 中的 backport，PyInstaller 会使用标准库 pathlib
@@ -138,6 +170,8 @@ def main():
         args.append('--icon=NONE')
 
     print('\n开始打包 Python 后端...')
+    print(f'打包模式: {"onefile" if onefile_mode else "onedir"} (CINF_PYINSTALLER_MODE)')
+    print(f'本地 AI 部署资源: {"启用" if pack_local_ai else "禁用"} (CINF_PACK_LOCAL_AI)')
     print(f'工作目录: {current_dir}')
 
     try:

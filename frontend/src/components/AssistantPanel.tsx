@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FlowState, FormulaInfo } from '../types'
 import { API_BASE_URL, API_TIMEOUT } from '../config/api'
 import { useAssistantContext } from '../context/AssistantContext'
@@ -61,11 +61,8 @@ function parseNavigateId(text: string): string | undefined {
   return m ? m[1].trim() : undefined
 }
 
-async function fetchAssistantInferenceStatus(): Promise<{
-  reachable: boolean
-  ready: boolean
-  error?: string
-}> {
+/** 探测本地 LLM；不可用时附带后端简明诊断（import / GGUF）。 */
+async function fetchAssistantInferenceStatus(language: 'zh' | 'en'): Promise<{ ready: boolean; diagnostic?: string }> {
   const ctrl = new AbortController()
   const t = window.setTimeout(() => ctrl.abort(), Math.min(API_TIMEOUT, 10000))
   try {
@@ -76,40 +73,19 @@ async function fetchAssistantInferenceStatus(): Promise<{
     } catch {
       /* ignore malformed JSON */
     }
-    const errRaw = data.error
-    const error = typeof errRaw === 'string' && errRaw.trim() ? errRaw.trim() : undefined
-    return {
-      reachable: true,
-      ready: Boolean(data.inferenceReady),
-      error,
-    }
+    const ready = Boolean(data.inferenceReady)
+    if (ready) return { ready }
+    const diagZh =
+      typeof data.failureDiagnosticZh === 'string' ? String(data.failureDiagnosticZh).trim() : ''
+    const diagEn =
+      typeof data.failureDiagnosticEn === 'string' ? String(data.failureDiagnosticEn).trim() : ''
+    const diagnostic = language === 'en' ? diagEn || diagZh : diagZh || diagEn
+    return { ready: false, diagnostic: diagnostic || undefined }
   } catch {
-    return { reachable: false, ready: false }
+    return { ready: false }
   } finally {
     window.clearTimeout(t)
   }
-}
-
-function assistantNotReadyBubble(
-  language: 'zh' | 'en',
-  st: { reachable: boolean; error?: string }
-): string {
-  const base = smartInterpretationNotReadyReply(language)
-  if (!st.reachable) {
-    return (
-      base +
-      (language === 'zh'
-        ? '\n\n（当前无法连接本地 API（http://127.0.0.1:5000）。请确认已在同一台机器启动后端。）'
-        : '\n\n(Cannot reach the local API at http://127.0.0.1:5000 — ensure the backend is running.)')
-    )
-  }
-  if (st.error) {
-    return (
-      base +
-      (language === 'zh' ? `\n\n（服务端自检：${st.error}）` : `\n\n(Server check: ${st.error})`)
-    )
-  }
-  return base
 }
 
 export default function AssistantPanel({
@@ -124,7 +100,6 @@ export default function AssistantPanel({
   const [messages, setMessages] = useState<ChatTurn[]>([])
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
-  const [llmReady, setLlmReady] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const dockRef = useRef<HTMLDivElement | null>(null)
@@ -152,24 +127,9 @@ export default function AssistantPanel({
     ? 'bg-gray-900 border-gray-600 text-gray-100 placeholder-gray-500'
     : 'bg-gray-50 border-gray-300 text-gray-900'
 
-  const refreshLlmStatus = useCallback(async () => {
-    const st = await fetchAssistantInferenceStatus()
-    setLlmReady(st.ready)
-  }, [])
-
   useEffect(() => {
     busyRef.current = busy
   }, [busy])
-
-  useEffect(() => {
-    refreshLlmStatus()
-  }, [refreshLlmStatus])
-
-  useEffect(() => {
-    if (dockHover) {
-      refreshLlmStatus()
-    }
-  }, [dockHover, refreshLlmStatus])
 
   useEffect(() => {
     setMessages((prev) => {
@@ -298,14 +258,17 @@ export default function AssistantPanel({
       return
     }
 
-    // 2) 需 LLM：每次发送前刷新 status（避免后端/依赖就绪后仍沿用旧的 llmReady=false）
-    const infSt = await fetchAssistantInferenceStatus()
-    setLlmReady(infSt.ready)
-    if (!infSt.ready) {
+    // 2) 需 LLM：发送前探测 inferenceReady（不向界面展示模型状态）
+    const inf = await fetchAssistantInferenceStatus(language)
+    if (!inf.ready) {
       const assistantId = newId('a')
       setMessages((prev) => [
         ...prev,
-        { id: assistantId, role: 'assistant', content: assistantNotReadyBubble(language, infSt) },
+        {
+          id: assistantId,
+          role: 'assistant',
+          content: smartInterpretationNotReadyReply(language, inf.diagnostic),
+        },
       ])
       setBusy(false)
       return
@@ -332,26 +295,25 @@ export default function AssistantPanel({
       })
 
       if (!res.ok) {
-        let errText = language === 'zh' ? '暂时无法接通智能解读服务。' : 'The smart answer service is unavailable.'
-        try {
-          const j = (await res.json()) as { error?: string; hint?: string }
-          if (j?.error) errText = String(j.error)
-          if (language === 'zh' && j?.hint) errText += `\n${j.hint}`
-        } catch {
-          /* ignore */
-        }
-        errText += language === 'zh' ? `\n${smartInterpretationNotReadyReply('zh')}` : `\n${smartInterpretationNotReadyReply('en')}`
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: errText } : m))
+        const errObj = (await res.json().catch(() => null)) as
+          | { error?: unknown; hint?: unknown }
+          | null
+        const detailParts = [errObj?.hint, errObj?.error]
+          .map((x) => (typeof x === 'string' ? x.trim() : ''))
+          .filter(Boolean)
+        const fb = smartInterpretationNotReadyReply(
+          language,
+          detailParts.length ? detailParts.join('\n') : undefined
         )
-        setLlmReady(false)
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: fb } : m)))
         return
       }
 
       const reader = res.body?.getReader()
       if (!reader) {
+        const fb = smartInterpretationNotReadyReply(language)
         setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: '(empty response)' } : m))
+          prev.map((m) => (m.id === assistantId ? { ...m, content: fb } : m))
         )
         return
       }
@@ -374,6 +336,8 @@ export default function AssistantPanel({
       }
 
       let full = ''
+      let streamBackendError = false
+      let streamBackendErrorText = ''
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
@@ -386,8 +350,8 @@ export default function AssistantPanel({
           try {
             const o = JSON.parse(trimmed) as { content?: string; error?: string }
             if (o.error) {
-              full += `\n[error] ${o.error}`
-              assistantContent = full
+              streamBackendError = true
+              if (!streamBackendErrorText) streamBackendErrorText = String(o.error)
             }
             if (o.content) {
               full += o.content
@@ -403,12 +367,24 @@ export default function AssistantPanel({
       if (tail) {
         try {
           const o = JSON.parse(tail) as { content?: string; error?: string }
-          if (o.content) full += o.content
-          if (o.error) full += `\n[error] ${o.error}`
-          assistantContent = full
+          if (o.error) {
+            streamBackendError = true
+            if (!streamBackendErrorText) streamBackendErrorText = String(o.error)
+          }
+          if (o.content) {
+            full += o.content
+            assistantContent = full
+          }
         } catch {
           /* ignore */
         }
+      }
+
+      if (streamBackendError) {
+        assistantContent = smartInterpretationNotReadyReply(
+          language,
+          streamBackendErrorText || undefined
+        )
       }
 
       const navRaw = parseNavigateId(assistantContent)
@@ -421,7 +397,6 @@ export default function AssistantPanel({
         )
       )
       if (!assistantContent.trim()) {
-        setLlmReady(false)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -432,13 +407,9 @@ export default function AssistantPanel({
       }
     } catch (e: unknown) {
       if ((e as Error)?.name === 'AbortError') return
-      setLlmReady(false)
-      const msg =
-        language === 'zh'
-          ? `${e instanceof Error ? e.message : String(e)}\n${smartInterpretationNotReadyReply('zh')}`
-          : `${e instanceof Error ? e.message : String(e)}\n${smartInterpretationNotReadyReply('en')}`
+      const fb = smartInterpretationNotReadyReply(language)
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, content: msg } : m))
+        prev.map((m) => (m.id === assistantId ? { ...m, content: fb } : m))
       )
     } finally {
       setBusy(false)
@@ -468,31 +439,9 @@ export default function AssistantPanel({
             className={`flex max-h-[min(72vh,520px)] w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-xl border shadow-2xl ${surface}`}
           >
             <div
-              className={`flex items-center justify-between gap-2 border-b px-3 py-2 ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}
+              className={`flex items-center border-b px-3 py-2 ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}
             >
               <span className="text-sm font-semibold">{stripLabel}</span>
-              <span
-                className={`shrink-0 text-[10px] font-medium ${
-                  llmReady ? (darkMode ? 'text-green-400' : 'text-green-600') : muted
-                }`}
-                title={
-                  language === 'en'
-                    ? llmReady
-                      ? 'Embedded GGUF inference is available.'
-                      : 'Check backend + llama-cpp-python + GGUF (see README_ASSISTANT_LLM.txt).'
-                    : llmReady
-                      ? '本地 GGUF 推理可用。'
-                      : '请检查后端、llama-cpp-python 与 GGUF（见 README_ASSISTANT_LLM.txt）。'
-                }
-              >
-                {language === 'en'
-                  ? llmReady
-                    ? 'Model ready'
-                    : 'Model offline'
-                  : llmReady
-                    ? '模型就绪'
-                    : '模型未就绪'}
-              </span>
             </div>
 
             <div className="min-h-[220px] max-h-[340px] space-y-2 overflow-y-auto px-3 py-2">

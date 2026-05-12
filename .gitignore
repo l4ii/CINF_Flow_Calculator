@@ -11,6 +11,8 @@ dist/
 frontend/dist/
 build/
 release/
+release-qwen/
+release-win7-qwen/
 
 # Misc
 .DS_Store

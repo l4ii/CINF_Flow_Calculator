@@ -1,5 +1,5 @@
-/** 与根目录 package.json「version」保持一致；浏览器或无 Electron API 时的界面兜底版本号 */
-export const APP_VERSION = '1.1.0'
+/** 与根目录 package.json「version」一致，由 scripts/sync-app-version.js 在构建时写入 */
+export { APP_VERSION } from '../generated/appVersion'
 
 /** 全站统一应用名：用于窗口/导出前缀、邮件主题、授权页等「正式名称」 */
 export const APP_NAME_ZH = 'CINF长沙院浆体计算软件'

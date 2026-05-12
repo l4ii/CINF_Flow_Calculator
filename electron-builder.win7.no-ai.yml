@@ -1,0 +1,11 @@
+# Windows 7/8：无本地 GGUF；输出 release-win7/
+extends: ./electron-builder.win7.yml
+
+publish:
+  provider: github
+  owner: l4ii
+  repo: CINF_Flow_Calculator
+  channel: win7-noai
+
+extraMetadata:
+  cinfAssistantLocalDeploy: false

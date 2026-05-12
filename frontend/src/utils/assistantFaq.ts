@@ -110,10 +110,15 @@ export function prefersLlmInterpretation(raw: string): boolean {
   return zhTriggers || enTriggers
 }
 
-export function smartInterpretationNotReadyReply(language: 'zh' | 'en'): string {
-  return language === 'en'
-    ? 'Smart interpretation requires the configured inference service—please narrow the question, or ask a concrete product workflow question such as sidebar navigation, parameters, exports, or result fields.'
-    : '这类问题更适合由已配置的智能解读服务端作答，目前该能力尚在接入或自检中。建议先改用更明确的功能性问题，例如侧栏入口、参数填写、Word 导出、界面提示含义或对最近一次计算字面结果的说明。感谢您的理解。'
+/** 嵌入式 LLM 未就绪时在固定话术末尾附加一行后端诊断（由 /api/assistant/status 给出） */
+export function smartInterpretationNotReadyReply(language: 'zh' | 'en', diagnostic?: string): string {
+  const base =
+    language === 'en'
+      ? 'For this question I can help with concrete steps in the app—try the sidebar, filling parameters, exporting Word, or what a specific result field means. Please phrase your question as specifically as you can.'
+      : '这类问题我可以从产品使用角度协助您：例如左侧侧栏如何找到计算页面、参数如何填写、Word 导出或某一界面提示含义等。请将问题写得更具体一些，便于为您解答。'
+  const hint = diagnostic?.trim()
+  if (!hint) return base
+  return `${base}\n\n${hint}`
 }
 
 /** 本地规则/FAQ/关键词路由：命中则直接返回固定话术，不调用后端 LLM。 */
@@ -131,7 +136,7 @@ export function tryRuleBasedAssistantReply(
   // 机构身份：优先于泛化的「联系 / 关于」
   if (
     zh
-      ? /长沙有色冶金设计研究院|长沙有色院|长沙院|中铝国际|中国铝业集团|你们是哪家|什么单位|什么公司|研发单位|软件.*谁做|谁开发/.test(
+      ? /长沙有色冶金设计研究院|长沙有色院|长沙院|中铝国际|中国铝业|软件|单位|公司|研发单位|软件.*谁做|开发/.test(
           raw
         )
       : new RegExp(
@@ -161,7 +166,7 @@ export function tryRuleBasedAssistantReply(
 
   if (
     zh
-      ? /联系|客服|通讯录|邮编|传真|市场部|人力资源|海外业务|电子邮箱|怎么联系|如何联系/.test(raw) ||
+      ? /联系|客服|通讯录|邮编|传真|市场部|人力资源|海外业务|电子邮箱|购买|联系/.test(raw) ||
         /邮箱|邮件|电话|地址|@(chinalco|china)/i.test(raw)
       : /\bcontact(s)?\b|\b(email|e-mail|phone|tel|fax|address)\b/i.test(raw)
   ) {

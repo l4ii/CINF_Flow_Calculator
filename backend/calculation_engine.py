@@ -482,10 +482,26 @@ class CalculationEngine:
         return lam, flow_regime, extra
 
     def _calculate_darcy_friction_step1_rho1(self, params):
-        """仅算混合物密度 ρ₁（t/m³）：直填 ρ₁ 或由 ρ_g、ρ_s、C1v 推算。"""
+        """仅算混合物密度 ρ₁（t/m³）：直填 ρ₁ 或由 ρ_g、ρ_k、C1v 推算。"""
+        def _num(x):
+            """前端偶发传字符串；排除 bool；与页面字段对齐的别名在调用处处理。"""
+            if x is None or isinstance(x, bool):
+                return None
+            if isinstance(x, (int, float)):
+                v = float(x)
+                return v if not math.isnan(v) else None
+            try:
+                v = float(x)
+                return v if not math.isnan(v) else None
+            except (TypeError, ValueError):
+                return None
+
         rho_1_val = params.get('rho_1')
-        if rho_1_val is not None and isinstance(rho_1_val, (int, float)) and rho_1_val > 0 and not math.isnan(rho_1_val):
-            rho_1_t = float(rho_1_val)
+        if rho_1_val is None:
+            rho_1_val = params.get('rho_l')
+        r1 = _num(rho_1_val)
+        if r1 is not None and r1 > 0:
+            rho_1_t = r1
             return {
                 "rho_1": self._safe_round(rho_1_t, 12),
                 "unit": "t/m³",
@@ -494,17 +510,29 @@ class CalculationEngine:
                     "rho1_input_mode": "direct",
                 },
             }
-        rho_g = params.get('rho_g')
-        rho_s = params.get('rho_s')
-        C1v = params.get('C1v')
-        if None in [rho_g, rho_s, C1v]:
-            raise ValueError("请提供 ρ₁，或填写 ρ_g、ρ_s、C1v")
-        if rho_g <= 0 or rho_s <= 0:
-            raise ValueError("ρ_g、ρ_s 必须大于 0")
+        rho_g = _num(params.get('rho_g'))
+        # 第二步以步骤1所得浆体密度为准：ρ_k 为主键；ρ_h 为与部分教材/界面一致的别名；ρ_s 仅兼容旧版（勿与清水密度混淆）。
+        rho_k = _num(params.get('rho_k'))
+        if rho_k is None:
+            rho_k = _num(params.get('rho_h'))
+        if rho_k is None:
+            rho_k = _num(params.get('rho_s'))
+        C1v = _num(params.get('C1v'))
+        if C1v is None:
+            C1v = _num(params.get('C_lv'))
+        if C1v is None:
+            C1v = _num(params.get('Clv'))
+        if None in [rho_g, rho_k, C1v]:
+            raise ValueError(
+                "请直填混合物密度 ρ₁（或 ρ_l），或补全：固体密度 ρ_g、步骤1浆体密度 ρ_k（或 ρ_h）、"
+                "似均质体积浓度 C₁V（0～1，键名可为 C1v）"
+            )
+        if rho_g <= 0 or rho_k <= 0:
+            raise ValueError("ρ_g、ρ_k 必须大于 0")
         if C1v < 0 or C1v > 1:
             raise ValueError("浆体体积浓度 C₁V（固体体积占浆体总体积比例）应在 0～1 之间")
         term_liquid = rho_g * C1v
-        term_solid = (1.0 - C1v) * rho_s
+        term_solid = (1.0 - C1v) * rho_k
         rho_1_t = term_liquid + term_solid
         return {
             "rho_1": self._safe_round(rho_1_t, 12),
@@ -513,6 +541,8 @@ class CalculationEngine:
                 "step_A_rho_1": rho_1_t,
                 "rho1_input_mode": "mixture",
                 "term_rho_g_C1v": self._safe_round(term_liquid, 12),
+                "term_1minusC1v_rho_k": self._safe_round(term_solid, 12),
+                # 兼容旧版前端中间项键名
                 "term_1minusC1v_rho_s": self._safe_round(term_solid, 12),
             },
         }

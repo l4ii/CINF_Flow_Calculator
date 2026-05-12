@@ -1,0 +1,11 @@
+# Windows 10/11+：无本地 GGUF；输出 release/，安装包无 _Qwen 后缀
+extends: ./electron-builder.yml
+
+publish:
+  provider: github
+  owner: l4ii
+  repo: CINF_Flow_Calculator
+  channel: noai
+
+extraMetadata:
+  cinfAssistantLocalDeploy: false

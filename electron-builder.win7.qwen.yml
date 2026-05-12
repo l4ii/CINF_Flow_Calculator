@@ -1,0 +1,14 @@
+# Windows 7/8：本地 Qwen GGUF；输出 release-win7-qwen/，与 win7.no-ai 分目录避免互相覆盖
+extends: ./electron-builder.win7.yml
+
+directories:
+  output: release-win7-qwen
+
+win:
+  artifactName: CINF-FlowCalc-${version}-${arch}-Win7_Qwen.${ext}
+
+publish:
+  channel: win7-qwen
+
+extraMetadata:
+  cinfAssistantLocalDeploy: true

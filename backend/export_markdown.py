@@ -432,10 +432,10 @@ def _calc_process_md(
         re_b = im.get("step_B_Re_B", result.get("Re_B", "N/A"))
         lam = result.get("lambda_coef", "N/A")
         fr = im.get("flow_regime", "N/A")
-        rho_g, rho_s, c1v = parameters.get("rho_g"), parameters.get("rho_s"), parameters.get("C1v")
-        if rho_g is not None and rho_s is not None and c1v is not None:
+        rho_g, rho_k_pm, c1v = parameters.get("rho_g"), parameters.get("rho_k"), parameters.get("C1v")
+        if rho_g is not None and rho_k_pm is not None and c1v is not None:
             lines.append(
-                rf"步骤 A：$\rho_1 = \rho_g C_{{1v}} + (1-C_{{1v}})\rho_s$（$\rho_g$、$\rho_s$、$\rho_1$ 均为 t/m³），代入得 $\rho_1 = {rho_1}$ t/m³"
+                rf"步骤 A：$\rho_1 = \rho_g C_{{1V}} + (1-C_{{1V}})\rho_k$（$\rho_g$、$\rho_k$、$\rho_1$ 均为 t/m³），代入得 $\rho_1 = {rho_1}$ t/m³"
             )
         else:
             lines.append(rf"步骤 A：用户给定 $\rho_1 = {rho_1}$ t/m³")

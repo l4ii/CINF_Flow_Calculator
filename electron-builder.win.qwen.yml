@@ -1,0 +1,14 @@
+# Windows 10/11+：内含本地 Qwen GGUF（CINF_PACK_LOCAL_AI=1 + stage-pack-resources）
+extends: ./electron-builder.yml
+
+directories:
+  output: release-qwen
+
+win:
+  artifactName: CINF-FlowCalc-${version}-${arch}_Qwen.${ext}
+
+publish:
+  channel: qwen
+
+extraMetadata:
+  cinfAssistantLocalDeploy: true

@@ -1090,9 +1090,14 @@ class WordExporter:
         Re_B = intermediate.get('step_B_Re_B', result.get('Re_B', 'N/A'))
         lam = result.get('lambda_coef', 'N/A')
         flow_regime = intermediate.get('flow_regime', 'N/A')
-        rho_g, rho_s, C1v = parameters.get('rho_g'), parameters.get('rho_s'), parameters.get('C1v')
-        if rho_g is not None and rho_s is not None and C1v is not None:
-            step_a = [f"步骤 A: ρ₁ = ρg·C1v + (1-C1v)·ρs（t/m³）", f"代入 ρg={rho_g}, ρs={rho_s}, C1v={C1v} → ρ₁ = {rho_1} t/m³"]
+        rho_g, rho_k, C1v = parameters.get('rho_g'), parameters.get('rho_k'), parameters.get('C1v')
+        if rho_k is None:
+            rho_k = parameters.get('rho_s')
+        if rho_g is not None and rho_k is not None and C1v is not None:
+            step_a = [
+                "步骤 A: ρ₁ = ρg·C₁V + (1−C₁V)·ρk（t/m³）",
+                f"代入 ρg={rho_g}, ρk={rho_k}, C₁V={C1v} → ρ₁ = {rho_1} t/m³",
+            ]
         else:
             step_a = [f"步骤 A: 用户直接输入 ρ₁ = {rho_1} t/m³"]
         V, D_n, eta_1 = parameters.get('V'), parameters.get('D_n'), parameters.get('eta_1')

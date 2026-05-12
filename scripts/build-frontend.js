@@ -3,6 +3,8 @@
  * 避免从项目根用 --prefix 时 cwd 不确定导致构建写到错误位置、安装包打到旧前端。
  */
 const path = require('path')
+require(path.join(__dirname, 'sync-app-version.js'))
+
 const fs = require('fs')
 const { execSync } = require('child_process')
 
