@@ -23,6 +23,7 @@ FORMULA_CATEGORY_TITLE = {
     "liu_dezhong": "临界流速计算",
     "wasp": "临界流速计算",
     "fei_xiangjun": "临界流速计算",
+    "pseudo_homogeneous_flow_judgment": "浆体管道流态判断公式",
     "kronodze_pressure": "临界流速计算",
     "clear_water_friction_loss": "摩阻损失",
     "slurry_friction_loss": "摩阻损失",
@@ -44,6 +45,10 @@ FORMULA_CATEGORY_TITLE = {
 }
 
 CATEGORY_INTRO = {
+    "浆体管道流态判断公式": (
+        "基于手册的浆体管道相对体积浓度 "
+        "$C/C_A$ 及其 $d_{95}$ 代表值，划分似均质、非均质与复合流态。"
+    ),
     "临界流速计算": (
         "用于判定或核算浆体在管道中维持悬浮输送所需的临界流速，涵盖国内常用经验公式及 B.C.克诺罗兹法等。"
         "计算结果服务于管径与流速选取、流态判别及与后续摩阻、扬程模块的衔接。"
@@ -378,15 +383,16 @@ class WordExporter:
         auth_p.paragraph_format.line_spacing = 1.25
 
         scope_p = doc.add_paragraph()
-        scope_run = scope_p.add_run("平台功能按业务板块划分为四类：")
+        scope_run = scope_p.add_run("平台功能按业务板块主要包括：")
         scope_run.bold = True
         self._set_font(scope_run)
 
         blocks = [
-            "（1）临界流速计算：多种经验公式与克诺罗兹法等，用于流速与管径相关判别；",
-            "（2）摩阻损失：清水海澄–威廉式、浆体达西–魏斯巴赫型水力坡降及密度混合、摩阻系数等配套计算；",
-            "（3）压力与扬程：浆体/清水总扬程（输送压力）及压力—管长特性曲线示意；",
-            "（4）加速流与消能：加速流判据、消能水头与孔板消能等专项核算。",
+            "（1）临界流速计算：多种经验公式与克诺罗兹法等，用于流速与管径相关核算；",
+            "（2）浆体管道流态判断公式：按 $C/C_A$ 与 $(C/C_A)_{d95}$ 划分似均质、非均质与复合流态；",
+            "（3）摩阻损失：清水海澄–威廉式、浆体达西–魏斯巴赫型水力坡降及密度混合、摩阻系数等配套计算；",
+            "（4）压力与扬程：浆体/清水总扬程（输送压力）及压力—管长特性曲线示意；",
+            "（5）加速流与消能：加速流判据、消能水头与孔板消能等专项核算。",
         ]
         for line in blocks:
             lp = doc.add_paragraph(line)
@@ -398,7 +404,7 @@ class WordExporter:
         tail = doc.add_paragraph()
         tail_run = tail.add_run(
             "本文件后续章节给出本次所选模块的公式、输入、中间量、成果及推演过程；"
-            "附录中对上述四类功能作汇总说明。公式与符号在 Word 中以 Unicode 及普通文本为主，必要时可在 Word 中改用公式对象排版。"
+            "附录中对上述各板块功能作汇总说明。公式与符号在 Word 中以 Unicode 及普通文本为主，必要时可在 Word 中改用公式对象排版。"
         )
         self._set_font(tail_run)
         tail.paragraph_format.first_line_indent = Pt(24)
@@ -679,13 +685,22 @@ class WordExporter:
             'coefficient_3_113': '经验系数 3.113',
             'coefficient_2_26': '经验系数 2.26',
             'g': '重力加速度 g',
+            'fei_iteration_count': 'λ–Vc 迭代次数',
+            'fei_lambda_rel_residual': 'λ 迭代末步相对残差',
+            'fei_Re_flow': '雷诺数与流态',
+            'Vc_for_Re': '用于雷诺数的 Vc',
+            'Re_B': '雷诺数 Re_B',
+            'rho_1': '混合物密度 ρ₁',
+            'epsilon': '管壁绝对粗糙度 ε（mm）',
+            'eta_1': '混合物动力粘度 η₁',
+            'fei_lambda_iterate': 'λ 迭代模式',
             # 沿程摩阻损失（4.3.1-1）
             'numerator': '流速平方与浆体密度项 V²·ρ_k',
             'denominator': '重力与管径项 2gD·ρ_s',
             # 密度混合公式（4.3.1-2）
             'denom': '浓度与密度加权倒数项 C_w/ρ_g+(1-C_w)/ρ_s',
             # B.C.克诺罗兹法
-            'step_A_Qk': '步骤A 矿浆流量 Qk',
+            'step_A_Qk': '步骤A 浆体体积流量 Q_K（m³/h）',
             'step_B_DL_mm': '步骤B 临界管径 DL (mm)',
             'Cd': '重量砂水比 Cd',
             'step_C_V_L': '步骤C 临界流速 V_L',
@@ -748,10 +763,10 @@ class WordExporter:
             Re_B = result.get('Re_B', 'N/A')
             lam = result.get('lambda_coef', 'N/A')
             flow_regime = result.get('intermediate', {}).get('flow_regime', '')
-            value = f"ρ₁={rho_1} t/m³，ReB={Re_B}，λ={lam}" + (f"（{flow_regime}）" if flow_regime else "")
+            value = f"ρ₁={rho_1} kg/m³，ReB={Re_B}，λ={lam}" + (f"（{flow_regime}）" if flow_regime else "")
         elif formula_id == "darcy_friction_step1_rho1":
             item_label = "混合物密度 ρ₁"
-            value = f"{result.get('rho_1', 'N/A')} t/m³"
+            value = f"{result.get('rho_1', 'N/A')} kg/m³"
         elif formula_id == "darcy_friction_step2_re":
             item_label = "混合物雷诺数 Re_B"
             value = str(result.get("Re_B", "N/A"))
@@ -774,12 +789,12 @@ class WordExporter:
             item_label = '浆体摩阻损失'
             rho_k = result.get('rho_k', 'N/A')
             i_k = result.get('i_k', 'N/A')
-            value = f"ρ_k = {rho_k} t/m³，i_k = {i_k} mH₂O/m"
+            value = f"ρ_k = {rho_k} kg/m³，i_k = {i_k} mH₂O/m"
         elif formula_id == 'slurry_friction_workflow':
             item_label = '浆体摩阻损失（分步）'
             rho_k = result.get('rho_k', 'N/A')
             i_k = result.get('i_k', 'N/A')
-            value = f"ρ_k = {rho_k} t/m³，i_k = {i_k} mH₂O/m"
+            value = f"ρ_k = {rho_k} kg/m³，i_k = {i_k} mH₂O/m"
         elif formula_id == 'slurry_total_head':
             item_label = '浆体管道输送压力 Pk'
             ht = result.get('H_total', 'N/A')
@@ -803,6 +818,13 @@ class WordExporter:
                 value = f"{i_val} kPa/m"
             else:
                 value = str(i_val)
+        elif formula_id == 'pseudo_homogeneous_flow_judgment':
+            item_label = '似均质流判别'
+            cca = result.get('C_over_CA', 'N/A')
+            c95 = result.get('C_CA_d95', 'N/A')
+            ok = result.get('condition_met')
+            sym = '满足' if ok else '不满足'
+            value = f"C/C_A={cca}，(C/C_A)_{{d95}}={c95}，准则（式4-1、4-2）{sym}"
         else:
             item_label = '临界流速 Vc'
             value = result.get('Vc', 'N/A')
@@ -917,7 +939,36 @@ class WordExporter:
             self._add_positive_displacement_pump_process(doc, parameters, result)
         elif formula_id == "clear_water_friction_loss":
             self._add_clear_water_friction_loss_process(doc, parameters, result)
-    
+        elif formula_id == "pseudo_homogeneous_flow_judgment":
+            im = result.get("intermediate", {}) or {}
+            lines = [
+                f"1. 迭代次数：{im.get('iterations_used', 'N/A')}",
+                "2. 式 4-1（C/C_A≥0.8）："
+                + ("成立" if im.get("criteria_formula_4_1_ge_0_8") else "不成立")
+                + "；式 4-2（(C/C_A)_{d95}≥0.5）："
+                + ("成立" if im.get("criteria_formula_4_2_d95_ge_0_5") else "不成立"),
+                "3. 汇总：C/C_A = "
+                + str(result.get("C_over_CA", "N/A"))
+                + "；(C/C_A)_{d95} = "
+                + str(result.get("C_CA_d95", "N/A"))
+                + "；C_{1V} = "
+                + str(result.get("C1v", "N/A"))
+                + "；ρ_l = "
+                + str(result.get("rho_l", "N/A"))
+                + " kg/m³",
+                "4. Re_B = "
+                + str(result.get("Re_B", "N/A"))
+                + "；Fanning f_L = "
+                + str(result.get("f_L", "N/A"))
+                + "；U = "
+                + str(result.get("friction_velocity_U", "N/A"))
+                + " m/s",
+            ]
+            for text in lines:
+                para = doc.add_paragraph(text)
+                for run in para.runs:
+                    self._set_font(run)
+
     def _add_clear_water_friction_loss_process(self, doc, parameters, result):
         """清水海澄–威廉沿程摩阻：书写为 105·C_h^(-1.85)·…，计算用参数 K_hw（默认 105）"""
         intermediate = result.get("intermediate", {}) or {}
@@ -982,10 +1033,19 @@ class WordExporter:
         intermediate = result.get('intermediate', {})
         rho_g = parameters.get('rho_g', 'N/A')
         rho_k = parameters.get('rho_k', 'N/A')
-        lambda_coef = parameters.get('lambda_coef', 'N/A')
-        coefficient = intermediate.get('coefficient_2_26', parameters.get('coefficient_2_26', 2.26))
-        
-        process_texts = [
+        lambda_coef = intermediate.get('lambda_coef', parameters.get('lambda_coef', 'N/A'))
+        coefficient = parameters.get('coefficient_2_26', intermediate.get('coefficient_2_26', 2.26))
+
+        process_texts = []
+        if intermediate.get('fei_Re_flow'):
+            process_texts.append(
+                "0. λ–Vc 自洽迭代：末步 λ 相对残差 ≈ {}；Re_B 与流态：{}；收敛 λ = {}".format(
+                    intermediate.get('fei_lambda_rel_residual', 'N/A'),
+                    intermediate.get('fei_Re_flow'),
+                    intermediate.get('lambda_coef', 'N/A'),
+                )
+            )
+        process_texts.extend([
             f"1. 计算相对密度差: Δρ/ρ = ({rho_g} - {rho_k})/{rho_k} = {intermediate.get('delta_rho_ratio', 'N/A')}",
             f"2. 计算核心系数: 2.26/√λ = {coefficient}/√{lambda_coef} = {intermediate.get('leading_coef', 'N/A')}",
             f"3. 计算核心项: [g·D·(Δρ/ρ)]^(1/2) = {intermediate.get('bracket_term', 'N/A')}",
@@ -993,7 +1053,7 @@ class WordExporter:
             f"5. 计算粒径比修正项: (d90/D)^(1/3) = {intermediate.get('size_term', 'N/A')}",
             f"6. 计算临界流速: Vc = {intermediate.get('leading_coef', 'N/A')} × {intermediate.get('bracket_term', 'N/A')} × {intermediate.get('conc_term', 'N/A')} × {intermediate.get('size_term', 'N/A')}",
             f"   Vc = {result.get('Vc', 'N/A')} m/s"
-        ]
+        ])
         for text in process_texts:
             p = doc.add_paragraph(text)
             for run in p.runs:
@@ -1002,20 +1062,21 @@ class WordExporter:
     def _add_kronodze_pressure_process(self, doc, parameters, result):
         """添加 B.C.克诺罗兹法 三步计算过程"""
         intermediate = result.get('intermediate', {})
-        K = parameters.get('K', 1.1)
-        G = parameters.get('G', 'N/A')
         W = parameters.get('W', 'N/A')
         rho_g = parameters.get('rho_g', 'N/A')
+        rho_s = parameters.get('rho_s', 'N/A')
+        C_w = parameters.get('C_w', 'N/A')
         dp = parameters.get('dp', 'N/A')
         beta = parameters.get('beta', 1.0)
         Qk = intermediate.get('step_A_Qk', 'N/A')
         DL = intermediate.get('step_B_DL_mm', 'N/A')
         Cd = intermediate.get('Cd', 'N/A')
         process_texts = [
-            "A) 计算矿浆流量 Qk：",
-            f"   Qk = K·W·(1/ρg + G/W) = {K}×{W}×(1/{rho_g} + {G}/{W}) = {Qk}",
-            "B) 计算临界管径 DL（按尾矿加权平均粒径 dp 选用公式，由 Qk 反解）：",
-            f"   dp = {dp} mm，重量砂水比 Cd = W/G×100 = {Cd}，得 DL = {DL} mm",
+            "A) 计算浆体体积流量 Q_K（m³/h）：",
+            f"   Q_K = W·(1/ρ_g + (1−C_W)/(C_W·ρ_s))，其中 W 单位为 kg/h（干固体质量流量）",
+            f"   代入 W={W} kg/h、ρ_g={rho_g} kg/m³、ρ_s={rho_s} kg/m³、C_W={C_w}，得 Q_K = {Qk} m³/h",
+            "B) 计算临界管径 DL（按尾矿加权平均粒径 dp 选用公式，由 Q_K 反解）：",
+            f"   dp = {dp} mm，重量砂水比 Cd = C_W/(1−C_W)×100 = {Cd}，得 DL = {DL} mm",
             "C) 计算临界流速 V_L：",
             f"   V_L = 0.255β(1 + 2.48·³√(Cd)·⁴√(DL)) = {result.get('Vc', 'N/A')} m/s"
         ]
@@ -1035,7 +1096,7 @@ class WordExporter:
         i_k = result.get('i_k', 'N/A')
         process_texts = [
             f"公式(4.3.1-1): i_k = λ·(V²·ρ_k)/(2gD·ρ_s)",
-            f"1. 代入: λ={lambda_coef}, V={V} m/s, ρ_k={rho_k} t/m³, D={D} m, ρ_s={rho_s} t/m³, g={g} m/s²",
+            f"1. 代入: λ={lambda_coef}, V={V} m/s, ρ_k={rho_k} kg/m³, D={D} m, ρ_s={rho_s} kg/m³, g={g} m/s²",
             f"2. 沿程摩阻损失: i_k = {i_k} mH₂O/m"
         ]
         for text in process_texts:
@@ -1051,8 +1112,8 @@ class WordExporter:
         rho_k = result.get('rho_k', 'N/A')
         process_texts = [
             f"公式(4.3.1-2): ρ_k = 1/(C_w/ρ_g + (1-C_w)/ρ_s)",
-            f"1. 代入: C_w={C_w}, ρ_g={rho_g} t/m³, ρ_s={rho_s} t/m³",
-            f"2. 浆体密度: ρ_k = {rho_k} t/m³"
+            f"1. 代入: C_w={C_w}, ρ_g={rho_g} kg/m³, ρ_s={rho_s} kg/m³",
+            f"2. 浆体密度: ρ_k = {rho_k} kg/m³"
         ]
         for text in process_texts:
             p = doc.add_paragraph(text)
@@ -1064,11 +1125,11 @@ class WordExporter:
         lines = []
         if formula_id == "darcy_friction_step1_rho1":
             lines = [
-                f"混合物密度：ρ₁ = {result.get('rho_1', 'N/A')} t/m³",
+                f"混合物密度：ρ₁ = {result.get('rho_1', 'N/A')} kg/m³",
             ]
         elif formula_id == "darcy_friction_step2_re":
             lines = [
-                f"混合物雷诺数：Re_B = {result.get('Re_B', 'N/A')}（ρ₁ = {result.get('rho_1', 'N/A')} t/m³）",
+                f"混合物雷诺数：Re_B = {result.get('Re_B', 'N/A')}（ρ₁ = {result.get('rho_1', 'N/A')} kg/m³）",
             ]
         elif formula_id == "darcy_friction_step3_lambda":
             im = result.get("intermediate") or {}
@@ -1095,18 +1156,18 @@ class WordExporter:
             rho_k = parameters.get('rho_s')
         if rho_g is not None and rho_k is not None and C1v is not None:
             step_a = [
-                "步骤 A: ρ₁ = ρg·C₁V + (1−C₁V)·ρk（t/m³）",
-                f"代入 ρg={rho_g}, ρk={rho_k}, C₁V={C1v} → ρ₁ = {rho_1} t/m³",
+                "步骤 A: ρ₁ = ρg·C₁V + (1−C₁V)·ρk（kg/m³）",
+                f"代入 ρg={rho_g}, ρk={rho_k}, C₁V={C1v} → ρ₁ = {rho_1} kg/m³",
             ]
         else:
-            step_a = [f"步骤 A: 用户直接输入 ρ₁ = {rho_1} t/m³"]
+            step_a = [f"步骤 A: 用户直接输入 ρ₁ = {rho_1} kg/m³"]
         V, D_n, eta_1 = parameters.get('V'), parameters.get('D_n'), parameters.get('eta_1')
         if V is not None and D_n is not None and eta_1 is not None:
-            step_b = ["", "步骤 B: ReB = (V·Dn·1000·ρ₁)/η₁（ρ₁ 为 t/m³）", f"代入 V={V}, Dn={D_n}, ρ₁={rho_1}, η₁={eta_1} → ReB = {Re_B}"]
+            step_b = ["", "步骤 B: ReB = (V·Dn·ρ₁)/η₁（ρ₁ 为 kg/m³）", f"代入 V={V}, Dn={D_n}, ρ₁={rho_1}, η₁={eta_1} → ReB = {Re_B}"]
         else:
             step_b = ["", f"步骤 B: 用户直接输入 ReB = {Re_B}"]
-        epsilon = parameters.get('epsilon', 0.0002)
-        step_c = ["", "步骤 C: 达西摩阻系数 λ", f"ReB={Re_B}，流态：{flow_regime}", f"ε={epsilon}, Dn={D_n}", f"λ = {lam}"]
+        epsilon = parameters.get('epsilon', 0.2)
+        step_c = ["", "步骤 C: 达西摩阻系数 λ", f"ReB={Re_B}，流态：{flow_regime}", f"ε={epsilon} mm, Dn={D_n}", f"λ = {lam}"]
         for text in step_a + step_b + step_c:
             p = doc.add_paragraph(text)
             for run in p.runs:
@@ -1206,7 +1267,7 @@ class WordExporter:
         i_k = result.get('i_k', 'N/A')
         process_texts = [
             "达西-魏斯巴赫公式(4.3.1-1): i_k = λ·(V²·ρ_k)/(2gD·ρ_s)",
-            f"1. 代入: λ={lambda_coef}, V={V} m/s, ρ_k={rho_k} t/m³, D={D} m, ρ_s={rho_s} t/m³, g={g} m/s²",
+            f"1. 代入: λ={lambda_coef}, V={V} m/s, ρ_k={rho_k} kg/m³, D={D} m, ρ_s={rho_s} kg/m³, g={g} m/s²",
             f"2. 沿程摩阻损失: i_k = {i_k} mH₂O/m"
         ]
         for text in process_texts:
@@ -1231,8 +1292,8 @@ class WordExporter:
                 return None
 
             def loss_head_m(l):
-                pk = rho_s * g * i_k * l + (P_j * (l / l_max) if l_max > 0 else 0)
-                return pk / (rho_k * g)
+                pk = rho_s * g * i_k * l / 1000.0 + (P_j * (l / l_max) if l_max > 0 else 0)
+                return pk * 1000.0 / (rho_k * g)
 
             return _hydraulic_grade_xy(l_max, H, loss_head_m, HYDRAULIC_GRADE_CURVE_POINTS)
         except (TypeError, ValueError, ZeroDivisionError):
@@ -1240,12 +1301,12 @@ class WordExporter:
 
     @staticmethod
     def _try_slurry_page_clear_hydraulic_grade_xy(parameters):
-        """浆体页清水对比线：与界面一致，取当前浆体参数的 H、L、P_j、g 与 i_k，ρ_w=1 t/m³、i_w=i_k。"""
+        """浆体页清水对比线：与界面一致，取当前浆体参数的 H、L、P_j、g 与 i_k，ρ_w=1000 kg/m³、i_w=i_k。"""
         try:
             l_max = float(parameters.get('L') or 0)
             if l_max <= 0:
                 return None
-            rho_w = 1.0
+            rho_w = 1000.0
             g = float(parameters.get('g') or 9.81)
             i_w = float(parameters.get('i_k') or 0)
             H = float(parameters.get('H') or 0)
@@ -1254,8 +1315,8 @@ class WordExporter:
                 return None
 
             def loss_head_m(l):
-                pk = rho_w * g * i_w * l + (P_j * (l / l_max) if l_max > 0 else 0)
-                return pk / (rho_w * g)
+                pk = rho_w * g * i_w * l / 1000.0 + (P_j * (l / l_max) if l_max > 0 else 0)
+                return pk * 1000.0 / (rho_w * g)
 
             return _hydraulic_grade_xy(l_max, H, loss_head_m, HYDRAULIC_GRADE_CURVE_POINTS)
         except (TypeError, ValueError, ZeroDivisionError):
@@ -1267,7 +1328,7 @@ class WordExporter:
         try:
             if l_max <= 0 or not clear_parameters:
                 return None
-            rho_w = float(clear_parameters.get('rho_w') or 1)
+            rho_w = float(clear_parameters.get('rho_w') or 1000)
             g = float(clear_parameters.get('g') or 9.81)
             i_w = float(clear_parameters.get('i_w') or 0)
             H = float(clear_parameters.get('H') or 0)
@@ -1276,8 +1337,8 @@ class WordExporter:
                 return None
 
             def loss_head_m(l):
-                pk = rho_w * g * i_w * l + (P_j * (l / l_max) if l_max > 0 else 0)
-                return pk / (rho_w * g)
+                pk = rho_w * g * i_w * l / 1000.0 + (P_j * (l / l_max) if l_max > 0 else 0)
+                return pk * 1000.0 / (rho_w * g)
 
             return _hydraulic_grade_xy(l_max, H, loss_head_m, HYDRAULIC_GRADE_CURVE_POINTS)
         except (TypeError, ValueError, ZeroDivisionError):
@@ -1381,9 +1442,9 @@ class WordExporter:
         P_z = parameters.get('P_z', 0)
 
         process_texts = [
-            "公式: Pk = ρk·g·H + ρs·g·ik·L + Pj + Pn + Pz",
-            f"1. 重力势能压力: ρk·g·H = {rho_k}×{g}×{H} = {intermediate.get('gravity_pressure', 'N/A')} kPa（ρ 单位 t/m³）",
-            f"2. 沿程摩擦损失: ρs·g·ik·L = {rho_s}×{g}×{i_k}×{L} = {intermediate.get('friction_pressure', 'N/A')} kPa",
+            "公式: P_k = ρ_k g H/1000 + ρ_s g i_k L/1000 + P_j + P_n + P_z（ρ 为 kg/m³，结果为 kPa）",
+            f"1. 重力势能压力: ρ_k g H/1000 = {rho_k}×{g}×{H}/1000 = {intermediate.get('gravity_pressure', 'N/A')} kPa",
+            f"2. 沿程摩擦损失: ρ_s g i_k L/1000 = {rho_s}×{g}×{i_k}×{L}/1000 = {intermediate.get('friction_pressure', 'N/A')} kPa",
             f"3. 局部摩阻损失: Pj = {P_j} kPa",
             f"4. 泵站零件损失: Pn = {P_n} kPa",
             f"5. 出口余压: Pz = {P_z} kPa",
@@ -1415,7 +1476,7 @@ class WordExporter:
         if cl_xy:
             series.append((cl_xy[0], cl_xy[1], CLEAR_HYDRAULIC_LINE, '清水对比水力坡度线'))
             cap_extra = (
-                ' 橙色为浆体；蓝色为清水对比线（与浆体同 H、L、P_j、g，取 ρ_w=1 t/m³、i_w=i_k）。'
+                ' 橙色为浆体；蓝色为清水对比线（与浆体同 H、L、P_j、g，取 ρ_w=1000 kg/m³、i_w=i_k）。'
             )
 
         self._embed_matplotlib_hydraulic_grade(
@@ -1434,7 +1495,7 @@ class WordExporter:
     def _add_clear_water_total_head_process(self, doc, parameters, result):
         """清水总扬程计算过程 + 与界面一致的单线水力坡度图"""
         intermediate = result.get('intermediate', {})
-        rho_w = parameters.get('rho_w', 1)
+        rho_w = parameters.get('rho_w', 1000)
         g = parameters.get('g', 9.81)
         H = parameters.get('H', 'N/A')
         i_w = parameters.get('i_w', 'N/A')
@@ -1444,10 +1505,10 @@ class WordExporter:
         P_z = parameters.get('P_z', 0)
 
         process_texts = [
-            "公式: Pw = ρw·g·(H + i_w·L) + Pj + Pn + Pz",
-            "注: 与分项 ρw·g·H + ρw·g·i_w·L 等价；ρk、ρs 在清水工况均取 ρw；沿程采用清水摩阻系数 i_w。",
-            f"1. 重力势能压力: ρw·g·H = {rho_w}×{g}×{H} = {intermediate.get('gravity_pressure', 'N/A')} kPa（ρw 单位 t/m³）",
-            f"2. 沿程摩擦损失: ρw·g·i_w·L = {rho_w}×{g}×{i_w}×{L} = {intermediate.get('friction_pressure', 'N/A')} kPa",
+            "公式: P_w = ρ_w g (H + i_w L)/1000 + P_j + P_n + P_z（ρ_w 为 kg/m³，结果为 kPa）",
+            "注: 与分项 ρ_w g H/1000 + ρ_w g i_w L/1000 等价；沿程采用清水摩阻系数 i_w。",
+            f"1. 重力势能压力: ρ_w g H/1000 = {rho_w}×{g}×{H}/1000 = {intermediate.get('gravity_pressure', 'N/A')} kPa",
+            f"2. 沿程摩擦损失: ρ_w g i_w L/1000 = {rho_w}×{g}×{i_w}×{L}/1000 = {intermediate.get('friction_pressure', 'N/A')} kPa",
             f"3. 局部摩阻损失: Pj = {P_j} kPa",
             f"4. 泵站零件损失: Pn = {P_n} kPa",
             f"5. 出口余压: Pz = {P_z} kPa",
@@ -1526,13 +1587,13 @@ class WordExporter:
             p = doc.add_paragraph(text)
             for run in p.runs:
                 self._set_font(run)
-        rho_k = parameters.get('rho_k', 1)
+        rho_k = parameters.get('rho_k', 1000)
         g = parameters.get('g', 9.81)
         try:
             if pb != 'N/A' and rho_k and float(rho_k) > 0 and g and float(g) > 0:
-                hm = float(pb) / (float(rho_k) * float(g))
+                hm = float(pb) * 1000.0 / (float(rho_k) * float(g))
                 p2 = doc.add_paragraph(
-                    f"折合浆体液柱高度（P_b/(ρ_k·g)）：约 {hm:.4f} m（ρ_k = {rho_k} t/m³，g = {g} m/s²）。"
+                    f"折合浆体液柱高度（1000·P_b/(ρ_k·g)）：约 {hm:.4f} m（ρ_k = {rho_k} kg/m³，g = {g} m/s²）。"
                 )
                 for run in p2.runs:
                     self._set_font(run)
@@ -1589,8 +1650,8 @@ class WordExporter:
         units = {
             "D": "m",
             "D_n": "m",
-            "ps": "t/m³",
-            "pl": "t/m³",
+            "ps": "kg/m³",
+            "pl": "kg/m³",
             "ws": "m/s",
             "Cs": "decimal",
             "w0": "m/s",
@@ -1604,10 +1665,10 @@ class WordExporter:
             "g": "m/s²",
             "G": "",
             "W": "",
-            "rho_g": "t/m³",
-            "rho_s": "t/m³",
-            "rho_k": "t/m³",
-            "rho_w": "t/m³",
+            "rho_g": "kg/m³",
+            "rho_s": "kg/m³",
+            "rho_k": "kg/m³",
+            "rho_w": "kg/m³",
             "dp": "mm",
             "beta": "",
             "lambda_coef": "",
@@ -1631,6 +1692,6 @@ class WordExporter:
             "H2": "m",
             "d": "m",
             "eta_1": "Pa·s",
-            "epsilon": "m",
+            "epsilon": "mm",
         }
         return units.get(param_name, "")

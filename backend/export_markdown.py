@@ -64,8 +64,8 @@ def program_formula_to_latex(expr: str) -> str:
 def get_unit(param_name: str) -> str:
     units = {
         "D": "m",
-        "ps": "t/m³",
-        "pl": "t/m³",
+        "ps": "kg/m³",
+        "pl": "kg/m³",
         "ws": "m/s",
         "Cs": "decimal",
         "w0": "m/s",
@@ -78,10 +78,10 @@ def get_unit(param_name: str) -> str:
         "g": "m/s²",
         "G": "",
         "W": "",
-        "rho_g": "t/m³",
-        "rho_s": "t/m³",
-        "rho_k": "t/m³",
-        "rho_w": "t/m³",
+        "rho_g": "kg/m³",
+        "rho_s": "kg/m³",
+        "rho_k": "kg/m³",
+        "rho_w": "kg/m³",
         "dp": "mm",
         "beta": "",
         "lambda_coef": "",
@@ -132,7 +132,7 @@ def intermediate_label_md(key: str) -> str:
         "numerator": r"流速平方与浆体密度项 $V^2 \rho_k$",
         "denominator": r"重力与管径项 $2 g D \rho_s$",
         "denom": r"浓度与密度加权倒数项 $C_w/\rho_g+(1-C_w)/\rho_s$",
-        "step_A_Qk": r"步骤 A 矿浆流量 $Q_k$",
+        "step_A_Qk": r"步骤 A 浆体体积流量 $Q_K$（m³/h）",
         "step_B_DL_mm": r"步骤 B 临界管径 $D_L$ (mm)",
         "Cd": r"重量砂水比 $C_d$",
         "step_C_V_L": r"步骤 C 临界流速 $V_L$",
@@ -254,7 +254,7 @@ def _md_result_section(formula_id: str, result: Dict[str, Any]) -> List[str]:
         re_b = result.get("Re_B", "N/A")
         lam = result.get("lambda_coef", "N/A")
         fr = intermediate.get("flow_regime", "")
-        value = rf"$\rho_1$={rho_1} t/m³，$\mathrm{{Re}}_B$={re_b}，$\lambda$={lam}"
+        value = rf"$\rho_1$={rho_1} kg/m³，$\mathrm{{Re}}_B$={re_b}，$\lambda$={lam}"
         if fr:
             value += f"（{fr}）"
     elif formula_id == "slurry_accel_energy":
@@ -271,12 +271,12 @@ def _md_result_section(formula_id: str, result: Dict[str, Any]) -> List[str]:
         item = "浆体摩阻损失"
         rho_k = result.get("rho_k", "N/A")
         i_k = result.get("i_k", "N/A")
-        value = rf"$\rho_k = {rho_k}$ t/m³，$i_k = {i_k}$ mH₂O/m"
+        value = rf"$\rho_k = {rho_k}$ kg/m³，$i_k = {i_k}$ mH₂O/m"
     elif formula_id == "slurry_friction_workflow":
         item = "浆体摩阻损失（分步）"
         rho_k = result.get("rho_k", "N/A")
         i_k = result.get("i_k", "N/A")
-        value = rf"$\rho_k = {rho_k}$ t/m³，$i_k = {i_k}$ mH₂O/m"
+        value = rf"$\rho_k = {rho_k}$ kg/m³，$i_k = {i_k}$ mH₂O/m"
     elif formula_id == "slurry_total_head":
         item = r"浆体管道输送压力 $P_k$"
         value = result.get("H_total", "N/A")
@@ -364,9 +364,15 @@ def _calc_process_md(
     elif formula_id == "fei_xiangjun":
         rho_g = parameters.get("rho_g", "N/A")
         rho_k = parameters.get("rho_k", "N/A")
-        lam = parameters.get("lambda_coef", "N/A")
-        c26 = im.get("coefficient_2_26", parameters.get("coefficient_2_26", 2.26))
-        lines.extend(
+        lam = im.get("lambda_coef", parameters.get("lambda_coef", "N/A"))
+        c26 = parameters.get("coefficient_2_26", im.get("coefficient_2_26", 2.26))
+        fei_block: list[str] = []
+        if im.get("fei_Re_flow"):
+            fei_block.append(
+                rf"0. $\lambda$–$V_c$ 自洽迭代收敛：末步相对残差 $\\approx {im.get('fei_lambda_rel_residual', 'N/A')}$；"
+                rf"$\mathrm{{Re}}_B$ 与流态：{im.get('fei_Re_flow')}；$\lambda={im.get('lambda_coef', 'N/A')}$"
+            )
+        fei_block.extend(
             [
                 rf"1. $\Delta\rho/\rho = ({rho_g} - {rho_k})/{rho_k} = {im.get('delta_rho_ratio', 'N/A')}$",
                 rf"2. $2.26/\sqrt{{\lambda}} = {c26}/\sqrt{{{lam}}} = {im.get('leading_coef', 'N/A')}$",
@@ -377,11 +383,12 @@ def _calc_process_md(
                 "",
             ]
         )
+        lines.extend(fei_block)
     elif formula_id == "kronodze_pressure":
-        K = parameters.get("K", 1.1)
-        G = parameters.get("G", "N/A")
         W = parameters.get("W", "N/A")
         rho_g = parameters.get("rho_g", "N/A")
+        C_w = parameters.get("C_w", "N/A")
+        rho_s = parameters.get("rho_s", "N/A")
         dp = parameters.get("dp", "N/A")
         beta = parameters.get("beta", 1.0)
         Qk = im.get("step_A_Qk", "N/A")
@@ -389,10 +396,10 @@ def _calc_process_md(
         Cd = im.get("Cd", "N/A")
         lines.extend(
             [
-                r"A) 矿浆流量 $Q_k$：",
-                rf"$Q_k = K W (1/\rho_g + G/W) = {K}\times{W}\times(1/{rho_g} + {G}/{W}) = {Qk}$",
-                r"B) 临界管径 $D_L$（由 $Q_k$ 反解）：",
-                rf"$d_p = {dp}$ mm，$C_d = W/G\times 100 = {Cd}$，$D_L = {DL}$ mm",
+                r"A) 浆体体积流量 $Q_K$（m³/h）：",
+                rf"$Q_K = W\left(\frac{{1}}{{\rho_g}}+\frac{{1-C_W}}{{C_W \rho_s}}\right)$（$W$ 为 $\mathrm{{kg/h}}$），代入 $W={W}$、$\rho_g={rho_g}$、$\rho_s={rho_s}$、$C_W={C_w}$ → $Q_K={Qk}\ \mathrm{{m^3/h}}$",
+                r"B) 临界管径 $D_L$（由 $Q_K$ 反解）：",
+                rf"$d_p = {dp}$ mm，$C_d = \dfrac{{C_W}}{{1-C_W}}\times 100 = {Cd}$，$D_L = {DL}$ mm",
                 r"C) 临界流速 $V_L$：",
                 rf"$V_L = 0.255\beta(1 + 2.48\sqrt[3]{{C_d}}\sqrt[4]{{D_L}}) = {result.get('Vc', 'N/A')}$ m/s",
                 "",
@@ -423,7 +430,7 @@ def _calc_process_md(
             [
                 r"公式 (4.3.1-2)：$\rho_k = 1/(C_w/\rho_g + (1-C_w)/\rho_s)$",
                 rf"代入 $C_w={C_w}$，$\rho_g={rho_g}$，$\rho_s={rho_s}$",
-                rf"$\rho_k = {rho_k}$ t/m³",
+                rf"$\rho_k = {rho_k}$ kg/m³",
                 "",
             ]
         )
@@ -435,20 +442,20 @@ def _calc_process_md(
         rho_g, rho_k_pm, c1v = parameters.get("rho_g"), parameters.get("rho_k"), parameters.get("C1v")
         if rho_g is not None and rho_k_pm is not None and c1v is not None:
             lines.append(
-                rf"步骤 A：$\rho_1 = \rho_g C_{{1V}} + (1-C_{{1V}})\rho_k$（$\rho_g$、$\rho_k$、$\rho_1$ 均为 t/m³），代入得 $\rho_1 = {rho_1}$ t/m³"
+                rf"步骤 A：$\rho_1 = \rho_g C_{{1V}} + (1-C_{{1V}})\rho_k$（$\rho_g$、$\rho_k$、$\rho_1$ 均为 kg/m³），代入得 $\rho_1 = {rho_1}$ kg/m³"
             )
         else:
-            lines.append(rf"步骤 A：用户给定 $\rho_1 = {rho_1}$ t/m³")
+            lines.append(rf"步骤 A：用户给定 $\rho_1 = {rho_1}$ kg/m³")
         V, D_n, eta_1 = parameters.get("V"), parameters.get("D_n"), parameters.get("eta_1")
         if V is not None and D_n is not None and eta_1 is not None:
             lines.append(
-                rf"步骤 B：$\mathrm{{Re}}_B = (V D_n \cdot 1000\rho_1)/\eta_1$（$\rho_1$ 为 t/m³）→ $\mathrm{{Re}}_B = {re_b}$"
+                rf"步骤 B：$\mathrm{{Re}}_B = (V D_n \rho_1)/\eta_1$（$\rho_1$ 为 kg/m³）→ $\mathrm{{Re}}_B = {re_b}$"
             )
         else:
             lines.append(rf"步骤 B：用户给定 $\mathrm{{Re}}_B = {re_b}$")
-        epsilon = parameters.get("epsilon", 0.0002)
+        epsilon = parameters.get("epsilon", 0.2)
         lines.append(
-            rf"步骤 C：$\lambda = {lam}$（流态：{fr}），$\varepsilon={epsilon}$，$D_n={D_n}$"
+            rf"步骤 C：$\lambda = {lam}$（流态：{fr}），$\varepsilon={epsilon}$ mm，$D_n={D_n}$ m"
         )
         lines.append("")
     elif formula_id == "slurry_accel_energy":

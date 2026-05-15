@@ -61,8 +61,8 @@ function parseNavigateId(text: string): string | undefined {
   return m ? m[1].trim() : undefined
 }
 
-/** 探测本地 LLM；不可用时附带后端简明诊断（import / GGUF）。 */
-async function fetchAssistantInferenceStatus(language: 'zh' | 'en'): Promise<{ ready: boolean; diagnostic?: string }> {
+/** 探测本地 LLM 是否就绪（不向界面附带 GGUF/导入失败等技术诊断）。 */
+async function fetchAssistantInferenceReady(): Promise<boolean> {
   const ctrl = new AbortController()
   const t = window.setTimeout(() => ctrl.abort(), Math.min(API_TIMEOUT, 10000))
   try {
@@ -73,16 +73,9 @@ async function fetchAssistantInferenceStatus(language: 'zh' | 'en'): Promise<{ r
     } catch {
       /* ignore malformed JSON */
     }
-    const ready = Boolean(data.inferenceReady)
-    if (ready) return { ready }
-    const diagZh =
-      typeof data.failureDiagnosticZh === 'string' ? String(data.failureDiagnosticZh).trim() : ''
-    const diagEn =
-      typeof data.failureDiagnosticEn === 'string' ? String(data.failureDiagnosticEn).trim() : ''
-    const diagnostic = language === 'en' ? diagEn || diagZh : diagZh || diagEn
-    return { ready: false, diagnostic: diagnostic || undefined }
+    return Boolean(data.inferenceReady)
   } catch {
-    return { ready: false }
+    return false
   } finally {
     window.clearTimeout(t)
   }
@@ -259,15 +252,15 @@ export default function AssistantPanel({
     }
 
     // 2) 需 LLM：发送前探测 inferenceReady（不向界面展示模型状态）
-    const inf = await fetchAssistantInferenceStatus(language)
-    if (!inf.ready) {
+    const inferenceReady = await fetchAssistantInferenceReady()
+    if (!inferenceReady) {
       const assistantId = newId('a')
       setMessages((prev) => [
         ...prev,
         {
           id: assistantId,
           role: 'assistant',
-          content: smartInterpretationNotReadyReply(language, inf.diagnostic),
+          content: smartInterpretationNotReadyReply(language),
         },
       ])
       setBusy(false)
@@ -295,16 +288,8 @@ export default function AssistantPanel({
       })
 
       if (!res.ok) {
-        const errObj = (await res.json().catch(() => null)) as
-          | { error?: unknown; hint?: unknown }
-          | null
-        const detailParts = [errObj?.hint, errObj?.error]
-          .map((x) => (typeof x === 'string' ? x.trim() : ''))
-          .filter(Boolean)
-        const fb = smartInterpretationNotReadyReply(
-          language,
-          detailParts.length ? detailParts.join('\n') : undefined
-        )
+        await res.json().catch(() => null)
+        const fb = smartInterpretationNotReadyReply(language)
         setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: fb } : m)))
         return
       }
@@ -337,7 +322,6 @@ export default function AssistantPanel({
 
       let full = ''
       let streamBackendError = false
-      let streamBackendErrorText = ''
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
@@ -351,7 +335,6 @@ export default function AssistantPanel({
             const o = JSON.parse(trimmed) as { content?: string; error?: string }
             if (o.error) {
               streamBackendError = true
-              if (!streamBackendErrorText) streamBackendErrorText = String(o.error)
             }
             if (o.content) {
               full += o.content
@@ -369,7 +352,6 @@ export default function AssistantPanel({
           const o = JSON.parse(tail) as { content?: string; error?: string }
           if (o.error) {
             streamBackendError = true
-            if (!streamBackendErrorText) streamBackendErrorText = String(o.error)
           }
           if (o.content) {
             full += o.content
@@ -381,10 +363,7 @@ export default function AssistantPanel({
       }
 
       if (streamBackendError) {
-        assistantContent = smartInterpretationNotReadyReply(
-          language,
-          streamBackendErrorText || undefined
-        )
+        assistantContent = smartInterpretationNotReadyReply(language)
       }
 
       const navRaw = parseNavigateId(assistantContent)

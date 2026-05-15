@@ -110,15 +110,11 @@ export function prefersLlmInterpretation(raw: string): boolean {
   return zhTriggers || enTriggers
 }
 
-/** 嵌入式 LLM 未就绪时在固定话术末尾附加一行后端诊断（由 /api/assistant/status 给出） */
-export function smartInterpretationNotReadyReply(language: 'zh' | 'en', diagnostic?: string): string {
-  const base =
-    language === 'en'
-      ? 'For this question I can help with concrete steps in the app—try the sidebar, filling parameters, exporting Word, or what a specific result field means. Please phrase your question as specifically as you can.'
-      : '这类问题我可以从产品使用角度协助您：例如左侧侧栏如何找到计算页面、参数如何填写、Word 导出或某一界面提示含义等。请将问题写得更具体一些，便于为您解答。'
-  const hint = diagnostic?.trim()
-  if (!hint) return base
-  return `${base}\n\n${hint}`
+/** 嵌入式 LLM 未就绪时的固定话术（不向终端用户展示模型/GGUF 等技术诊断）。 */
+export function smartInterpretationNotReadyReply(language: 'zh' | 'en'): string {
+  return language === 'en'
+    ? 'For this question I can help with concrete steps in the app—try the sidebar, filling parameters, exporting Word, or what a specific result field means. Please phrase your question as specifically as you can.'
+    : '这类问题我可以从产品使用角度协助您：例如左侧侧栏如何找到计算页面、参数如何填写、Word 导出或某一界面提示含义等。请将问题写得更具体一些，便于为您解答。'
 }
 
 /** 本地规则/FAQ/关键词路由：命中则直接返回固定话术，不调用后端 LLM。 */

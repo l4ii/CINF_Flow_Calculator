@@ -662,6 +662,43 @@ function startBackend() {
   })
 }
 
+/** @param {import('electron').BrowserWindow} browserWindow */
+function attachPageZoomShortcuts(browserWindow) {
+  if (!browserWindow || browserWindow.isDestroyed()) return
+  browserWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    if (!browserWindow || browserWindow.isDestroyed()) return
+    const contents = browserWindow.webContents
+    const mod = process.platform === 'darwin' ? input.meta : input.control
+    if (!mod || input.alt) return
+
+    const zoomIn =
+      input.code === 'Equal' ||
+      input.code === 'NumpadAdd' ||
+      input.key === '+' ||
+      input.key === '='
+    const zoomOut = input.code === 'Minus' || input.code === 'NumpadSubtract'
+    const resetZoom = input.code === 'Digit0'
+
+    if (zoomIn) {
+      event.preventDefault()
+      const z = contents.getZoomFactor()
+      contents.setZoomFactor(Math.min(5, Math.round(z * 1.1 * 100) / 100))
+      return
+    }
+    if (zoomOut) {
+      event.preventDefault()
+      const z = contents.getZoomFactor()
+      contents.setZoomFactor(Math.max(0.25, Math.round((z / 1.1) * 100) / 100))
+      return
+    }
+    if (resetZoom) {
+      event.preventDefault()
+      contents.setZoomFactor(1)
+    }
+  })
+}
+
 // 创建主窗口
 function createWindow() {
   const windowOptions = {
@@ -685,6 +722,12 @@ function createWindow() {
   }
   
   mainWindow = new BrowserWindow(windowOptions)
+
+  /**
+   * Windows 等环境下 Ctrl +「= / +」放大有时无法恢复缩放（仅缩小正常）。
+   * 在 before-input-event 中统一处理 Ctrl± / Ctrl0，与 Chromium 菜单缩放一致。
+   */
+  attachPageZoomShortcuts(mainWindow)
 
   // 开发环境加载本地服务器，生产环境加载打包后的文件（不自动打开 DevTools）
   if (isDev) {

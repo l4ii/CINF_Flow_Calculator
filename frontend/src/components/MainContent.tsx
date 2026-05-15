@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, type ChangeEvent, type CSSProperties, type ReactNode } from 'react';
 import type { FormulaInfo, CalculationResult, Parameter } from '../types';
 import axios from 'axios';
 import { API_BASE_URL, API_TIMEOUT } from '../config/api';
 import { BlockMath, InlineMath } from 'react-katex';
+import { FormulaFrame, ParameterFrame, InputWithTrailingUnit, UnitBadge } from './calculationUiPrimitives.tsx';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   downloadScientificHlChartPng,
@@ -48,6 +49,9 @@ function displayParamLabelFromApi(label: string, unit: string | undefined | null
   if (!m) return s
   const symbol = m[1]
   let desc = m[2].trim()
+  // 侧栏/API 偶发附带「由浆体重量浓度…换算」说明：主参数标题只保留体积浓度本身
+  desc = desc.replace(/；由浆体重量浓度[^；）]*/g, '')
+  desc = desc.replace(/（由浆体重量浓度[^）]*）/g, '')
   desc = desc.replace(/\s*，?\s*单位为\s*[^，。；)]*/gi, '').trim()
   desc = desc.replace(/[，,]\s*$/, '').trim()
 
@@ -79,25 +83,25 @@ const PARAM_MEANINGFUL_EXAMPLE_BY_NAME: Record<string, string> = {
   H: '30',
   V: '2',
   g: '9.81',
-  rho_g: '2.5',
-  rho_s: '1',
-  rho_k: '1.2',
-  rho_w: '1',
-  rho_1: '1.3',
+  rho_g: '2500',
+  rho_s: '1000',
+  rho_k: '1200',
+  rho_w: '1000',
+  rho_1: '1380',
   eta_1: '0.001',
   eta_j: '0.97',
   eta_b: '0.8',
   eta_v: '0.92',
   eta_c: '0.9',
   lambda_coef: '0.02',
-  epsilon: '0.0002',
+  epsilon: '0.053',
   i_k: '0.02',
   i_w: '0.01',
   C_w: '0.35',
   C1v: '0.15',
   Cv: '0.3',
   Q_k: '0.15',
-  W: '60',
+  W: '42000',
   G: '400',
   K: '1.1',
   K_1: '1.1',
@@ -172,8 +176,10 @@ function meaningfulExampleForParam(parameters: Parameter[] | undefined, name: st
   if (unit === 'm') return '0.2'
   if (unit === 'm/s') return '2'
   if (unit === 'm/s²' || unit === 'm/s2') return '9.81'
-  if (unit.includes('t/m')) return '1.2'
+  if (unit.includes('kg/m³') || unit.toLowerCase().includes('kg/m3')) return '1200'
   if (unit.includes('pa')) return '0.001'
+  if (unit === 'm³/h' || unit.toLowerCase() === 'm3/h') return '350'
+  if (unit === 'kg/h') return '42000'
   if (unit === 'kpa') return '50'
   if (unit === 'decimal' || unit === '无量纲') return '0.3'
   return '1'
@@ -202,7 +208,7 @@ function decimalParameterPlaceholder(
 }
 
 /** 临界流速公式中 $C_V$ 占位符：仅提示展开辅助计算（0～1、小数等见标签） */
-const CV_VOLUME_ASSIST_HINT = '点击输入框展开「体积浓度辅助计算」'
+const CV_VOLUME_ASSIST_HINT = '点击输入框展开「体积浓度——辅助计算」'
 
 function cvParameterPlaceholder(): string {
   return CV_VOLUME_ASSIST_HINT
@@ -254,7 +260,7 @@ const CENTRIFUGAL_PARAM_PLACEHOLDER_ZH: Record<string, string> = {
   C_w: '固相质量分数，如0.35',
   K_p: '扬程修正系数，如1.1',
   K_m: '主泵磨蚀折损系数，常用 0.85～0.98',
-  rho_k: '浆体密度，如1.2',
+  rho_k: '浆体密度，如1470',
   g: '重力加速度，默认值 9.81',
   Sigma_H_s: '装置所需液柱扬程，如120',
   H_b: '主泵扬程，如150',
@@ -281,7 +287,7 @@ function inferCentrifugalEtaJPreset(
 const POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH: Record<string, string> = {
   P_k: '输送压力，如1200',
   K_f: '压力富余系数，常用 0.75～0.95',
-  rho_k: '浆体密度，如1.2',
+  rho_k: '浆体密度，如1470',
   g: '重力加速度，默认值 9.81',
   P_b: '主泵总扬程压力，如1600',
   Q_k: '浆体体积流量，如0.05',
@@ -313,20 +319,20 @@ const SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS = [
   {
     name: 'rho_1' as const,
     label: '$\\rho_1$：混合物密度（可选，与下方三栏二选一）',
-    unit: 't/m³',
+    unit: 'kg/m³',
     placeholder: '可选；直填 ρ₁ 时，下方 ρ_g、ρ_k、C_{1V} 可留空',
   },
   {
     name: 'rho_g' as const,
     label: '$\\rho_g$：固体密度',
-    unit: 't/m³',
-    placeholder: '固体密度，如2.5',
+    unit: 'kg/m³',
+    placeholder: '固体密度，如2650',
   },
   {
     name: 'rho_k' as const,
     label: '$\\rho_k$：浆体密度（步骤1结果，勿填清水密度）',
-    unit: 't/m³',
-    placeholder: '步骤1「浆体密度」ρ_k，如1.47',
+    unit: 'kg/m³',
+    placeholder: '步骤1「浆体密度」ρ_k，如1470',
   },
   {
     name: 'C1v' as const,
@@ -337,18 +343,6 @@ const SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS = [
 ]
 
 const SLURRY_FRICTION_WF_DARCY_RE_FIELDS = [
-  {
-    name: 'rho_1' as const,
-    label: '$\\rho_1$：混合物密度',
-    unit: 't/m³',
-    placeholder: '混合物密度，如1.35',
-  },
-  {
-    name: 'Re_B' as const,
-    label: '$Re_B$：雷诺数（可选）',
-    unit: '无量纲',
-    placeholder: '已知 Re_B 时可直填；填写后本步可不填 V、D_n、η₁',
-  },
   {
     name: 'V' as const,
     label: '$V$：断面平均流速',
@@ -362,10 +356,22 @@ const SLURRY_FRICTION_WF_DARCY_RE_FIELDS = [
     placeholder: '未直填 Re_B 时必填，如0.2',
   },
   {
+    name: 'rho_1' as const,
+    label: '$\\rho_1$：混合物密度',
+    unit: 'kg/m³',
+    placeholder: '混合物密度，如1380',
+  },
+  {
     name: 'eta_1' as const,
-    label: '$\\eta_1$：混合物动力粘度',
+    label: '$\\eta$：刚度系数（Pa·s）',
     unit: 'Pa·s',
     placeholder: '未直填 Re_B 时必填，如0.001',
+  },
+  {
+    name: 'Re_B' as const,
+    label: '$Re_B$：雷诺数（可选）',
+    unit: '无量纲',
+    placeholder: '已知 Re_B 时可直填；填写后本步可不填 V、D_n、ρ₁、η',
   },
 ]
 
@@ -384,9 +390,9 @@ const SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS = [
   },
   {
     name: 'epsilon' as const,
-    label: '$\\varepsilon$：管道内壁粗糙度',
-    unit: 'm',
-    placeholder: '管道内壁粗糙度，默认值 0.053',
+    label: '$\\varepsilon$：管壁绝对粗糙度',
+    unit: 'mm',
+    placeholder: '如 0.053（直缝新钢管常见量级）',
   },
 ]
 
@@ -401,14 +407,14 @@ const SLURRY_FRICTION_WF_STEP1_FIELDS = [
   {
     name: 'rho_g' as const,
     label: '$\\rho_g$：固体密度',
-    unit: 't/m³',
-    placeholder: '固体密度，如2.5',
+    unit: 'kg/m³',
+    placeholder: '固体密度，如2650',
   },
   {
     name: 'rho_s' as const,
     label: '$\\rho_s$：清水密度',
-    unit: 't/m³',
-    placeholder: '清水密度，默认值1',
+    unit: 'kg/m³',
+    placeholder: '清水密度，常用1000',
   },
 ]
 
@@ -416,8 +422,8 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
   {
     name: 'rho_k' as const,
     label: '$\\rho_k$：浆体密度',
-    unit: 't/m³',
-    placeholder: '浆体密度，如1.35',
+    unit: 'kg/m³',
+    placeholder: '浆体密度，如1470',
   },
   {
     name: 'lambda_coef' as const,
@@ -440,8 +446,8 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
   {
     name: 'rho_s' as const,
     label: '$\\rho_s$：水密度',
-    unit: 't/m³',
-    placeholder: '水密度，默认值1',
+    unit: 'kg/m³',
+    placeholder: '水密度，常用1000',
   },
   {
     name: 'g' as const,
@@ -451,16 +457,20 @@ const SLURRY_FRICTION_WF_STEP3_FIELDS = [
   },
 ]
 
+/** 浆体摩阻损失步骤 3 / 流态判别步骤 2：与用户提供的「达西 λ」版说明一致（非刘德忠–Fanning 语境） */
+const SLURRY_PIPELINE_REYNOLDS_STEP_INTRO_ZH =
+  '本步骤用于计算浆体管道摩阻损失中的雷诺数 $Re_B$。雷诺数综合反映浆体流速 $V$、管道内径 $D_n$、混合物密度 $\\rho_1$ 及刚度系数 $\\eta$ 对流动状态的影响，是判断管内流态及计算摩阻系数的基础参数。计算得到的 $Re_B$ 将用于后续达西摩阻系数 $\\lambda$ 的计算，从而进一步求取浆体管道摩阻损失。'
+
 const SLURRY_FRICTION_WF_STEP_INTROS: Record<
   'step1' | 'darcy_rho1' | 'darcy_re' | 'darcy_lambda' | 'step5_ik',
   string
 > = {
   step1:
-    '依据固体质量浓度 $C_w$ 与固体密度 $\\rho_g$、清水密度 $\\rho_s$，按质量加权关系求浆体密度 $\\rho_k$（t/m³）。若浆体密度（$\\rho_k$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「5.水力坡降（$i_k$）」中直接输入。',
+    '依据浆体质量浓度 $C_w$ 与固体密度 $\\rho_g$、清水密度 $\\rho_s$，按质量加权关系求浆体密度 $\\rho_k$（kg/m³）。若浆体密度（$\\rho_k$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「5.水力坡降（$i_k$）」中直接输入。',
   darcy_rho1:
-    '可先直填混合物密度 $\\rho_1$（与本节首栏「可选」一致）；否则依据固体密度 $\\rho_g$、步骤1求得的浆体密度 $\\rho_k$（勿与步骤1输入栏的清水密度 $\\rho_s$ 混淆）与 $C_{1V}$，按 $\\rho_1 = \\rho_g C_{1V} + (1-C_{1V})\\rho_k$ 计算（t/m³）。结果写入后续「雷诺数」所用参数；若 $\\rho_1$ 已知，也可跳过本步并在「3 雷诺数（$Re_B$）」中直接填写。',
+    '可先直填混合物密度 $\\rho_1$（与本节首栏「可选」一致）；否则依据固体密度 $\\rho_g$、步骤1求得的浆体密度 $\\rho_k$（勿与步骤1输入栏的清水密度 $\\rho_s$ 混淆）与 $C_{1V}$，按 $\\rho_1 = \\rho_g C_{1V} + (1-C_{1V})\\rho_k$ 计算（kg/m³）。结果写入后续「计算雷诺数」所用参数；若 $\\rho_1$ 已知，也可跳过本步并在「3 计算雷诺数」中直接填写。',
   darcy_re:
-    '雷诺数是表征管道内流体流动状态的关键无量纲数，是计算摩阻损失的基础参数。该公式采用工程常用的显式近似形式（基于雷诺数定义 $Re=\\rho w D/\\mu$ 推导），直接求解流区的摩阻系数。同时体现了“密度、流速、管径、动力粘度”对流态的综合影响。若雷诺数（$Re_B$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「4.达西摩阻系数（$\\lambda$）」中直接输入。',
+    `${SLURRY_PIPELINE_REYNOLDS_STEP_INTRO_ZH}若雷诺数 $Re_B$ 已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「4.达西摩阻系数（$\\lambda$）」中直接输入。`,
   darcy_lambda:
     '达西摩阻系数（$\\lambda$）是描述管道内流体流动时阻力特性的无量纲参数，是计算浆体管道摩阻损失（水力坡降）的核心依据。其计算采用科尔布鲁克-怀特（Colebrook-White）公式的近似形式。若达西摩阻系数（$\\lambda$）已由设计或试验给定，可跳过本步并在「摩阻损失计算」→「浆体摩阻损失」→「5.水力坡降（$i_k$）」中直接输入。',
   step5_ik:
@@ -468,8 +478,148 @@ const SLURRY_FRICTION_WF_STEP_INTROS: Record<
 }
 const SLURRY_FRICTION_WF_OVERVIEW_PARAGRAPHS = [
   '本模块通过引入当量密度（$\\rho_k$）的概念，将达西-魏斯巴赫公式扩展应用于气-固-液多相流的摩阻损失计算。公式$i_k$在经典形式的基础上，乘以密度比（$\\frac{\\rho_k}{\\rho_s}$），以校正由于固体颗粒存在导致的附加能量损失。计算结果$i_k$可直接用于计算给定管长$L$下的总沿程水头损失：$h_f = i_k \\cdot L$。本方法适用于固体浓度适中、颗粒均匀悬浮的浆体或气力输送系统。当固体浓度极高或流动状态异常时，需结合经验系数进行修正。',
-  '计算步骤：本模块按五个步骤顺序计算 ① 浆体密度 $\\rho_k$；② 混合物密度 $\\rho_1$；③ 雷诺数 $Re_B$；④ 达西摩阻系数 $\\lambda$；⑤ 单位管长水力坡降 $i_k$。各步可单独执行；',
+  '计算步骤：本模块按五个步骤顺序计算 ① 浆体密度 $\\rho_k$；② 混合物密度 $\\rho_1$；③ 计算雷诺数；④ 达西摩阻系数 $\\lambda$；⑤ 单位管长水力坡降 $i_k$。各步可单独执行；',
 ]
+
+type PseudoHomogeneousFlowRow = {
+  d: string
+  delta_P: string
+  omega: string
+}
+
+/** 单档「式 4-8→4-4」链路中间量（与克诺罗兹分步类似，向下游步骤传递） */
+type PseudoCcaChainSnapshot = {
+  rho_l?: number
+  Re_B?: number
+  f_L?: number
+  U?: number
+  c_over_ca_i?: number
+}
+
+/** 若 ρ₁、Re_B、f_L、U 已有测定值，可手填跳过前几步计算 */
+type PseudoCcaKnownOverrideFields = {
+  rho_l?: string
+  Re_B?: string
+  /** 步骤 3 手改管径时与主参数 D 同步；为空则用步骤 2 / 主表管径 */
+  D_n?: string
+  f_L?: string
+  U?: string
+  /** 步骤 5：修正卡门常数；空则先用页顶 $K$，再用 0.36 */
+  K_karman?: string
+  /** 步骤 5：伊斯梅尔系数；空则先用页顶 $\\beta$，再用 1 */
+  beta_ismail?: string
+}
+
+const PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS: PseudoHomogeneousFlowRow[] = [
+  /** 无粒径表 UI 时保留单行代表档，供 particle_fractions、斯托克斯 ω 与汇总插值链使用 */
+  { d: '2e-4', delta_P: '1', omega: '' },
+]
+
+function inferredSlurryPipelineFlowRegime(
+  r: CalculationResult['result'] | undefined
+): 'pseudo_homogeneous' | 'heterogeneous' | 'composite' | null {
+  if (!r) return null
+  const fr = r.flow_regime
+  if (fr === 'pseudo_homogeneous' || fr === 'heterogeneous' || fr === 'composite') return fr
+  const c = r.C_over_CA
+  const d = r.C_CA_d95
+  if (c == null || d == null || isNaN(Number(c)) || isNaN(Number(d))) return null
+  const cn = Number(c)
+  const dn = Number(d)
+  if (cn <= 0.1) return 'heterogeneous'
+  if (cn >= 0.8 && dn >= 0.5) return 'pseudo_homogeneous'
+  return 'composite'
+}
+
+function normalizeCsvDecimalInput(raw: string): string {
+  return raw.replace(/，/g, ',').replace(/,/g, '.').trim()
+}
+
+function parsePseudoCcaOptionalNumber(raw: string | undefined): number | undefined {
+  if (raw == null || String(raw).trim() === '') return undefined
+  const x = parseFloat(normalizeCsvDecimalInput(String(raw)))
+  return Number.isFinite(x) ? x : undefined
+}
+
+function parsePseudoFlowFractionsFromRows(rows: PseudoHomogeneousFlowRow[]): {
+  error: string | null
+  fractions: Array<{ d: number; delta_P: number; omega?: number }>
+} {
+  const fractions: Array<{ d: number; delta_P: number; omega?: number }> = []
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    const ds = normalizeCsvDecimalInput(r.d)
+    const dps = normalizeCsvDecimalInput(r.delta_P)
+    const oms = normalizeCsvDecimalInput(r.omega)
+    if (ds === '' && dps === '' && oms === '') continue
+    const d = parseFloat(ds)
+    const dp = parseFloat(dps)
+    if (!Number.isFinite(d) || d <= 0) {
+      return { error: `内置粒径档第 ${i + 1} 行：粒径 d（m）须为正数`, fractions: [] }
+    }
+    if (!Number.isFinite(dp) || dp <= 0) {
+      return { error: `内置粒径档第 ${i + 1} 行：质量权重 ΔP（小数）须为正数`, fractions: [] }
+    }
+    const row: { d: number; delta_P: number; omega?: number } = { d, delta_P: dp }
+    if (oms === '') {
+      return {
+        error: `内置粒径档第 ${i + 1} 行：须填写 $W_i$似均质中加权平均沉速辅助计算结果`,
+        fractions: [],
+      }
+    }
+    const w = parseFloat(oms)
+    if (!Number.isFinite(w) || w < 0) {
+      return { error: `内置粒径档第 ${i + 1} 行：$W_i$（m/s）须为非负实数`, fractions: [] }
+    }
+    row.omega = w
+    fractions.push(row)
+  }
+  if (fractions.length === 0) {
+    return { error: '内置粒径档数据无效：请刷新页面或重新进入本公式', fractions: [] }
+  }
+  return { error: null, fractions }
+}
+
+/** 由分步链路各档 $(C/C_A)_i$ 构造「开始计算」汇总请求（与 pseudo_homogeneous_summarize_ratios 一致） */
+function buildPseudoSummarizeFractionsFromChain(
+  rows: PseudoHomogeneousFlowRow[],
+  cmap: Record<number, PseudoCcaChainSnapshot>
+): {
+  error: string | null
+  fractions: Array<{ d: number; delta_P: number; c_over_ca_i: number }> | null
+} {
+  const fr: Array<{ d: number; delta_P: number; c_over_ca_i: number }> = []
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    const ds = normalizeCsvDecimalInput(r.d)
+    const dps = normalizeCsvDecimalInput(r.delta_P)
+    const oms = normalizeCsvDecimalInput(r.omega)
+    if (ds === '' && dps === '' && oms === '') continue
+    const dm = parseFloat(ds)
+    const dp = parseFloat(dps)
+    if (!Number.isFinite(dm) || dm <= 0 || !Number.isFinite(dp) || dp <= 0) {
+      return {
+        error: `请先完成第 ${i + 1} 档的粒径 d（m）与级配权重 ΔP（须为正数）`,
+        fractions: null,
+      }
+    }
+    const cci = cmap[i]?.c_over_ca_i
+    if (cci == null || !Number.isFinite(cci)) {
+      return {
+        error: `请先对第 ${i + 1} 档完成步骤 5（计算相对体积浓度），求得 $(C/C_A)_i$ 后再点击「开始计算」`,
+        fractions: null,
+      }
+    }
+    fr.push({ d: dm, delta_P: dp, c_over_ca_i: cci })
+  }
+  if (fr.length === 0) {
+    return {
+      error: '请先配置粒径档并完成步骤 5，再点击右下角「开始计算」进行流态判断。',
+      fractions: null,
+    }
+  }
+  return { error: null, fractions: fr }
+}
 
 /** 清水摩阻：管材类型与海澄–威廉系数 C_h 对应（自定义除外） */
 const CLEAR_WATER_CH_PRESET_VALUES: Record<string, number> = {
@@ -490,6 +640,7 @@ const CLEAR_WATER_CH_MENU_ROWS: { key: ClearWaterChPresetKey; prose: string; mat
 ]
 
 const SLURRY_EPSILON_PRESET_VALUES: Record<string, number> = {
+  // 键名沿用历史会话；直缝新钢管常用绝对粗糙度（mm）
   new_steel_pipe_053: 0.053,
   new_steel_pipe_055: 0.055,
 }
@@ -498,17 +649,68 @@ type SlurryEpsilonPresetKey = 'new_steel_pipe_053' | 'new_steel_pipe_055' | 'cus
 const DEFAULT_SLURRY_EPSILON_PRESET: SlurryEpsilonPresetKey = 'new_steel_pipe_053'
 const DEFAULT_SLURRY_EPSILON = SLURRY_EPSILON_PRESET_VALUES[DEFAULT_SLURRY_EPSILON_PRESET]
 
+function normalizeSlurryEpsilonPresetKey(raw: string | undefined): SlurryEpsilonPresetKey {
+  if (raw === 'new_steel_pipe_053' || raw === 'new_steel_pipe_055' || raw === 'custom') return raw
+  return DEFAULT_SLURRY_EPSILON_PRESET
+}
+
 /** 与浆体摩阻「达西 λ」第 4 步同一 Colebrook 显式式（费祥俊辅助面板主公式） */
 const DARCY_FRICTION_EXPLICIT_LAMBDA_BLOCK_MATH =
   '\\lambda = \\frac{1.33036}{\\left[\\ln\\left(\\frac{\\varepsilon}{3.7 D_n} + \\frac{5.7385}{Re_B^{0.9}}\\right)\\right]^2}'
 
 const SLURRY_EPSILON_MENU_ROWS: { key: SlurryEpsilonPresetKey; prose: string; math: string }[] = [
-  { key: 'new_steel_pipe_053', prose: '直缝新钢管', math: '\\varepsilon = 0.053' },
-  { key: 'new_steel_pipe_055', prose: '直缝新钢管 2', math: '\\varepsilon = 0.055' },
+  { key: 'new_steel_pipe_053', prose: '直缝新钢管', math: '\\varepsilon = 0.0508\\ \\mathrm{mm}' },
+  { key: 'new_steel_pipe_055', prose: '直缝新钢管', math: '\\varepsilon = 0.0540\\ \\mathrm{mm}' },
   { key: 'custom', prose: '用户可自定义输入', math: '\\varepsilon' },
 ]
 
-/** 与 calculation_engine._darcy_lambda_from_re 一致（费祥俊 λ 辅助预览） */
+/** 费祥俊辅助面板：粗糙度 mm（首选数值框；可选用下拉典型值） */
+function parseFeiAuxEpsilonMm(
+  preset: SlurryEpsilonPresetKey,
+  customStr: string
+): number | null {
+  const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+  const parsed = parseFloat(norm(customStr))
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
+  if (preset !== 'custom') {
+    const v = SLURRY_EPSILON_PRESET_VALUES[preset]
+    if (Number.isFinite(v) && v > 0) return v
+  }
+  return null
+}
+
+/** 达西 λ 辅助：雷诺数分界与浆体摩阻步骤 4 一致 */
+function darcyAuxFlowRegimeLabel(language: 'zh' | 'en', Re_B: number): string {
+  if (!Number.isFinite(Re_B)) return ''
+  if (language === 'en') return Re_B < 2000 ? 'laminar' : 'turbulent'
+  return Re_B < 2000 ? '层流' : '湍流'
+}
+
+/** 费祥俊公式主界面：中间量展示顺序（是否存在 fei_Re_flow 由后端决定是否迭代） */
+const FEI_XIANGJUN_INTERMEDIATE_ORDER = [
+  'fei_Re_flow',
+  'lambda_coef',
+  'fei_lambda_rel_residual',
+  'delta_rho_ratio',
+  'bracket_term',
+  'conc_term',
+  'size_term',
+  'leading_coef',
+] as const
+
+function sortFeiXiangjunIntermediateEntries(entries: [string, unknown][]): [string, unknown][] {
+  const map = new Map(entries)
+  const out: [string, unknown][] = []
+  for (const k of FEI_XIANGJUN_INTERMEDIATE_ORDER) {
+    if (map.has(k)) out.push([k, map.get(k)!])
+  }
+  return out
+}
+
+const FEI_LAMBDA_ITER_MAX_STEPS = 80
+const FEI_LAMBDA_ITER_TOL_REL = 1e-6
+
+/** 与 calculation_engine._darcy_lambda_from_re 一致（费祥俊 λ 辅助预览）；epsilon 为管壁绝对粗糙度（m，SI） */
 function darcyLambdaFromRePreview(Re_B: number, epsilon: number, D_n: number): number {
   if (Re_B < 2000) return 64 / Re_B
   const eps_term = epsilon ? epsilon / (3.7 * D_n) : 1e-10
@@ -518,32 +720,37 @@ function darcyLambdaFromRePreview(Re_B: number, epsilon: number, D_n: number): n
   return 1.33036 / Math.log(inner) ** 2
 }
 
-/** 费祥俊 λ 辅助：分步即时算出 ρ₁、Re_B、λ；各行在满足各自依赖时即可显示（无需一次性填完全部费祥俊参数栏） */
+/** 费祥俊 λ 辅助：用 V=Vc 与达西显式式做不动点迭代，与 backend._calculate_fei_xiangjun_iterative 一致 */
 function computeFeiDarcyAssistPreview(args: {
+  language: 'zh' | 'en'
   D: number | undefined
   rho_g: number | undefined
   rho_k: number | undefined
   Cv: number | undefined
-  feiLambdaAuxV: string
+  d90: number | undefined
+  g: number | undefined
+  coefficient_2_26: number | undefined
   feiLambdaAuxEta1: string
   feiLambdaAuxEpsilonPreset: SlurryEpsilonPresetKey
   feiLambdaAuxEpsilonCustom: string
-}): { rho_1: number | null; Re_B: number | null; lambda: number | null } {
+  lambdaSeed: number | undefined
+}): {
+  Re_B: number | null
+  flowRegime: string | null
+  lambda: number | null
+  relResidual: number | null
+} {
   const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
-  const V = parseFloat(norm(args.feiLambdaAuxV))
   const eta1 = parseFloat(norm(args.feiLambdaAuxEta1))
-  const epsRaw =
-    args.feiLambdaAuxEpsilonPreset === 'custom'
-      ? parseFloat(norm(args.feiLambdaAuxEpsilonCustom))
-      : SLURRY_EPSILON_PRESET_VALUES[args.feiLambdaAuxEpsilonPreset]
-  const eps = Number.isFinite(epsRaw) && epsRaw > 0 ? epsRaw : DEFAULT_SLURRY_EPSILON
+  const epsMm = parseFeiAuxEpsilonMm(args.feiLambdaAuxEpsilonPreset, args.feiLambdaAuxEpsilonCustom)
+  const eps = epsMm != null && epsMm > 0 ? epsMm : NaN
 
   const r6 = (x: number) => Math.round(x * 1e6) / 1e6
 
-  let rho_1: number | null = null
   const rho_g = args.rho_g
   const rho_k = args.rho_k
   const Cv = args.Cv
+  let rho_1: number | null = null
   if (
     rho_g != null &&
     !isNaN(rho_g) &&
@@ -555,41 +762,104 @@ function computeFeiDarcyAssistPreview(args: {
     Cv >= 0 &&
     Cv <= 1
   ) {
-    // 辅助面板不再要求手填 ρs：直接用主参数区的 ρg、ρk、Cv 计算混合物密度
-    // 由 ρk = ρg*Cv + (1-Cv)*ρs 得 ρs，再回代求 ρ1（数值上与 ρk 一致）
-    const denom = 1 - Cv
-    const rho_s_derived = Math.abs(denom) > 1e-12 ? (rho_k - rho_g * Cv) / denom : NaN
-    if (Number.isFinite(rho_s_derived) && rho_s_derived > 0) {
-      rho_1 = r6(rho_g * Cv + (1 - Cv) * rho_s_derived)
-    } else if (Cv === 1) {
-      // 极限情形 Cv=1 时混合物全为固相，直接取主参数中的浆体密度
+    if (Math.abs(Cv - 1) < 1e-15) {
       rho_1 = r6(rho_k)
+    } else {
+      const denom = 1 - Cv
+      const rho_s_derived = Math.abs(denom) > 1e-12 ? (rho_k - rho_g * Cv) / denom : NaN
+      if (Number.isFinite(rho_s_derived) && rho_s_derived > 0) {
+        rho_1 = r6(rho_g * Cv + (1 - Cv) * rho_s_derived)
+      }
     }
   }
 
-  let Re_B: number | null = null
   const D = args.D
+  const d90 = args.d90
+  const g = args.g ?? 9.81
+  const c226 = args.coefficient_2_26 ?? 2.26
+
   if (
-    rho_1 != null &&
-    D != null &&
-    !isNaN(D) &&
-    D > 0 &&
-    Number.isFinite(V) &&
-    V > 0 &&
-    Number.isFinite(eta1) &&
-    eta1 > 0
+    rho_1 == null ||
+    D == null ||
+    isNaN(D) ||
+    D <= 0 ||
+    d90 == null ||
+    isNaN(d90) ||
+    d90 < 0 ||
+    rho_g == null ||
+    isNaN(rho_g) ||
+    rho_k == null ||
+    isNaN(rho_k) ||
+    Cv == null ||
+    isNaN(Cv)
   ) {
-    const re = (V * D * 1000 * rho_1) / eta1
-    if (Number.isFinite(re) && re > 0) Re_B = r6(re)
+    return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
   }
 
-  let lambda: number | null = null
-  if (Re_B != null && D != null && !isNaN(D) && D > 0) {
-    const lam = darcyLambdaFromRePreview(Re_B, eps, D)
-    if (Number.isFinite(lam) && lam > 0) lambda = r6(lam)
+  if (!Number.isFinite(eta1) || eta1 <= 0 || !Number.isFinite(eps) || eps <= 0) {
+    return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
   }
 
-  return { rho_1, Re_B, lambda }
+  if (rho_g < rho_k) {
+    return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
+  }
+
+  let lambda_k =
+    args.lambdaSeed != null && !isNaN(args.lambdaSeed) && args.lambdaSeed > 0 ? args.lambdaSeed : 0.02
+
+  const delta_rho_ratio = (rho_g - rho_k) / rho_k
+  const bracket_value = g * D * delta_rho_ratio
+  if (bracket_value < 0) {
+    return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
+  }
+  const bracket_term = Math.sqrt(bracket_value)
+  const conc_term = Cv ** 0.25
+  const size_term = (d90 / D) ** (1 / 3)
+
+  const vcFromLambda = (lam: number) => {
+    const leading = c226 / Math.sqrt(lam)
+    return leading * bracket_term * conc_term * size_term
+  }
+
+  const maxIter = FEI_LAMBDA_ITER_MAX_STEPS
+  const tolRel = FEI_LAMBDA_ITER_TOL_REL
+  let lastRel = 0
+  let Re_B: number | null = null
+
+  let converged = false
+  for (let k = 0; k < maxIter; k++) {
+    const lambda_old = lambda_k
+    const Vc = vcFromLambda(lambda_old)
+    if (!Number.isFinite(Vc) || Vc <= 0) {
+      return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
+    }
+    const re = (Vc * D * rho_1) / eta1
+    if (!Number.isFinite(re) || re <= 0) {
+      return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
+    }
+    const lamNew = darcyLambdaFromRePreview(re, eps / 1000, D)
+    if (!Number.isFinite(lamNew) || lamNew <= 0) {
+      return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
+    }
+    lastRel = Math.abs(lamNew - lambda_old) / Math.max(lambda_old, 1e-12)
+    lambda_k = lamNew
+    Re_B = r6(re)
+    if (lastRel < tolRel) {
+      converged = true
+      break
+    }
+  }
+
+  if (!converged || Re_B == null || !Number.isFinite(Re_B)) {
+    return { Re_B: null, flowRegime: null, lambda: null, relResidual: null }
+  }
+
+  return {
+    Re_B,
+    flowRegime: darcyAuxFlowRegimeLabel(args.language, Re_B),
+    lambda: r6(lambda_k),
+    relResidual: Math.round(lastRel * 1e12) / 1e12,
+  }
 }
 
 /** 清水 $C_h$ 下拉：选项内使用 KaTeX（单位与全站一致：在输入控件外右侧 `text-sm` 展示） */
@@ -661,83 +931,75 @@ function ClearWaterChPresetMenu({
   )
 }
 
-function SlurryEpsilonPresetMenu({
+/** 管壁绝对粗糙度：典型值下拉与手填 mm 同高、同外框（费祥俊 λ 辅助、浆体摩阻步骤4） */
+function SlurryEpsilonCombinedRow({
   darkMode,
+  language = 'zh',
   presetKey,
-  onPick,
-  compact,
+  valueMm,
+  onChange,
+  onBlur,
+  rowAriaLabel,
 }: {
   darkMode: boolean
-  presetKey: string
-  onPick: (key: SlurryEpsilonPresetKey) => void
-  /** 与体积浓度辅助面板等小字号区块一致（仅局部使用） */
-  compact?: boolean
+  language?: 'zh' | 'en'
+  presetKey: SlurryEpsilonPresetKey
+  valueMm: string
+  onChange: (preset: SlurryEpsilonPresetKey, valueMm: string) => void
+  onBlur?: () => void
+  /** 整行控件的无障碍名称 */
+  rowAriaLabel?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      const el = wrapRef.current
-      if (el && !el.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
-
-  const current = SLURRY_EPSILON_MENU_ROWS.find((r) => r.key === presetKey) ?? SLURRY_EPSILON_MENU_ROWS[0]
-  const padY = compact ? 'py-2' : 'py-2.5'
-  const proseSize = compact ? 'text-[13px]' : 'text-sm'
-  const mathSize = compact ? 'text-[13px]' : 'text-sm'
-  const btnCls = `w-full text-left px-3 ${padY} border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between gap-2 ${
-    darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+  const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
+  const shellBg = darkMode ? 'bg-gray-700/80' : 'bg-gray-50'
+  const selectCls = `shrink-0 max-w-[min(55%,13.5rem)] cursor-pointer border-0 border-r py-2 pl-2 pr-1 text-sm shadow-none focus:outline-none focus:ring-0 ${
+    darkMode ? 'border-gray-500 bg-transparent text-gray-100' : 'border-gray-300 bg-transparent text-gray-900'
   }`
-  const listCls = `absolute z-[200] mt-1 w-full max-h-72 overflow-auto rounded-lg border shadow-lg ${
-    darkMode ? 'bg-gray-700 border-gray-500' : 'bg-white border-gray-300'
+  const inputCls = `min-w-0 flex-1 border-0 bg-transparent px-2 py-2 text-sm focus:outline-none focus:ring-0 ${
+    darkMode ? 'text-gray-100 placeholder-gray-400' : 'text-gray-900 placeholder-gray-500'
   }`
-  const itemCls = `w-full text-left px-3 ${padY} flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b last:border-b-0 transition-colors ${
-    darkMode
-      ? 'border-gray-600 hover:bg-gray-600/80 text-gray-100'
-      : 'border-gray-100 hover:bg-slate-50 text-gray-900'
-  }`
-
+  const presetRows = SLURRY_EPSILON_MENU_ROWS.filter((r) => r.key !== 'custom')
   return (
-    <div className="relative w-full" ref={wrapRef}>
-      <button
-        type="button"
-        className={btnCls}
-        onMouseDown={(e) => {
-          e.preventDefault()
+    <div
+      className={`flex min-h-[2.5rem] items-stretch overflow-hidden rounded-lg border ${shellBorder} ${shellBg}`}
+      aria-label={rowAriaLabel}
+    >
+      <select
+        className={selectCls}
+        value={presetKey}
+        onChange={(e) => {
+          const k = e.target.value as SlurryEpsilonPresetKey
+          if (k === 'custom') {
+            onChange('custom', valueMm)
+          } else {
+            const n = SLURRY_EPSILON_PRESET_VALUES[k]
+            onChange(k, String(n))
+          }
         }}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="listbox"
       >
-        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className={`${proseSize} ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{current.prose}，</span>
-          <span className={mathSize}>
-            <InlineMath math={current.math} />
-          </span>
-        </span>
-        <span className="shrink-0 text-xs opacity-70" aria-hidden>
-          {open ? '▲' : '▼'}
-        </span>
-      </button>
-      {open && (
-        <ul className={listCls} role="listbox">
-          {SLURRY_EPSILON_MENU_ROWS.map((row) => (
-            <li key={row.key} role="option" aria-selected={row.key === presetKey}>
-              <button type="button" className={itemCls} onClick={() => { onPick(row.key); setOpen(false) }}>
-                <span className={`${proseSize} ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{row.prose}，</span>
-                <span className={mathSize}>
-                  <InlineMath math={row.math} />
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        {presetRows.map((row) => {
+          const mm = SLURRY_EPSILON_PRESET_VALUES[row.key]
+          return (
+            <option key={row.key} value={row.key}>
+              {language === 'en' ? `${row.prose} (${mm} mm)` : `${row.prose} ${mm} mm`}
+            </option>
+          )
+        })}
+        <option value="custom">{language === 'en' ? 'Custom (type mm)' : '自定义'}</option>
+      </select>
+      <input
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        spellCheck={false}
+        value={valueMm}
+        onChange={(e) => onChange('custom', e.target.value)}
+        onBlur={onBlur}
+        placeholder={language === 'en' ? 'mm' : 'mm'}
+        className={inputCls}
+        aria-label={language === 'en' ? 'Wall roughness ε (mm)' : '管壁绝对粗糙度 ε（mm）'}
+      />
+      <UnitBadge darkMode={darkMode}>mm</UnitBadge>
     </div>
   )
 }
@@ -831,27 +1093,36 @@ function criticalVelocityLockedCompareExplanation(
   return `当前临界流速 (${newVc} m/s) 为锁定临界流速的 ${pct}%，快速流动，安全`
 }
 
-/** 临界流速三公式：$C_V$ 与「体积浓度辅助计算」（C/C_A→C_V）合一 */
+/** 临界流速：$C_V$ 辅助计算（默认 C/C_A；刘德忠页为浆体重量浓度 C_W 换算） */
 function CvVolumeConcentrationField({
   darkMode,
   inputValue,
   onInputChange,
   onInputBlur,
   placeholder,
-  unit,
+  unitText,
   onApplyCvFromRatio,
+  assistKind = 'solid_volume_ratio',
+  rhoGKgM3FromForm,
 }: {
   darkMode: boolean
   inputValue: string
   onInputChange: (value: string) => void
   onInputBlur: () => void
   placeholder: string
-  unit: ReactNode
+  /** 主栏单位徽章文本；无量纲 decimal 等传 null */
+  unitText?: string | null
   onApplyCvFromRatio: (cvDecimalString: string) => void
+  /** solid_volume_ratio：C/C_A（体积比）；slurry_mass_fraction：刘德忠 C_W 与 ρ_s、ρ_g 换算 */
+  assistKind?: 'solid_volume_ratio' | 'slurry_mass_fraction'
+  /** 与同页主表固体密度 ρ_g（kg/m³）一致，仅 slurry_mass_fraction 使用 */
+  rhoGKgM3FromForm?: number
 }) {
   const [open, setOpen] = useState(false)
   const [cStr, setCStr] = useState('')
   const [caStr, setCaStr] = useState('')
+  const [cwStr, setCwStr] = useState('')
+  const [rhoSStr, setRhoSStr] = useState('1000')
   const wrapRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -865,12 +1136,43 @@ function CvVolumeConcentrationField({
   }, [open])
 
   const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+  const isMassAssist = assistKind === 'slurry_mass_fraction'
   const c = parseFloat(norm(cStr))
   const ca = parseFloat(norm(caStr))
   const ratioOk = Number.isFinite(c) && Number.isFinite(ca) && Math.abs(ca) > 1e-15
   const cvRaw = ratioOk ? c / ca : NaN
   const cvRounded = Number.isFinite(cvRaw) ? Math.round(cvRaw * 1e6) / 1e6 : NaN
-  const outOfUnitRange = Number.isFinite(cvRounded) && (cvRounded < 0 || cvRounded > 1)
+
+  const cw = parseFloat(norm(cwStr))
+  const rho_s_aux = parseFloat(norm(rhoSStr))
+  const rhoGForm = rhoGKgM3FromForm
+  const rhoGOk = rhoGForm != null && !isNaN(rhoGForm) && rhoGForm > 0
+  const denomMass =
+    rhoGOk && Number.isFinite(cw) && Number.isFinite(rho_s_aux)
+      ? rhoGForm - rhoGForm * cw + rho_s_aux * cw
+      : NaN
+  const cvRawMass =
+    Number.isFinite(denomMass) && Math.abs(denomMass) > 1e-12 && Number.isFinite(cw) && Number.isFinite(rho_s_aux)
+      ? (cw * rho_s_aux) / denomMass
+      : NaN
+  const cvRoundedMass = Number.isFinite(cvRawMass) ? Math.round(cvRawMass * 1e6) / 1e6 : NaN
+  const massFracOk =
+    rhoGOk &&
+    Number.isFinite(cw) &&
+    cw >= 0 &&
+    cw <= 1 &&
+    Number.isFinite(rho_s_aux) &&
+    rho_s_aux > 0 &&
+    Number.isFinite(denomMass) &&
+    Math.abs(denomMass) > 1e-12
+
+  const cvPreview = isMassAssist ? cvRoundedMass : cvRounded
+  const canCompute = isMassAssist ? massFracOk : ratioOk
+  const outOfUnitRange = Number.isFinite(cvPreview) && (cvPreview < 0 || cvPreview > 1)
+
+  const [cvCommitted, setCvCommitted] = useState<number | null>(null)
+  const [cvCalcBarPct, setCvCalcBarPct] = useState(0)
+  const [cvCalcBusy, setCvCalcBusy] = useState(false)
 
   const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
   const shellBg = darkMode ? 'bg-gray-600' : 'bg-white'
@@ -883,52 +1185,54 @@ function CvVolumeConcentrationField({
       ? `border-gray-500 text-gray-300 hover:bg-gray-500/40 ${open ? 'bg-gray-500/30' : ''}`
       : `border-gray-300 text-gray-500 hover:bg-gray-50 ${open ? 'bg-gray-50' : ''}`
   }`
-  const panelCls = `absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border shadow-lg ${
-    darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
+  const panelCls = `absolute left-0 right-0 z-50 mt-1.5 rounded-xl border shadow-lg ${
+    isMassAssist
+      ? `max-h-[min(70vh,32rem)] overflow-y-auto overflow-x-hidden ${
+          darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
+        }`
+      : `overflow-hidden ${darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'}`
   }`
   const panelInnerCls = darkMode ? 'border-gray-600' : 'border-gray-100'
-  const subInputCls = `mt-1 w-full rounded-lg border px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-    darkMode ? 'border-gray-500 bg-gray-700/80 text-gray-100' : 'border-gray-300 bg-gray-50 text-gray-900'
-  }`
+  const assistFieldInputCls = 'text-sm py-2 rounded-none'
   const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
   const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
 
   return (
     <div className="relative min-w-0 flex-1" ref={wrapRef}>
-      <div className="flex items-stretch space-x-2">
-        <div
-          className={`flex min-w-0 flex-1 overflow-hidden rounded-lg border ${shellBorder} ${shellBg} ${shellFocus}`}
+      <div
+        className={`flex min-w-0 items-stretch overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${shellBorder} ${shellBg} ${shellFocus}`}
+      >
+        <input
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          spellCheck={false}
+          value={inputValue}
+          onChange={(e) => onInputChange(e.target.value)}
+          onBlur={onInputBlur}
+          onClick={() => setOpen(true)}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className={innerInputCls}
+          aria-expanded={open}
+          aria-controls="cv-ratio-panel"
+          id="cv-volume-concentration-input"
+        />
+        {unitText != null && String(unitText).trim() !== '' ? (
+          <UnitBadge darkMode={darkMode}>{unitText}</UnitBadge>
+        ) : null}
+        <button
+          type="button"
+          tabIndex={-1}
+          className={chevronBtnCls}
+          aria-label={open ? '收起体积浓度——辅助计算' : '展开体积浓度——辅助计算'}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((v) => !v)}
         >
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            spellCheck={false}
-            value={inputValue}
-            onChange={(e) => onInputChange(e.target.value)}
-            onBlur={onInputBlur}
-            onClick={() => setOpen(true)}
-            onFocus={() => setOpen(true)}
-            placeholder={placeholder}
-            className={innerInputCls}
-            aria-expanded={open}
-            aria-controls="cv-ratio-panel"
-            id="cv-volume-concentration-input"
-          />
-          <button
-            type="button"
-            tabIndex={-1}
-            className={chevronBtnCls}
-            aria-label={open ? '收起体积浓度辅助计算' : '展开体积浓度辅助计算'}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
-              ▼
-            </span>
-          </button>
-        </div>
-        {unit}
+          <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
+            ▼
+          </span>
+        </button>
       </div>
 
       {open && (
@@ -938,80 +1242,189 @@ function CvVolumeConcentrationField({
           role="region"
           aria-labelledby="cv-volume-concentration-input"
         >
-          <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
-            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>体积浓度辅助计算公式（<InlineMath math="C_V" />）</div>
-            <p className={`mt-1 text-[11px] leading-relaxed ${hintMuted}`}>
-              本页 <InlineMath math="C_V" /> 为<strong className="font-medium">体积浓度（小数 0～1）</strong>
-              ，含义是<strong className="font-medium">固相所占体积</strong>与<strong className="font-medium">浆体混合物总体积</strong>
-              之比。若资料给出的是两个体积（或同一量纲下的计量），可用下式换算后再写入上方输入框。
-            </p>
-            <div className={`mt-2 overflow-x-auto rounded-md py-1 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-              <BlockMath math="C_V = \dfrac{C}{C_A}" />
+          {isMassAssist ? (
+            <header className={`flex min-h-[2.75rem] flex-col justify-center gap-2 border-b px-3 py-2.5 ${panelInnerCls}`}>
+              <div className={`text-xs font-semibold leading-snug tracking-wide ${hintStrong}`}>
+                体积浓度——辅助计算（<InlineMath math="C_V" />）
+              </div>
+              <div className={`space-y-2 overflow-x-auto text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                <FormulaFrame darkMode={darkMode} compact className="mb-0">
+                  <BlockMath math="C_V = \dfrac{C_W \rho_s}{\rho_g - \rho_g C_W + \rho_s C_W}" />
+                </FormulaFrame>
+              </div>
+              <p className={`whitespace-nowrap overflow-x-auto text-[10px] leading-snug ${hintMuted}`}>
+                <InlineMath math="C_V" />
+                ：体积浓度 · 无量纲（0～1）；
+              </p>
+            </header>
+          ) : (
+            <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
+              <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>体积浓度——辅助计算（<InlineMath math="C_V" />）</div>
+              <p className={`mt-1 text-[11px] leading-relaxed ${hintMuted}`}>
+                本页 <InlineMath math="C_V" /> 为<strong className="font-medium">体积浓度（小数 0～1）</strong>
+                ，含义是<strong className="font-medium">固相所占体积</strong>与<strong className="font-medium">浆体混合物总体积</strong>
+                之比。若资料给出的是两个体积（或同一量纲下的计量），可用下式换算后再写入上方输入框。
+              </p>
+              <div className={`mt-2 overflow-x-auto text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                <FormulaFrame darkMode={darkMode} compact className="mb-0">
+                  <BlockMath math="C_V = \dfrac{C}{C_A}" />
+                </FormulaFrame>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-3 px-3 py-3">
-            <div>
-              <div className={`text-xs font-medium ${hintStrong}`}>
-                <InlineMath math="C" />
-              </div>
-              <p className={`mt-0.5 text-[11px] leading-snug ${hintMuted}`}>
-                填<strong>固相体积</strong>：与 <InlineMath math="C_A" />{' '}
-                <strong>必须用同一单位</strong>（如均为 m³、mL、L）。可取量筒读数、析水/沉降后固体体积，或报告给出的固体体积当量。
-              </p>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                spellCheck={false}
-                value={cStr}
-                onChange={(e) => setCStr(e.target.value)}
-                className={subInputCls}
-                placeholder="固相体积，如15"
-              />
-              <p className={`mt-1 text-[11px] leading-snug ${hintMuted}`}>
-                与 <InlineMath math="C_A" /> 同单位
-              </p>
-            </div>
-            <div>
-              <div className={`text-xs font-medium ${hintStrong}`}>
-                <InlineMath math="C_A" />
-              </div>
-              <p className={`mt-0.5 text-[11px] leading-snug ${hintMuted}`}>
-                填<strong>浆体混合物总体积</strong>（浆样中液体相与固体相各自占据的体积之和），与 <InlineMath math="C" />{' '}
-                同单位。<strong>不可为 0</strong>。
-              </p>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                spellCheck={false}
-                value={caStr}
-                onChange={(e) => setCaStr(e.target.value)}
-                className={subInputCls}
-                placeholder="浆体总体积，如100（与 C 同单位）"
-              />
-            </div>
+            {isMassAssist ? (
+              <>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <span className={`text-xs font-medium ${hintStrong}`}>
+                      <InlineMath math="C_W" />：浆体重量浓度 · 无量纲（0～1）
+                    </span>
+                    <InputWithTrailingUnit
+                      darkMode={darkMode}
+                      className="mt-1 w-full"
+                      inputClassName={assistFieldInputCls}
+                      value={cwStr}
+                      onChange={(e) => setCwStr(e.target.value)}
+                      placeholder="浆体重量浓度，如0.42"
+                      unit="无量纲"
+                    />
+                  </div>
+                  <div>
+                    <span className={`text-xs font-medium ${hintStrong}`}>
+                      <InlineMath math="\rho_s" />：水的密度 · kg/m³
+                    </span>
+                    <InputWithTrailingUnit
+                      darkMode={darkMode}
+                      className="mt-1 w-full"
+                      inputClassName={assistFieldInputCls}
+                      value={rhoSStr}
+                      onChange={(e) => setRhoSStr(e.target.value)}
+                      placeholder="水的密度，默认1000"
+                      unit="kg/m³"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <span className={`text-xs font-medium ${hintStrong}`}>
+                      <InlineMath math="\rho_g" />：固体物料密度 · kg/m³
+                    </span>
+                    <InputWithTrailingUnit
+                      darkMode={darkMode}
+                      className="mt-1 w-full"
+                      inputClassName={assistFieldInputCls}
+                      readOnly
+                      tabIndex={-1}
+                      aria-readonly
+                      value={rhoGOk ? String(rhoGForm) : ''}
+                      placeholder="固体物料密度，同页主表"
+                      unit="kg/m³"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <div className={`text-xs font-medium ${hintStrong}`}>
+                    <InlineMath math="C" />
+                  </div>
+                  <p className={`mt-0.5 text-[11px] leading-snug ${hintMuted}`}>
+                    填<strong>固相体积</strong>：与 <InlineMath math="C_A" />{' '}
+                    <strong>必须用同一单位</strong>（如均为 m³、mL、L）。可取量筒读数、析水/沉降后固体体积，或报告给出的固体体积当量。
+                  </p>
+                  <InputWithTrailingUnit
+                    darkMode={darkMode}
+                    className="mt-1 w-full"
+                    inputClassName={assistFieldInputCls}
+                    value={cStr}
+                    onChange={(e) => setCStr(e.target.value)}
+                    placeholder="固相体积，如15"
+                  />
+                  <p className={`mt-1 text-[11px] leading-snug ${hintMuted}`}>
+                    与 <InlineMath math="C_A" /> 同单位
+                  </p>
+                </div>
+                <div>
+                  <div className={`text-xs font-medium ${hintStrong}`}>
+                    <InlineMath math="C_A" />
+                  </div>
+                  <p className={`mt-0.5 text-[11px] leading-snug ${hintMuted}`}>
+                    填<strong>浆体混合物总体积</strong>（浆样中液体相与固体相各自占据的体积之和），与 <InlineMath math="C" />{' '}
+                    同单位。<strong>不可为 0</strong>。
+                  </p>
+                  <InputWithTrailingUnit
+                    darkMode={darkMode}
+                    className="mt-1 w-full"
+                    inputClassName={assistFieldInputCls}
+                    value={caStr}
+                    onChange={(e) => setCaStr(e.target.value)}
+                    placeholder="浆体总体积，如100（与 C 同单位）"
+                  />
+                </div>
+              </>
+            )}
 
-            <div
-              className={`rounded-lg border px-2.5 py-2 text-xs ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
-            >
-              <InlineMath math="C_V" />
-              <span className={hintMuted}> = </span>
-              {ratioOk ? (
-                <span className="font-mono text-sm font-semibold">{String(cvRounded)}</span>
-              ) : (
-                <span className={hintMuted}>—（请填写有效数值且分母非零）</span>
-              )}
-            </div>
+            {isMassAssist ? (
+              <div
+                className={`rounded-lg border px-2.5 py-2 text-[11px] ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
+              >
+                <div className={`mb-1.5 text-xs font-semibold ${hintStrong}`}>中间计算结果</div>
+                <ul className={`space-y-1.5 leading-relaxed ${hintMuted}`}>
+                  <li className={`flex flex-wrap items-baseline gap-x-1 gap-y-0.5 ${hintStrong}`}>
+                    <InlineMath math="C_V" />
+                    <span>（体积浓度）=</span>
+                    {cvCommitted != null && Number.isFinite(cvCommitted) ? (
+                      <span className="font-mono font-semibold">{String(cvCommitted)}</span>
+                    ) : (
+                      '—'
+                    )}
+                  </li>
+                </ul>
+              </div>
+            ) : (
+              <div
+                className={`rounded-lg border px-2.5 py-2 text-xs ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
+              >
+                <div className={`mb-1 text-[11px] font-semibold ${hintStrong}`}>计算结果</div>
+                <div
+                  className={`mb-1.5 h-1.5 w-full overflow-hidden rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}
+                  aria-hidden
+                >
+                  <div
+                    className={`h-full rounded-full bg-blue-500 transition-[width] duration-1000 ease-linear`}
+                    style={{ width: `${cvCalcBarPct}%` }}
+                  />
+                </div>
+                <InlineMath math="C_V" />
+                <span className={hintMuted}> = </span>
+                {cvCalcBusy ? (
+                  <span className={hintMuted}>…</span>
+                ) : cvCommitted != null ? (
+                  <span className="font-mono text-sm font-semibold">{String(cvCommitted)}</span>
+                ) : (
+                  <span className={hintMuted}>—（点「计算」后显示并写入上方）</span>
+                )}
+              </div>
+            )}
 
-            <p className={`text-[11px] leading-relaxed ${hintMuted}`}>
-              <span className="font-medium text-inherit">示例：</span>
-              量筒中浆样总体积 <InlineMath math="C_A=100\ \mathrm{mL}" />
-              ，固体体积 <InlineMath math="C=15\ \mathrm{mL}" />
-              ，则 <InlineMath math="C_V=0.15" />
-              （再点「填入」写入上方）。
-            </p>
+            {!isMassAssist && (
+              <p className={`text-[11px] leading-relaxed ${hintMuted}`}>
+                <span className="font-medium text-inherit">示例：</span>
+                量筒中浆样总体积 <InlineMath math="C_A=100\ \mathrm{mL}" />
+                ，固体体积 <InlineMath math="C=15\ \mathrm{mL}" />
+                ，则 <InlineMath math="C_V=0.15" />
+                （再点「计算」写入上方）。
+              </p>
+            )}
+
+            {isMassAssist && !rhoGOk && cwStr.trim() !== '' && (
+              <p className={`text-[11px] ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
+                请先在主表填写固体密度 <InlineMath math="\rho_g" />（kg/m³）。
+              </p>
+            )}
 
             {outOfUnitRange && (
               <p className={`text-[11px] leading-snug ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
@@ -1019,7 +1432,7 @@ function CvVolumeConcentrationField({
               </p>
             )}
 
-            <div className="flex justify-end gap-2 pt-0.5">
+            <div className="flex flex-wrap justify-end gap-2 pt-0.5">
               <button
                 type="button"
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
@@ -1032,18 +1445,44 @@ function CvVolumeConcentrationField({
               </button>
               <button
                 type="button"
-                disabled={!ratioOk}
+                disabled={isMassAssist ? !canCompute : !canCompute || cvCalcBusy}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
                   darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  if (!ratioOk) return
-                  onApplyCvFromRatio(String(cvRounded))
-                  setOpen(false)
+                  if (isMassAssist) {
+                    if (!canCompute) return
+                    const cwN = parseFloat(norm(cwStr))
+                    const rhoSN = parseFloat(norm(rhoSStr))
+                    const rg = rhoGKgM3FromForm
+                    if (rg == null || isNaN(rg) || rg <= 0) return
+                    const dm = rg - rg * cwN + rhoSN * cwN
+                    if (!Number.isFinite(cwN) || !Number.isFinite(rhoSN) || Math.abs(dm) <= 1e-12) return
+                    const v = Math.round(((cwN * rhoSN) / dm) * 1e6) / 1e6
+                    setCvCommitted(v)
+                    onApplyCvFromRatio(String(v))
+                    setOpen(false)
+                    return
+                  }
+                  if (!canCompute || cvCalcBusy) return
+                  setCvCalcBusy(true)
+                  setCvCalcBarPct(0)
+                  window.requestAnimationFrame(() => setCvCalcBarPct(100))
+                  window.setTimeout(() => {
+                    const v = Math.round((c / ca) * 1e6) / 1e6
+                    if (!Number.isFinite(v)) {
+                      setCvCalcBusy(false)
+                      return
+                    }
+                    setCvCommitted(v)
+                    onApplyCvFromRatio(String(v))
+                    setCvCalcBusy(false)
+                    setOpen(false)
+                  }, 1000)
                 }}
               >
-                填入上方 <InlineMath math="C_V" />
+                计算
               </button>
             </div>
           </div>
@@ -1053,6 +1492,8 @@ function CvVolumeConcentrationField({
   )
 }
 
+type FeiDarcyAssistPreviewRow = ReturnType<typeof computeFeiDarcyAssistPreview>
+
 /** 费祥俊公式：达西摩阻系数 λ 辅助计算，下拉面板交互与同页「体积浓度」一致；D_n 同步自主表管径 D */
 function FeiDarcyLambdaAssistField({
   darkMode,
@@ -1061,10 +1502,8 @@ function FeiDarcyLambdaAssistField({
   onInputChange,
   onInputBlur,
   placeholder,
-  unit,
-  assistPreview,
-  feiLambdaAuxV,
-  setFeiLambdaAuxV,
+  unitText,
+  computeAssistPreview,
   feiLambdaAuxEta1,
   setFeiLambdaAuxEta1,
   feiLambdaAuxEpsilonPreset,
@@ -1080,23 +1519,28 @@ function FeiDarcyLambdaAssistField({
   onInputChange: (value: string) => void
   onInputBlur: () => void
   placeholder: string
-  unit: ReactNode
-  /** 由当前参数分步计算的 ρ₁、Re_B、λ（各行满足依赖即显示；与后端一致） */
-  assistPreview: { rho_1: number | null; Re_B: number | null; lambda: number | null } | null
-  feiLambdaAuxV: string
-  setFeiLambdaAuxV: (v: string) => void
+  unitText?: string | null
+  computeAssistPreview: () => FeiDarcyAssistPreviewRow
   feiLambdaAuxEta1: string
   setFeiLambdaAuxEta1: (v: string) => void
   feiLambdaAuxEpsilonPreset: SlurryEpsilonPresetKey
   setFeiLambdaAuxEpsilonPreset: (k: SlurryEpsilonPresetKey) => void
   feiLambdaAuxEpsilonCustom: string
   setFeiLambdaAuxEpsilonCustom: (v: string) => void
-  /** 将预览中的 λ 写入上方主输入框（与体积浓度「填入」一致） */
-  onApplyLambda: () => void
+  /** 点击「计算」并得到有效 λ 后写入主栏（与体积浓度「计算」一致） */
+  onApplyLambda: (preview: FeiDarcyAssistPreviewRow) => void
   renderDescriptionWithMath: (label: string) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement | null>(null)
+  const [panelPreview, setPanelPreview] = useState<FeiDarcyAssistPreviewRow | null>(null)
+  const [calcBarPct, setCalcBarPct] = useState(0)
+  const [calcBusy, setCalcBusy] = useState(false)
+
+  const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+  const eta1 = parseFloat(norm(feiLambdaAuxEta1))
+  const epsMm = parseFeiAuxEpsilonMm(feiLambdaAuxEpsilonPreset, feiLambdaAuxEpsilonCustom)
+  const canAttempt = Number.isFinite(eta1) && eta1 > 0 && epsMm != null && epsMm > 0
 
   useEffect(() => {
     if (!open) return
@@ -1123,10 +1567,6 @@ function FeiDarcyLambdaAssistField({
     darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
   }`
   const panelInnerCls = darkMode ? 'border-gray-600' : 'border-gray-100'
-  /** 与同页「体积浓度辅助计算」下拉内字段一致的小字号样式 */
-  const fieldInputCls = `flex-1 min-w-0 px-2.5 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-    darkMode ? 'border-gray-500 bg-gray-700/80 text-gray-100' : 'border-gray-300 bg-gray-50 text-gray-900'
-  }`
   const labelCls = `block text-xs font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`
   const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
   const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
@@ -1142,53 +1582,53 @@ function FeiDarcyLambdaAssistField({
 
   const fmtCell = (n: number | null) => (n != null && Number.isFinite(n) ? fmtFeiAssistNumber(n) : '—')
 
-  const preview = assistPreview
+  const preview = panelPreview
   const hasLambda = preview != null && preview.lambda != null
 
   return (
     <div className="relative min-w-0 flex-1 overflow-visible" ref={wrapRef}>
-      <div className="flex items-stretch space-x-2">
-        <div
-          className={`flex min-w-0 flex-1 overflow-hidden rounded-lg border ${shellBorder} ${shellBg} ${shellFocus}`}
+      <div
+        className={`flex min-w-0 items-stretch overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${shellBorder} ${shellBg} ${shellFocus}`}
+      >
+        <input
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          spellCheck={false}
+          value={inputValue}
+          onChange={(e) => onInputChange(e.target.value)}
+          onBlur={onInputBlur}
+          onClick={() => setOpen(true)}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className={innerInputCls}
+          aria-expanded={open}
+          aria-controls="fei-darcy-lambda-assist-panel"
+          id="fei-darcy-lambda-input"
+        />
+        {unitText != null && String(unitText).trim() !== '' ? (
+          <UnitBadge darkMode={darkMode}>{unitText}</UnitBadge>
+        ) : null}
+        <button
+          type="button"
+          tabIndex={-1}
+          className={chevronBtnCls}
+          aria-label={
+            open
+              ? language === 'en'
+                ? 'Collapse Darcy friction factor assist'
+                : '收起达西摩阻系数——辅助计算'
+              : language === 'en'
+                ? 'Expand Darcy friction factor assist'
+                : '展开达西摩阻系数——辅助计算'
+          }
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((v) => !v)}
         >
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            spellCheck={false}
-            value={inputValue}
-            onChange={(e) => onInputChange(e.target.value)}
-            onBlur={onInputBlur}
-            onClick={() => setOpen(true)}
-            onFocus={() => setOpen(true)}
-            placeholder={placeholder}
-            className={innerInputCls}
-            aria-expanded={open}
-            aria-controls="fei-darcy-lambda-assist-panel"
-            id="fei-darcy-lambda-input"
-          />
-          <button
-            type="button"
-            tabIndex={-1}
-            className={chevronBtnCls}
-            aria-label={
-              open
-                ? language === 'en'
-                  ? 'Collapse Darcy friction factor assist'
-                  : '收起达西摩阻系数辅助计算'
-                : language === 'en'
-                  ? 'Expand Darcy friction factor assist'
-                  : '展开达西摩阻系数辅助计算'
-            }
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
-              ▼
-            </span>
-          </button>
-        </div>
-        {unit}
+          <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
+            ▼
+          </span>
+        </button>
       </div>
 
       {open && (
@@ -1202,107 +1642,68 @@ function FeiDarcyLambdaAssistField({
             <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>
               {language === 'en' ? (
                 <>
-                  Darcy friction factor assist formula (<InlineMath math="\lambda" />)
+                  Darcy friction factor — assist calculation (<InlineMath math="\lambda" />)
                 </>
               ) : (
                 <>
-                  达西摩阻系数辅助计算公式（<InlineMath math="\lambda" />）
+                  达西摩阻系数——辅助计算（<InlineMath math="\lambda" />）
                 </>
               )}
             </div>
-            <p className={`mt-1 text-[11px] leading-relaxed ${hintMuted}`}>
-              {language === 'en' ? (
-                <>
-                  Uses the same explicit <InlineMath math="\lambda" /> formula as «Slurry friction» step 4 (Inputs
-                  below supply <InlineMath math="\mathrm{Re}_B" /> and <InlineMath math="\varepsilon/D_n" />). Intermediate
-                  mixture density <InlineMath math="\rho_1" /> for <InlineMath math="\mathrm{Re}_B" /> follows this
-                  page&apos;s <InlineMath math="C_V" />.
-                </>
-              ) : (
-                <>
-                  与「浆体摩阻损失」第 4 步采用同一显式{' '}
-                  <InlineMath math="\lambda" /> 式（由下方参数得到 <InlineMath math="\mathrm{Re}_B" /> 与{' '}
-                  <InlineMath math="\varepsilon/D_n" />）。计算 <InlineMath math="\mathrm{Re}_B" /> 用的混合物密度{' '}
-                  <InlineMath math="\rho_1" /> 由本页主参数 <InlineMath math="\rho_g,\rho_k,C_V" /> 推得。
-                </>
-              )}
-            </p>
             <div
-              className={`mt-2 space-y-2 overflow-x-auto rounded-md py-1 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
+              className={`mt-2 overflow-x-auto rounded-md py-1 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
             >
-              <BlockMath math={DARCY_FRICTION_EXPLICIT_LAMBDA_BLOCK_MATH} />
+              <FormulaFrame darkMode={darkMode} compact className="mb-0">
+                <BlockMath math={DARCY_FRICTION_EXPLICIT_LAMBDA_BLOCK_MATH} />
+              </FormulaFrame>
+            </div>
+            <div className={`mt-2 space-y-1 text-[11px] leading-relaxed ${hintMuted}`}>
+              {language === 'en' ? (
+                <div>
+                  <InlineMath math="\lambda" />: Darcy–Weisbach friction factor (dimensionless).
+                </div>
+              ) : (
+                <div>
+                  <InlineMath math="\lambda" />：达西摩阻系数（无量纲）。
+                </div>
+              )}
             </div>
           </div>
 
           <div className="space-y-3 px-3 py-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="min-w-0">
-                <label className={labelCls}>
-                  {language === 'en'
-                    ? renderDescriptionWithMath('$V$：section mean velocity（m/s，for $Re_B$）')
-                    : renderDescriptionWithMath('$V$：断面平均流速（m/s，用于 $Re_B$）')}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={feiLambdaAuxV}
-                    onChange={(e) => setFeiLambdaAuxV(e.target.value)}
-                    placeholder={language === 'en' ? 'e.g. 2' : '如 2'}
-                    className={fieldInputCls}
-                  />
-                  <span className={`text-xs shrink-0 ${hintMuted}`}>m/s</span>
-                </div>
-              </div>
-              <div className="min-w-0">
+            <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+              <div className="min-w-[10rem] flex-1">
                 <label className={labelCls}>
                   {language === 'en'
                     ? renderDescriptionWithMath('$\\eta_1$：mixture dynamic viscosity（Pa·s）')
                     : renderDescriptionWithMath('$\\eta_1$：混合物动力粘度（Pa·s）')}
                 </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={feiLambdaAuxEta1}
-                    onChange={(e) => setFeiLambdaAuxEta1(e.target.value)}
-                    placeholder={language === 'en' ? 'e.g. 0.001' : '如 0.001'}
-                    className={fieldInputCls}
-                  />
-                  <span className={`text-xs shrink-0 ${hintMuted}`}>Pa·s</span>
-                </div>
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  className="mt-1"
+                  inputClassName="text-sm py-2 rounded-none"
+                  value={feiLambdaAuxEta1}
+                  onChange={(e) => setFeiLambdaAuxEta1(e.target.value)}
+                  placeholder={language === 'en' ? 'e.g. 0.001' : '如 0.001'}
+                  unit="Pa·s"
+                />
               </div>
-              <div className="min-w-0 sm:col-span-2">
+              <div className="min-w-[12rem] flex-[1.35]">
                 <div className={labelCls}>
                   {language === 'en'
-                    ? renderDescriptionWithMath('$\\varepsilon$：pipe wall absolute roughness（m）')
-                    : renderDescriptionWithMath('$\\varepsilon$：管壁绝对粗糙度（m）')}
+                    ? renderDescriptionWithMath('$\\varepsilon$：pipe wall absolute roughness（mm）')
+                    : renderDescriptionWithMath('$\\varepsilon$：管壁绝对粗糙度（mm）')}
                 </div>
-                <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="min-w-0">
-                    <SlurryEpsilonPresetMenu
-                      darkMode={darkMode}
-                      presetKey={feiLambdaAuxEpsilonPreset}
-                      onPick={(key) => setFeiLambdaAuxEpsilonPreset(key)}
-                      compact
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    {feiLambdaAuxEpsilonPreset === 'custom' ? (
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={feiLambdaAuxEpsilonCustom}
-                        onChange={(e) => setFeiLambdaAuxEpsilonCustom(e.target.value)}
-                        className={`w-full min-w-0 ${fieldInputCls}`}
-                        placeholder="m"
-                        aria-label={language === 'en' ? 'Custom ε (m)' : '自定义 ε（m）'}
-                      />
-                    ) : (
-                      <div className="h-full" />
-                    )}
-                  </div>
-                </div>
+                <SlurryEpsilonCombinedRow
+                  darkMode={darkMode}
+                  language={language}
+                  presetKey={feiLambdaAuxEpsilonPreset}
+                  valueMm={feiLambdaAuxEpsilonCustom}
+                  onChange={(preset, mm) => {
+                    setFeiLambdaAuxEpsilonPreset(preset)
+                    setFeiLambdaAuxEpsilonCustom(mm)
+                  }}
+                />
               </div>
             </div>
 
@@ -1312,25 +1713,54 @@ function FeiDarcyLambdaAssistField({
               }`}
             >
               <div className={`font-semibold ${hintStrong}`}>
-                {language === 'en' ? 'Computed results (live)' : '计算结果'}
+                {language === 'en' ? 'Results' : '计算结果'}
+              </div>
+              <div className="mt-2 space-y-1.5">
+                <div
+                  className={`h-1.5 w-full overflow-hidden rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}
+                  aria-hidden
+                >
+                  <div
+                    className={`h-full rounded-full bg-blue-500 transition-[width] duration-1000 ease-linear`}
+                    style={{ width: `${calcBarPct}%` }}
+                  />
+                </div>
+                <p className={`${hintMuted}`}>
+                  {language === 'en' ? (
+                    <>
+                      Iteration criterion (same as server): relative residual{' '}
+                      <InlineMath math={'|\\lambda_{n+1}-\\lambda_n|\\,/\\max(\\lambda_n,10^{-12})'} />{' '}
+                      <InlineMath math="\lt 10^{-6}" />; at most {FEI_LAMBDA_ITER_MAX_STEPS} steps.
+                      {preview?.relResidual != null && (
+                        <>
+                          {' '}
+                          Last residual: {fmtFeiAssistNumber(preview.relResidual)}.
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {preview?.relResidual != null && (
+                        <>
+                          当前末步相对残差：{fmtFeiAssistNumber(preview.relResidual)}。
+                        </>
+                      )}
+                    </>
+                  )}
+                </p>
               </div>
               <dl className={`mt-1.5 space-y-1.5 ${hintMuted}`}>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <dt className={`font-normal shrink-0 ${hintMuted}`}>
-                    <InlineMath math="\rho_1" />
-                    <span>{language === 'en' ? ' (mixture density, t/m³)' : '（混合物密度，t/m³）'}</span>
-                  </dt>
-                  <dd className={`text-right font-normal font-sans tabular-nums ${hintStrong}`}>
-                    {preview ? fmtCell(preview.rho_1) : '—'}
-                  </dd>
-                </div>
-                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <dt className={`font-normal shrink-0 ${hintMuted}`}>
                     <InlineMath math="\mathrm{Re}_B" />
-                    <span>{language === 'en' ? ' (Reynolds number)' : '（雷诺数）'}</span>
+                    <span>
+                      {language === 'en' ? ' & flow regime' : ' 与流态'}
+                    </span>
                   </dt>
                   <dd className={`text-right font-normal font-sans tabular-nums ${hintStrong}`}>
-                    {preview ? fmtCell(preview.Re_B) : '—'}
+                    {preview != null && preview.Re_B != null && preview.flowRegime
+                      ? `${fmtCell(preview.Re_B)}（${preview.flowRegime}）`
+                      : '—'}
                   </dd>
                 </div>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -1352,12 +1782,15 @@ function FeiDarcyLambdaAssistField({
             <p className={`text-[11px] leading-relaxed ${hintMuted}`}>
               {language === 'en' ? (
                 <>
-                  Click <strong className="font-medium text-inherit">Fill λ above</strong> to copy the preview λ into the main field (same pattern as volume concentration assist).
+                  Click <strong className="font-medium text-inherit">Calculate</strong> to iterate λ (about 1 s
+                  progress) and write it to the main field. The panel stays open so you can review the values; click
+                  outside or <strong className="font-medium text-inherit">Close</strong> when finished.
                 </>
               ) : (
                 <>
-                  点击下方<strong className="font-medium text-inherit">「填入上方 λ」</strong>
-                  ，将计算结果中的 λ 写入主输入框（与「体积浓度辅助计算」的「填入」一致）。
+                  点击下方<strong className="font-medium text-inherit">「计算」</strong>
+                  后开始迭代并将 λ 写入主栏。<strong className="font-medium text-inherit">面板保持打开</strong>
+                  ，便于逐项核对辅助结果；完成后点击页面其他区域或<strong className="font-medium text-inherit">「收起」</strong>关闭。
                 </>
               )}
             </p>
@@ -1375,26 +1808,25 @@ function FeiDarcyLambdaAssistField({
               </button>
               <button
                 type="button"
-                disabled={!hasLambda}
+                disabled={!canAttempt || calcBusy}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
                   darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  if (!hasLambda) return
-                  onApplyLambda()
-                  setOpen(false)
+                  if (!canAttempt || calcBusy) return
+                  setCalcBusy(true)
+                  setCalcBarPct(0)
+                  window.requestAnimationFrame(() => setCalcBarPct(100))
+                  window.setTimeout(() => {
+                    const p = computeAssistPreview()
+                    setPanelPreview(p)
+                    if (p.lambda != null) onApplyLambda(p)
+                    setCalcBusy(false)
+                  }, 1000)
                 }}
               >
-                {language === 'en' ? (
-                  <>
-                    Fill λ above
-                  </>
-                ) : (
-                  <>
-                    填入上方 <InlineMath math="\lambda" />
-                  </>
-                )}
+                {language === 'en' ? 'Calculate' : '计算'}
               </button>
             </div>
           </div>
@@ -1404,55 +1836,103 @@ function FeiDarcyLambdaAssistField({
   )
 }
 
-/** 刘德忠公式：宾汉体（η）辅助推算似均质中加权平均沉速，挂在本页 ω 输入栏；ρ_g/ρ_k/g 与主表同步 */
-/** 与规范 (C.0.3-1) 一致：N_ω = (4.53²/N_d)[√(1+N_d^{1.5}/(0.213^{0.5}×4.53²))−1]² */
+/** 刘德忠公式：宾汉体（η）辅助面板；η 为 Pa·s；ρ_g、ρ_k 与本页主输入一致时使用 kg/m³；d_i（m）；ω_i=N_w·ω_L */
+/** 规范 (C.0.3-1) — N_w = (20.5209/N_d)[√(1+N_d^{1.5}/(0.213^{0.5}×4.53²))−1]² ，其中 ω_i=N_w ω_L */
 const LIU_BINGHAM_REF = 4.53
 const LIU_BINGHAM_NW_COEF = LIU_BINGHAM_REF ** 2
 const LIU_BINGHAM_NW_INNER_DENOM = Math.sqrt(0.213) * LIU_BINGHAM_NW_COEF
 
-/** 与 LiuDezhongOmegaBinghamField 内联计算一致，供锁定后参数变化时自动刷新 ω */
-function computeLiuBinghamOmegaFromAux(params: {
-  rho_g: number
-  rho_k: number
-  g: number
-  eta: number
-}): number | null {
-  const { rho_g, rho_k, g: gVal, eta: GB } = params
-  if (
-    !Number.isFinite(rho_g) ||
-    !Number.isFinite(rho_k) ||
-    rho_k <= 0 ||
-    rho_g <= rho_k ||
-    !Number.isFinite(GB) ||
-    GB <= 0 ||
-    !Number.isFinite(gVal) ||
-    gVal <= 0
-  ) {
-    return null
-  }
-  const delta = rho_g / rho_k - 1
-  if (delta <= 0) return null
-  const D_L = (GB / rho_k) ** (2 / 3) / (gVal * delta) ** (1 / 3)
-  const W_L = (gVal * delta * (GB / rho_k)) ** (1 / 3)
-  const d_i = D_L
-  const N_d = d_i / D_L
-  const innerRadicand = 1 + N_d ** 1.5 / LIU_BINGHAM_NW_INNER_DENOM
-  if (!Number.isFinite(innerRadicand) || innerRadicand < 0 || !(N_d > 0)) return null
-  const N_omega = (LIU_BINGHAM_NW_COEF / N_d) * (Math.sqrt(innerRadicand) - 1) ** 2
-  const w_i = N_omega * W_L
-  if (!Number.isFinite(w_i)) return null
-  return Math.round(w_i * 1e6) / 1e6
+/** √(1+x)-1 的稳定形式，避免 x≪1 时相消 */
+function liuSqrt1pM1(x: number): number {
+  if (!Number.isFinite(x) || x < -1) return NaN
+  const t = 1 + x
+  if (t < 0) return NaN
+  if (x === 0) return 0
+  return x / (Math.sqrt(t) + 1)
 }
 
-/** 与 LiuDezhongOmegaSStokesField 内联计算一致；d_mm 为颗粒粒径 mm（内部换算 m），mu_w 为动力粘度 Pa·s */
+/** 规范 (C.0.3-1) 的 N_w；小 N_d 时用 liuSqrt1pM1 保持精度 */
+function liuBinghamNwFromNd(N_d: number): number {
+  if (!Number.isFinite(N_d) || N_d <= 0) return NaN
+  const x = N_d ** 1.5 / LIU_BINGHAM_NW_INNER_DENOM
+  const s = liuSqrt1pM1(x)
+  if (!Number.isFinite(s)) return NaN
+  return (LIU_BINGHAM_NW_COEF / N_d) * (s * s)
+}
+
+/** 宾汉 ω 辅助中间量：极小量用科学计数法，避免四舍五入成 0 */
+function formatLiuBinghamAuxScalar(v: number): string {
+  if (!Number.isFinite(v)) return '—'
+  if (v === 0) return '0'
+  const av = Math.abs(v)
+  if (av < 1e-4) return v.toExponential(4)
+  if (av < 0.01) return v.toPrecision(6)
+  return String(Math.round(v * 1e9) / 1e9)
+}
+
+/** 将 ω_i 写入主栏：极小沉速保留有效位数 */
+function formatLiuOmegaIFill(v: number): string {
+  if (!Number.isFinite(v) || v <= 0) return ''
+  const av = Math.abs(v)
+  if (av < 1e-6) return v.toExponential(8)
+  return String(Math.round(v * 1e12) / 1e12)
+}
+
+/** 刘德忠 ω、ω_s：避免统一 6 位小数把小沉速变成 0 */
+function roundLiuDezhongSlurryVelocity(n: number): number {
+  if (!Number.isFinite(n)) return NaN
+  if (n === 0) return 0
+  const av = Math.abs(n)
+  if (av < 1e-4) return Number(n.toPrecision(12))
+  return Math.round(n * 1e9) / 1e9
+}
+
+/** 刘德忠其余参数（D、η₁、ρ 等）：比全局 6 位小数更细，便于 d_i、μ_w 量级输入 */
+function roundLiuDezhongScalarParam(n: number): number {
+  if (!Number.isFinite(n)) return NaN
+  if (n === 0) return 0
+  const av = Math.abs(n)
+  if (av < 1e-6) return Number(n.toPrecision(12))
+  return Math.round(n * 1e9) / 1e9
+}
+
+/** 主栏/辅助填入时的可读字符串（含科学计数法） */
+function formatLiuSlurryVelocityRawInput(n: number): string {
+  if (!Number.isFinite(n)) return ''
+  const rounded = roundLiuDezhongSlurryVelocity(n)
+  const av = Math.abs(rounded)
+  if (rounded === 0) return '0'
+  if (av < 1e-6) return rounded.toExponential(8)
+  return String(rounded)
+}
+
+/** 斯托克斯 ω_s：从宾汉 ω 同步 d_i（m）时保留完整有效小数，避免固定 9 位舍入丢位 */
+function formatLiuStokesDiMImportFromBingham(d: number): string {
+  if (!Number.isFinite(d) || d <= 0) return ''
+  const t = d.toFixed(16).replace(/\.?0+$/, '')
+  return t === '' ? '0' : t
+}
+
+/** 判断斯托克斯粒径输入是否仍与宾汉侧 d_i 数值一致（用于宾汉改粒径后刷新文本位数） */
+function liuStokesDiNumericAlmostEqual(a: number, b: number): boolean {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false
+  const scale = Math.max(Math.abs(a), Math.abs(b), 1e-15)
+  /** 允许截断显示与完整双精度之间有相对偏差，否则会无法刷新小数位 */
+  return Math.abs(a - b) <= 0.002 * scale
+}
+
+/** 刘德忠 ω、ω_s 手输或粘贴：允许科学计数法 */
+const LIU_SLURRY_VELOCITY_INPUT_RE = /^-?\d+(\.\d*)?([eE][+-]?\d+)?$/
+
+/** ρ_g、ρ_w 均为 SI 体积质量 kg/m³（与斯托克斯 ω_s 辅助面板输入一致），与刘德忠主栏一致 */
 function computeLiuStokesOmegaSFromAux(params: {
   rho_g: number
   rho_w: number
   g: number
-  d_mm: number
+  d_m: number
   mu_w: number
 }): number | null {
-  const { rho_g, rho_w, g, d_mm, mu_w } = params
+  const { rho_g, rho_w, g, d_m, mu_w } = params
   if (
     !Number.isFinite(rho_g) ||
     !Number.isFinite(rho_w) ||
@@ -1460,18 +1940,17 @@ function computeLiuStokesOmegaSFromAux(params: {
     rho_w <= 0 ||
     !Number.isFinite(g) ||
     g <= 0 ||
-    !Number.isFinite(d_mm) ||
-    d_mm <= 0 ||
+    !Number.isFinite(d_m) ||
+    d_m <= 0 ||
     !Number.isFinite(mu_w) ||
     mu_w <= 0
   ) {
     return null
   }
-  const d_m = d_mm / 1000
-  const rhoDiffKgM3 = (rho_g - rho_w) * 1000
+  const rhoDiffKgM3 = rho_g - rho_w
   const omegaS = (g * rhoDiffKgM3 * d_m ** 2) / (18 * mu_w)
   if (!Number.isFinite(omegaS)) return null
-  return Math.round(omegaS * 1e6) / 1e6
+  return roundLiuDezhongSlurryVelocity(omegaS)
 }
 
 function LiuDezhongOmegaBinghamField({
@@ -1480,36 +1959,52 @@ function LiuDezhongOmegaBinghamField({
   onInputChange,
   onInputBlur,
   placeholder,
-  unit,
+  unitText,
   parameters,
   onApplyOmega,
-  onDlComputed,
+  onDiComputed,
+  assistContext = 'liu_dezhong',
+  language = 'zh',
 }: {
   darkMode: boolean
   inputValue: string
   onInputChange: (value: string) => void
   onInputBlur: () => void
   placeholder: string
-  unit: ReactNode
+  unitText?: string | null
   parameters: Record<string, number | undefined>
   onApplyOmega: (omegaStr: string, meta?: { eta: number }) => void
-  onDlComputed?: (dL: number | undefined) => void
+  onDiComputed?: (dIM: number | undefined) => void
+  assistContext?: 'liu_dezhong' | 'flow_judgment'
+  language?: 'zh' | 'en'
 }) {
   const [open, setOpen] = useState(false)
   const [rhoGStr, setRhoGStr] = useState('')
   const [rhoKStr, setRhoKStr] = useState('')
   const [gStr, setGStr] = useState('9.81')
   const [gbStr, setGbStr] = useState('')
+  const [diMStr, setDiMStr] = useState('')
   const wrapRef = useRef<HTMLDivElement | null>(null)
+  const [binghamCommitted, setBinghamCommitted] = useState<{
+    D_L: number
+    W_L: number
+    N_d: number
+    N_w: number
+    omega_i: number
+  } | null>(null)
+  const [binghamCalcBusy, setBinghamCalcBusy] = useState(false)
+  const [binghamCalcBarPct, setBinghamCalcBarPct] = useState(0)
 
   useEffect(() => {
     const rg = parameters.rho_g
     const rk = parameters.rho_k
     const g0 = parameters.g
-    if (rg != null && !isNaN(Number(rg))) setRhoGStr(String(rg))
-    if (rk != null && !isNaN(Number(rk))) setRhoKStr(String(rk))
+    const et = parameters.eta
+    if (rg != null && !isNaN(Number(rg))) setRhoGStr(String(roundLiuDezhongScalarParam(Number(rg))))
+    if (rk != null && !isNaN(Number(rk))) setRhoKStr(String(roundLiuDezhongScalarParam(Number(rk))))
     if (g0 != null && !isNaN(Number(g0))) setGStr(String(g0))
-  }, [parameters.rho_g, parameters.rho_k, parameters.g])
+    if (et != null && !isNaN(Number(et))) setGbStr(String(roundLiuDezhongScalarParam(Number(et))))
+  }, [parameters.rho_g, parameters.rho_k, parameters.g, parameters.eta])
 
   useEffect(() => {
     if (!open) return
@@ -1522,37 +2017,38 @@ function LiuDezhongOmegaBinghamField({
   }, [open])
 
   const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
-  const rho_g = parseFloat(norm(rhoGStr))
-  const rho_k = parseFloat(norm(rhoKStr))
+  /** ρ 为 SI 体积质量 kg/m³；η 为 Pa·s — δ 可由无量纲比值，η/ρ_k 必须用 kg/m³ 才与加速度 g 配对得 m/s 量级沉速 */
+  const rhoG_kg = parseFloat(norm(rhoGStr))
+  const rhoK_kg = parseFloat(norm(rhoKStr))
   const gVal = parseFloat(norm(gStr))
   const GB = parseFloat(norm(gbStr))
 
   const deltaOk =
-    Number.isFinite(rho_g) &&
-    Number.isFinite(rho_k) &&
-    rho_k > 0 &&
-    rho_g > rho_k &&
+    Number.isFinite(rhoG_kg) &&
+    Number.isFinite(rhoK_kg) &&
+    rhoK_kg > 0 &&
+    rhoG_kg > rhoK_kg &&
     Number.isFinite(GB) &&
     GB > 0 &&
     Number.isFinite(gVal) &&
     gVal > 0
 
-  const delta = deltaOk ? rho_g / rho_k - 1 : NaN
+  const delta = deltaOk ? rhoG_kg / rhoK_kg - 1 : NaN
   const D_L =
-    deltaOk && delta > 0 ? (GB / rho_k) ** (2 / 3) / (gVal * delta) ** (1 / 3) : NaN
-  const W_L = deltaOk && delta > 0 ? (gVal * delta * (GB / rho_k)) ** (1 / 3) : NaN
-  /** 与文献一致：代表粒径取上式标准度量粒径 D_L，故 N_d 中 d_i = D_L */
-  const d_i = Number.isFinite(D_L) && D_L > 0 ? D_L : NaN
+    deltaOk && delta > 0 ? (GB / rhoK_kg) ** (2 / 3) / (gVal * delta) ** (1 / 3) : NaN
+  const W_L = deltaOk && delta > 0 ? (gVal * delta * (GB / rhoK_kg)) ** (1 / 3) : NaN
+  const d_i_m_parse = parseFloat(norm(diMStr))
+  const d_i_m = Number.isFinite(d_i_m_parse) && d_i_m_parse > 0 ? d_i_m_parse : NaN
 
   const ndOk =
     Number.isFinite(D_L) &&
     D_L > 0 &&
-    Number.isFinite(d_i) &&
-    d_i > 0 &&
+    Number.isFinite(d_i_m) &&
+    d_i_m > 0 &&
     Number.isFinite(W_L) &&
     W_L > 0
 
-  const N_d = ndOk ? d_i / D_L : NaN
+  const N_d = ndOk ? d_i_m / D_L : NaN
   const innerRadicand = ndOk ? 1 + N_d ** 1.5 / LIU_BINGHAM_NW_INNER_DENOM : NaN
   const nwOk =
     ndOk &&
@@ -1561,177 +2057,350 @@ function LiuDezhongOmegaBinghamField({
     N_d > 0 &&
     Number.isFinite(N_d)
 
-  const N_omega = nwOk ? (LIU_BINGHAM_NW_COEF / N_d) * (Math.sqrt(innerRadicand) - 1) ** 2 : NaN
-  const w_i = nwOk && Number.isFinite(W_L) ? N_omega * W_L : NaN
-  const wRounded = Number.isFinite(w_i) ? Math.round(w_i * 1e6) / 1e6 : NaN
-  useEffect(() => {
-    onDlComputed?.(Number.isFinite(D_L) && D_L > 0 ? D_L : undefined)
-  }, [D_L, onDlComputed])
+  /** 由 N_d 给出的无量纲系数（上书作 N_w；ω_i=N_w ω_L） */
+  const N_w_from_nd = nwOk ? liuBinghamNwFromNd(N_d) : NaN
+  const omega_i_prime = nwOk && Number.isFinite(W_L) && Number.isFinite(N_w_from_nd) ? N_w_from_nd * W_L : NaN
 
-  const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
-  const shellBg = darkMode ? 'bg-gray-600' : 'bg-white'
-  const shellFocus = open ? 'ring-2 ring-blue-500 ring-offset-0 border-blue-500' : ''
-  const innerInputCls = `min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-base focus:outline-none focus:ring-0 ${
-    darkMode ? 'text-gray-100 placeholder-gray-400' : 'text-gray-900'
-  }`
+  const omegaFillOk = nwOk && Number.isFinite(omega_i_prime) && omega_i_prime > 0
+  useEffect(() => {
+    onDiComputed?.(Number.isFinite(d_i_m) && d_i_m > 0 ? d_i_m : undefined)
+  }, [d_i_m, onDiComputed])
+
+  const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
+  const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
+
+  const fj = assistContext === 'flow_judgment'
+  const en = language === 'en'
+
   const chevronBtnCls = `flex h-full shrink-0 items-center justify-center border-l px-2.5 transition-colors ${
     darkMode
-      ? `border-gray-500 text-gray-300 hover:bg-gray-500/40 ${open ? 'bg-gray-500/30' : ''}`
-      : `border-gray-300 text-gray-500 hover:bg-gray-50 ${open ? 'bg-gray-50' : ''}`
+      ? `border-gray-500/80 text-gray-300 hover:bg-gray-700/60 ${open ? 'bg-gray-700/35' : ''}`
+      : `border-gray-200 text-gray-500 hover:bg-gray-50 ${open ? 'bg-gray-50/90' : ''}`
   }`
   const panelCls = `absolute left-0 right-0 z-50 mt-1.5 max-h-[min(70vh,32rem)] overflow-y-auto overflow-x-hidden rounded-xl border shadow-lg ${
     darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
   }`
   const panelInnerCls = darkMode ? 'border-gray-600' : 'border-gray-100'
-  const subInputCls = `mt-1 w-full rounded-lg border px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-    darkMode ? 'border-gray-500 bg-gray-700/80 text-gray-100' : 'border-gray-300 bg-gray-50 text-gray-900'
-  }`
-  const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
-  const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
 
   return (
     <div className="relative min-w-0 flex-1" ref={wrapRef}>
-      <div className="flex items-stretch space-x-2">
-        <div
-          className={`flex min-w-0 flex-1 overflow-hidden rounded-lg border ${shellBorder} ${shellBg} ${shellFocus}`}
+      <div
+        className={`flex min-h-[2.75rem] items-stretch overflow-hidden rounded-xl border transition-shadow ${
+          darkMode
+            ? `border-gray-500/80 bg-gray-800/60 ${open ? 'ring-1 ring-blue-500/35 border-blue-500/55' : ''}`
+            : `border-gray-200 bg-white shadow-sm ${open ? 'ring-2 ring-blue-100 border-blue-400' : ''}`
+        }`}
+      >
+        <input
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          spellCheck={false}
+          value={inputValue}
+          onChange={(e) => onInputChange(e.target.value)}
+          onBlur={onInputBlur}
+          onClick={() => setOpen(true)}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className={`min-w-0 flex-1 border-0 bg-transparent px-3 py-2.5 text-base focus:outline-none focus:ring-0 ${
+            darkMode ? 'text-gray-100 placeholder-gray-400' : 'text-gray-900 placeholder-gray-400'
+          }`}
+          aria-expanded={open}
+          aria-controls="liu-omega-bingham-panel"
+          id="liu-omega-bingham-input"
+        />
+        <UnitBadge darkMode={darkMode}>
+          {unitText != null && String(unitText).trim() !== '' ? unitText : 'm/s'}
+        </UnitBadge>
+        <button
+          type="button"
+          tabIndex={-1}
+          className={chevronBtnCls}
+          aria-label={
+            open
+              ? en
+                ? 'Collapse weighted settling velocity assist'
+                : '收起似均质中加权平均沉速——辅助计算'
+              : en
+                ? 'Expand weighted settling velocity assist'
+                : '展开似均质中加权平均沉速——辅助计算'
+          }
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((v) => !v)}
         >
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            spellCheck={false}
-            value={inputValue}
-            onChange={(e) => onInputChange(e.target.value)}
-            onBlur={onInputBlur}
-            onClick={() => setOpen(true)}
-            onFocus={() => setOpen(true)}
-            placeholder={placeholder}
-            className={innerInputCls}
-            aria-expanded={open}
-            aria-controls="liu-omega-bingham-panel"
-            id="liu-omega-bingham-input"
-          />
-          <button
-            type="button"
-            tabIndex={-1}
-            className={chevronBtnCls}
-            aria-label={open ? '收起宾汉体加权沉速辅助' : '展开宾汉体加权沉速辅助计算'}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
-              ▼
-            </span>
-          </button>
-        </div>
-        {unit}
+          <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
+            ▼
+          </span>
+        </button>
       </div>
 
       {open && (
         <div id="liu-omega-bingham-panel" className={panelCls} role="region" aria-labelledby="liu-omega-bingham-input">
-          <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
-            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>似均质中加权平均沉速辅助计算（ <InlineMath math="\omega" />）</div>
-            <div className={`mt-2 space-y-2 overflow-x-auto text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-              <BlockMath math="d_L=\dfrac{\left(\eta/\rho_k\right)^{2/3}}{\left[g\left(\rho_g/\rho_k-1\right)\right]^{1/3}}" />
-              <BlockMath math="\omega_L=\left[g\left(\dfrac{\rho_g}{\rho_k}-1\right)\dfrac{\eta}{\rho_k}\right]^{1/3}" />
-              <BlockMath math="N_d=\dfrac{d_i}{d_L}" />
-              <BlockMath math="N_w=\dfrac{\omega_i}{\omega_L}" />
-              <BlockMath math="N_{\omega}=\dfrac{20.5209}{N_d}\left[\left(1+\dfrac{N_d^{1.5}}{0.213^{0.5}\times 4.53^2}\right)^{0.5}-1\right]^2" />
-              <BlockMath math="\omega_i=N_{\omega}\omega_L" />
+          <header className={`flex min-h-[2.75rem] flex-col justify-center gap-2 border-b px-3 py-2.5 ${panelInnerCls}`}>
+            <div className={`text-xs font-semibold leading-snug tracking-wide ${hintStrong}`}>
+              {en ? (
+                <>
+                  Weighted mean settling velocity · assist (<InlineMath math="\omega" />)
+                </>
+              ) : (
+                <>
+                  似均质中加权平均沉速——辅助计算（<InlineMath math="\omega" />）
+                </>
+              )}
             </div>
-          </div>
+            <FormulaFrame darkMode={darkMode} compact className="mb-0">
+              <div className="flex w-full min-w-0 flex-col items-center gap-2">
+                <BlockMath math="d_L=\dfrac{\left(\eta/\rho_k\right)^{2/3}}{\left[g\left(\rho_g/\rho_k-1\right)\right]^{1/3}}" />
+                <BlockMath math="\omega_L=\left[g\left(\dfrac{\rho_g}{\rho_k}-1\right)\dfrac{\eta}{\rho_k}\right]^{1/3}" />
+                <BlockMath math="N_d=\dfrac{d_i}{d_L}" />
+                <BlockMath math="N_w=\dfrac{20.5209}{N_d}\left[\left(1+\dfrac{N_d^{1.5}}{0.213^{0.5}\times 4.53^2}\right)^{0.5}-1\right]^2" />
+                <BlockMath math="\omega_i=N_w\cdot\omega_L" />
+              </div>
+            </FormulaFrame>
+            <p className={`whitespace-normal sm:whitespace-nowrap overflow-x-auto text-[10px] leading-snug ${hintMuted}`}>
+              {en ? (
+                <span>
+                  <InlineMath math="d_L" />: standard length scale;&nbsp;
+                  <InlineMath math="\omega_L" />: reference settling velocity;&nbsp;
+                  <InlineMath math="N_d" /> / <InlineMath math="N_w" />: dimensionless groups;&nbsp;
+                  <InlineMath math="\omega_i" />: settling speed for&nbsp;
+                  <InlineMath math="d_i" />.
+                </span>
+              ) : (
+                <span>
+                  <InlineMath math="d_L" />
+                  （标准度量粒径）；<InlineMath math="\omega_L" />
+                  （标准度量沉速）；<InlineMath math="N_d" />
+                  （无因次粒径数）；<InlineMath math="N_w" />
+                  （无因次沉降数）；<InlineMath math="\omega_i" />
+                  （粒径沉速）。
+                </span>
+              )}
+            </p>
+          </header>
 
           <div className="space-y-3 px-3 py-3">
-            <p className={`text-[10px] leading-snug ${hintMuted}`}>
-              <InlineMath math="\rho_g" />、<InlineMath math="\rho_k" />、<InlineMath math="g" /> 已与本页主表同步；可在此修改。
-            </p>
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div>
-                <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="\rho_g" />：固体密度 · t/m³
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5">
+                <span className={`block text-[11px] font-medium leading-snug ${hintStrong}`}>
+                  {fj ? (
+                    en ? (
+                      <>
+                        <InlineMath math="\rho_g" /> (kg/m³): step 1 inputs on this page; editable
+                      </>
+                    ) : (
+                      <>
+                        <InlineMath math="\rho_g" />
+                        ：固体密度（kg/m³）；取本页步骤「1」参数，可修改
+                      </>
+                    )
+                  ) : (
+                    <>
+                      <InlineMath math="\rho_g" />
+                      {en ? ': solid density · kg/m³' : '：固体密度 · kg/m³'}
+                    </>
+                  )}
                 </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  spellCheck={false}
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  inputClassName="text-sm py-2.5"
                   value={rhoGStr}
                   onChange={(e) => setRhoGStr(e.target.value)}
-                  className={subInputCls}
-                  placeholder="固体密度，如2.5"
+                  placeholder={en ? 'e.g. 2500' : '固体密度，如2500'}
+                  unit="kg/m³"
                 />
               </div>
-              <div>
-                <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="\rho_k" />：浆体密度 · t/m³
+              <div className="min-w-0 space-y-1.5">
+                <span className={`block text-[11px] font-medium leading-snug ${hintStrong}`}>
+                  {fj ? (
+                    en ? (
+                      <>
+                        <InlineMath math="\rho_k" /> (kg/m³): mixture density&nbsp;
+                        <InlineMath math="\rho_1" />
+                        &nbsp;from step 1; editable
+                      </>
+                    ) : (
+                      <>
+                        <InlineMath math="\rho_k" />
+                        （浆体密度，kg/m³）：取步骤「1」计算结果&nbsp;
+                        <InlineMath math="\rho_1" />
+                        ，可修改
+                      </>
+                    )
+                  ) : (
+                    <>
+                      <InlineMath math="\rho_k" />
+                      {en ? ': slurry density · kg/m³' : '：浆体密度 · kg/m³'}
+                    </>
+                  )}
                 </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  spellCheck={false}
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  inputClassName="text-sm py-2.5"
                   value={rhoKStr}
                   onChange={(e) => setRhoKStr(e.target.value)}
-                  className={subInputCls}
-                  placeholder="浆体密度，如1.2"
+                  placeholder={en ? 'e.g. 1200' : '浆体密度，如1200'}
+                  unit="kg/m³"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div>
-                <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="\eta" />：宾汉体刚度系数
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5">
+                <span className={`block text-[11px] font-medium leading-snug ${hintStrong}`}>
+                  {fj ? (
+                    en ? (
+                      <>
+                        <InlineMath math="\eta" /> (Pa·s): stiffness from step 2; editable
+                      </>
+                    ) : (
+                      <>
+                        <InlineMath math="\eta" />
+                        ：混合物动力粘度（刚度系数，Pa·s）；取步骤「2」参数，可修改
+                      </>
+                    )
+                  ) : (
+                    <>
+                      <InlineMath math="\eta" />
+                      {en ? ': Bingham stiffness · Pa·s' : '：宾汉体刚度系数 · Pa·s'}
+                    </>
+                  )}
                 </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  spellCheck={false}
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  inputClassName="text-sm py-2.5"
                   value={gbStr}
                   onChange={(e) => setGbStr(e.target.value)}
-                  className={subInputCls}
-                  placeholder="宾汉体刚度系数，如0.01"
+                  placeholder={en ? 'e.g. 0.01' : '如 0.01'}
+                  unit="Pa·s"
                 />
               </div>
-              <div>
-                <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="g" />：重力加速度 · m/s²
+              <div className="min-w-0 space-y-1.5">
+                <span className={`block text-[11px] font-medium leading-snug ${hintStrong}`}>
+                  {fj ? (
+                    en ? (
+                      <>
+                        <InlineMath math="d_i" /> (m): enter particle size (required)
+                      </>
+                    ) : (
+                      <>
+                        <InlineMath math="d_i" />
+                        ：代表粒径（m）；此项须手填
+                      </>
+                    )
+                  ) : (
+                    <>
+                      <InlineMath math="d_i" />
+                      {en ? ': particle size · m' : '：物料粒径 · m'}
+                    </>
+                  )}
                 </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={gStr}
-                  onChange={(e) => setGStr(e.target.value)}
-                  className={subInputCls}
-                  placeholder="重力加速度，默认值 9.81"
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  inputClassName="text-sm py-2.5"
+                  value={diMStr}
+                  onChange={(e) => setDiMStr(e.target.value)}
+                  placeholder={en ? 'e.g. 2e-4' : '如 2e-4'}
+                  unit="m"
                 />
               </div>
+            </div>
+
+            <div className="min-w-0 space-y-1.5">
+              <span className={`block text-[11px] font-medium leading-snug ${hintStrong}`}>
+                {fj ? (
+                  en ? (
+                    <>
+                      <InlineMath math="g" /> (m/s²): linked to page&nbsp;
+                      <InlineMath math="g" />
+                      ; editable
+                    </>
+                  ) : (
+                    <>
+                      <InlineMath math="g" />
+                      ：重力加速度（m/s²）；取本页参数，可修改
+                    </>
+                  )
+                ) : (
+                  <>
+                    <InlineMath math="g" />
+                    {en ? ': gravity · m/s²' : '：重力加速度 · m/s²'}
+                  </>
+                )}
+              </span>
+              <InputWithTrailingUnit
+                darkMode={darkMode}
+                inputClassName="text-sm py-2.5"
+                value={gStr}
+                onChange={(e) => setGStr(e.target.value)}
+                placeholder={en ? 'default 9.81' : '默认值 9.81'}
+                unit="m/s²"
+              />
             </div>
 
             <div
               className={`rounded-lg border px-2.5 py-2 text-[11px] ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
             >
-              <div className={`mb-1 text-xs font-semibold ${hintStrong}`}>计算结果：</div>
-              <div className={hintMuted}>
-                <InlineMath math="D_L" /> ={' '}
-                {Number.isFinite(D_L) ? <span className="font-mono font-semibold text-inherit">{String(Math.round(D_L * 1e9) / 1e9)}</span> : '—'}{' '}
-                mm；<InlineMath math="d_i" /> = <InlineMath math="D_L" />；<InlineMath math="\omega_L" /> ={' '}
-                {Number.isFinite(W_L) ? <span className="font-mono font-semibold text-inherit">{String(Math.round(W_L * 1e9) / 1e9)}</span> : '—'}{' '}
-                m/s
+              <div className={`mb-1.5 text-xs font-semibold ${hintStrong}`}>中间计算结果</div>
+              <div
+                className={`mb-1.5 h-1.5 w-full overflow-hidden rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}
+                aria-hidden
+              >
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-[width] duration-1000 ease-linear"
+                  style={{ width: `${binghamCalcBarPct}%` }}
+                />
               </div>
-              <div className={`mt-1 ${hintMuted}`}>
-                <InlineMath math="N_d" /> = {Number.isFinite(N_d) ? <span className="font-mono font-semibold">{String(Math.round(N_d * 1e6) / 1e6)}</span> : '—'}；<InlineMath math="N_{\omega}" /> ={' '}
-                {Number.isFinite(N_omega) ? <span className="font-mono font-semibold">{String(Math.round(N_omega * 1e6) / 1e6)}</span> : '—'}
-              </div>
-              <div className={`mt-1 ${hintStrong}`}>
-                <InlineMath math="\omega_i" />（供填入 <InlineMath math="\omega" />）={' '}
-                {Number.isFinite(wRounded) ? <span className="font-mono text-sm font-semibold">{String(wRounded)}</span> : '—'}{' '}
-                m/s
-              </div>
+              <ul className={`space-y-1.5 leading-relaxed ${hintMuted}`}>
+                <li className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                  <InlineMath math="d_L" />
+                  <span>（标准度量粒径）=</span>
+                  {binghamCommitted && Number.isFinite(binghamCommitted.D_L) ? (
+                    <span className="font-mono font-semibold">{String(Math.round(binghamCommitted.D_L * 1e9) / 1e9)}</span>
+                  ) : (
+                    '—'
+                  )}
+                  <span>m</span>
+                </li>
+                <li className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                  <InlineMath math="\omega_L" />
+                  <span>（标准度量沉速）=</span>
+                  {binghamCommitted && Number.isFinite(binghamCommitted.W_L) ? (
+                    <span className="font-mono font-semibold">{String(Math.round(binghamCommitted.W_L * 1e9) / 1e9)}</span>
+                  ) : (
+                    '—'
+                  )}
+                  <span>m/s</span>
+                </li>
+                <li className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                  <InlineMath math="N_d" />
+                  <span>（无因次粒径数）=</span>
+                  {binghamCommitted && Number.isFinite(binghamCommitted.N_d) ? (
+                    <span className="font-mono font-semibold">{formatLiuBinghamAuxScalar(binghamCommitted.N_d)}</span>
+                  ) : (
+                    '—'
+                  )}
+                </li>
+                <li className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                  <InlineMath math="N_w" />
+                  <span>（无因次沉降数）=</span>
+                  {binghamCommitted && Number.isFinite(binghamCommitted.N_w) ? (
+                    <span className="font-mono font-semibold">{formatLiuBinghamAuxScalar(binghamCommitted.N_w)}</span>
+                  ) : (
+                    '—'
+                  )}
+                </li>
+                <li className={`flex flex-wrap items-baseline gap-x-1 gap-y-0.5 ${hintStrong}`}>
+                  <InlineMath math="\omega_i" />
+                  <span>（粒径沉速）=</span>
+                  {binghamCommitted && Number.isFinite(binghamCommitted.omega_i) ? (
+                    <span className="font-mono font-semibold">{formatLiuBinghamAuxScalar(binghamCommitted.omega_i)}</span>
+                  ) : (
+                    '—'
+                  )}
+                  <span>m/s</span>
+                </li>
+              </ul>
             </div>
 
             {!deltaOk && (rhoGStr || rhoKStr || gbStr) && (
@@ -1739,9 +2408,9 @@ function LiuDezhongOmegaBinghamField({
                 需满足 <InlineMath math="\rho_g>\rho_k" />、<InlineMath math="\rho_k>0" />、<InlineMath math="\eta>0" />、<InlineMath math="g>0" />。
               </p>
             )}
-            {deltaOk && !nwOk && gbStr && (
+            {deltaOk && !nwOk && gbStr && diMStr && (
               <p className={`text-[11px] ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
-                请检查 <InlineMath math="D_L" />、<InlineMath math="W_L" /> 使 <InlineMath math="N_d" /> 有效，且根号内非负。
+                请检查 <InlineMath math="d_L" />、<InlineMath math="d_i" />、<InlineMath math="\omega_L" />，使 <InlineMath math="N_d" /> 有效且根号内非负。
               </p>
             )}
 
@@ -1758,18 +2427,40 @@ function LiuDezhongOmegaBinghamField({
               </button>
               <button
                 type="button"
-                disabled={!Number.isFinite(wRounded)}
+                disabled={!omegaFillOk || binghamCalcBusy}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
                   darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  if (!Number.isFinite(wRounded)) return
-                  onApplyOmega(String(wRounded), { eta: Number(norm(gbStr)) })
-                  setOpen(false)
+                  if (!omegaFillOk || binghamCalcBusy) return
+                  setBinghamCalcBusy(true)
+                  setBinghamCalcBarPct(0)
+                  window.requestAnimationFrame(() => setBinghamCalcBarPct(100))
+                  window.setTimeout(() => {
+                    setBinghamCommitted({
+                      D_L,
+                      W_L,
+                      N_d,
+                      N_w: N_w_from_nd,
+                      omega_i: omega_i_prime,
+                    })
+                    const omegaStr = formatLiuOmegaIFill(omega_i_prime)
+                    if (!omegaStr) {
+                      setBinghamCalcBusy(false)
+                      return
+                    }
+                    const etaParsed = Number(norm(gbStr))
+                    onApplyOmega(
+                      omegaStr,
+                      Number.isFinite(etaParsed) && etaParsed > 0 ? { eta: etaParsed } : undefined
+                    )
+                    setBinghamCalcBusy(false)
+                    setOpen(false)
+                  }, 1000)
                 }}
               >
-                填入上方 <InlineMath math="\omega" />
+                计算
               </button>
             </div>
           </div>
@@ -1779,16 +2470,16 @@ function LiuDezhongOmegaBinghamField({
   )
 }
 
-/** 刘德忠公式：ω_s 采用斯托克斯公式辅助估算（默认水密度 1 t/m³、重力加速度 9.81 m/s²） */
+/** 刘德忠公式：ω_s 斯托克斯辅助；粒径 d_i（m）与同页宾汉 ω 辅助一致；ρ、ρ_w 输入为 kg/m³，清水默认 1000（不与 ρ_k 联动） */
 function LiuDezhongOmegaSStokesField({
   darkMode,
   inputValue,
   onInputChange,
   onInputBlur,
   placeholder,
-  unit,
+  unitText,
   parameters,
-  dLFromOmega,
+  diMFromBingham,
   onApplyOmegaS,
 }: {
   darkMode: boolean
@@ -1796,38 +2487,57 @@ function LiuDezhongOmegaSStokesField({
   onInputChange: (value: string) => void
   onInputBlur: () => void
   placeholder: string
-  unit: ReactNode
+  unitText?: string | null
   parameters: Record<string, number | undefined>
-  dLFromOmega: number | null
-  onApplyOmegaS: (omegaSStr: string, meta?: { dMm: number }) => void
+  /** 宾汉 ω 面板当前有效的物料粒径 d_i（m），用于在未手填时给出初值 */
+  diMFromBingham: number | null
+  onApplyOmegaS: (omegaSStr: string, meta?: { dM: number }) => void
 }) {
   const [open, setOpen] = useState(false)
   const [rhoGStr, setRhoGStr] = useState('')
-  const [rhoWStr, setRhoWStr] = useState('1')
+  const [rhoWStr, setRhoWStr] = useState('1000')
   const [gStr, setGStr] = useState('9.81')
-  const [dStr, setDStr] = useState('')
+  const [diMStr, setDiMStr] = useState('')
   const [muWStr, setMuWStr] = useState('')
+  /** 最近一次由宾汉 d_i 自动写入斯托克斯时对应的宾汉数值；用于区分手改与联动 */
+  const stokesDiLastSyncedBinghamNumRef = useRef<number | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
+  const [stokesCommittedWs, setStokesCommittedWs] = useState<number | null>(null)
+  const [stokesCalcBusy, setStokesCalcBusy] = useState(false)
+  const [stokesCalcBarPct, setStokesCalcBarPct] = useState(0)
 
   useEffect(() => {
     const rg = parameters.rho_g
-    const rw = parameters.rho_k
     const g0 = parameters.g
-    if (rg != null && !isNaN(Number(rg))) setRhoGStr(String(rg))
-    if (rw != null && !isNaN(Number(rw))) setRhoWStr(String(rw))
+    if (rg != null && !isNaN(Number(rg))) setRhoGStr(String(roundLiuDezhongScalarParam(Number(rg))))
     if (g0 != null && !isNaN(Number(g0))) setGStr(String(g0))
-    if (!muWStr) {
-      const eta1 = parameters.eta_1
-      if (eta1 != null && !isNaN(Number(eta1)) && Number(eta1) > 0) setMuWStr(String(eta1))
-      else setMuWStr('0.001')
-    }
-  }, [parameters.rho_g, parameters.rho_k, parameters.g, parameters.eta_1, muWStr])
+    if (!muWStr) setMuWStr('0.0010559')
+  }, [parameters.rho_g, parameters.g, muWStr])
 
   useEffect(() => {
-    if (dLFromOmega != null && Number.isFinite(dLFromOmega) && dLFromOmega > 0) {
-      setDStr(String(Math.round(dLFromOmega * 1e9) / 1e9))
+    if (
+      diMFromBingham == null ||
+      !Number.isFinite(diMFromBingham) ||
+      diMFromBingham <= 0
+    ) {
+      return
     }
-  }, [dLFromOmega])
+    const normDi = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+    const nextStr = formatLiuStokesDiMImportFromBingham(diMFromBingham)
+    setDiMStr((prev) => {
+      const p = normDi(prev)
+      const parsed = p === '' ? NaN : parseFloat(p)
+      const lastN = stokesDiLastSyncedBinghamNumRef.current
+      const stillLinkedToBingham =
+        p === '' ||
+        (Number.isFinite(parsed) &&
+          (liuStokesDiNumericAlmostEqual(parsed, diMFromBingham) ||
+            (lastN != null && liuStokesDiNumericAlmostEqual(parsed, lastN))))
+      if (!stillLinkedToBingham) return prev
+      stokesDiLastSyncedBinghamNumRef.current = diMFromBingham
+      return nextStr
+    })
+  }, [diMFromBingham])
 
   useEffect(() => {
     if (!open) return
@@ -1843,8 +2553,7 @@ function LiuDezhongOmegaSStokesField({
   const rhoG = parseFloat(norm(rhoGStr))
   const rhoW = parseFloat(norm(rhoWStr))
   const gVal = parseFloat(norm(gStr))
-  const dValMm = parseFloat(norm(dStr))
-  const dValM = Number.isFinite(dValMm) ? dValMm / 1000 : NaN
+  const d_i_m = parseFloat(norm(diMStr))
   const muW = parseFloat(norm(muWStr))
 
   const ok =
@@ -1854,14 +2563,14 @@ function LiuDezhongOmegaSStokesField({
     rhoW > 0 &&
     Number.isFinite(gVal) &&
     gVal > 0 &&
-    Number.isFinite(dValMm) &&
-    dValMm > 0 &&
+    Number.isFinite(d_i_m) &&
+    d_i_m > 0 &&
     Number.isFinite(muW) &&
     muW > 0
 
-  const rhoDiffKgM3 = ok ? (rhoG - rhoW) * 1000 : NaN
-  const omegaS = ok ? (gVal * rhoDiffKgM3 * dValM ** 2) / (18 * muW) : NaN
-  const omegaSRounded = Number.isFinite(omegaS) ? Math.round(omegaS * 1e6) / 1e6 : NaN
+  const rhoDiffKgM3 = ok ? rhoG - rhoW : NaN
+  const omegaS = ok ? (gVal * rhoDiffKgM3 * d_i_m ** 2) / (18 * muW) : NaN
+  const omegaSRounded = Number.isFinite(omegaS) ? roundLiuDezhongSlurryVelocity(omegaS) : NaN
 
   const shellBorder = darkMode ? 'border-gray-500' : 'border-gray-300'
   const shellBg = darkMode ? 'bg-gray-600' : 'bg-white'
@@ -1878,89 +2587,122 @@ function LiuDezhongOmegaSStokesField({
     darkMode ? 'border-gray-500 bg-gray-800 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
   }`
   const panelInnerCls = darkMode ? 'border-gray-600' : 'border-gray-100'
-  const subInputCls = `mt-1 w-full rounded-lg border px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-    darkMode ? 'border-gray-500 bg-gray-700/80 text-gray-100' : 'border-gray-300 bg-gray-50 text-gray-900'
-  }`
+  const stokesAssistInputCls = 'text-sm py-2'
   const hintMuted = darkMode ? 'text-gray-400' : 'text-gray-600'
   const hintStrong = darkMode ? 'text-gray-200' : 'text-gray-800'
 
   return (
     <div className="relative min-w-0 flex-1" ref={wrapRef}>
-      <div className="flex items-stretch space-x-2">
-        <div
-          className={`flex min-w-0 flex-1 overflow-hidden rounded-lg border ${shellBorder} ${shellBg} ${shellFocus}`}
+      <div
+        className={`flex min-w-0 items-stretch overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${shellBorder} ${shellBg} ${shellFocus}`}
+      >
+        <input
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          spellCheck={false}
+          value={inputValue}
+          onChange={(e) => onInputChange(e.target.value)}
+          onBlur={onInputBlur}
+          onClick={() => setOpen(true)}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className={innerInputCls}
+          aria-expanded={open}
+          aria-controls="liu-omega-s-stokes-panel"
+          id="liu-omega-s-stokes-input"
+        />
+        <UnitBadge darkMode={darkMode}>
+          {unitText != null && String(unitText).trim() !== '' ? unitText : 'm/s'}
+        </UnitBadge>
+        <button
+          type="button"
+          tabIndex={-1}
+          className={chevronBtnCls}
+          aria-label={open ? '收起水中加权平均沉速（斯托克斯）——辅助计算' : '展开水中加权平均沉速（斯托克斯）——辅助计算'}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((v) => !v)}
         >
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            spellCheck={false}
-            value={inputValue}
-            onChange={(e) => onInputChange(e.target.value)}
-            onBlur={onInputBlur}
-            onClick={() => setOpen(true)}
-            onFocus={() => setOpen(true)}
-            placeholder={placeholder}
-            className={innerInputCls}
-            aria-expanded={open}
-            aria-controls="liu-omega-s-stokes-panel"
-            id="liu-omega-s-stokes-input"
-          />
-          <button
-            type="button"
-            tabIndex={-1}
-            className={chevronBtnCls}
-            aria-label={open ? '收起斯托克斯沉速辅助' : '展开斯托克斯沉速辅助计算'}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
-              ▼
-            </span>
-          </button>
-        </div>
-        {unit}
+          <span className={`inline-block text-xs transition-transform ${open ? '-rotate-180' : ''}`} aria-hidden>
+            ▼
+          </span>
+        </button>
       </div>
 
       {open && (
         <div id="liu-omega-s-stokes-panel" className={panelCls} role="region" aria-labelledby="liu-omega-s-stokes-input">
-          <div className={`border-b px-3 py-2.5 ${panelInnerCls}`}>
-            <div className={`text-xs font-semibold tracking-wide ${hintStrong}`}>水中加权平均沉速辅助计算（斯托克斯）<InlineMath math="\omega_s" /></div>
-            <div className={`mt-2 space-y-2 overflow-x-auto text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-              <BlockMath math="\omega_s=\dfrac{g(\rho_g-\rho_w)d^2}{18\mu_w}" />
+          <header className={`flex min-h-[2.75rem] flex-col justify-center gap-2 border-b px-3 py-2.5 ${panelInnerCls}`}>
+            <div className={`text-xs font-semibold leading-snug tracking-wide ${hintStrong}`}>
+              水中加权平均沉速（斯托克斯）——辅助计算（<InlineMath math="\omega_s" />）
             </div>
-          </div>
+            <FormulaFrame darkMode={darkMode} compact className="mb-0">
+              <BlockMath math="\omega_s=\dfrac{g(\rho_g-\rho_w)d_i^2}{18\mu_w}" />
+            </FormulaFrame>
+            <p className={`whitespace-nowrap overflow-x-auto text-[10px] leading-snug ${hintMuted}`}>
+              <InlineMath math="\omega_s" />
+              （水中加权平均沉速）；
+            </p>
+          </header>
 
           <div className="space-y-3 px-3 py-3">
-            <p className={`text-[10px] leading-snug ${hintMuted}`}>
-              <InlineMath math="\rho_g" />、<InlineMath math="\rho_w" />、<InlineMath math="g" /> 与本页输入联动；<InlineMath math="d" /> 默认取上一步 <InlineMath math="d_L" />（mm），计算时按 <InlineMath math="d/1000" /> 换算为 m。
-            </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="\rho_g" />：颗粒密度 · t/m³
+                  <InlineMath math="\rho_g" />：颗粒密度 · kg/m³
                 </span>
-                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={rhoGStr} onChange={(e) => setRhoGStr(e.target.value)} className={subInputCls} placeholder="颗粒密度，如2.5" />
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  className="mt-1 w-full"
+                  inputClassName={stokesAssistInputCls}
+                  value={rhoGStr}
+                  onChange={(e) => setRhoGStr(e.target.value)}
+                  placeholder="颗粒密度，如2500"
+                  unit="kg/m³"
+                />
               </div>
               <div>
                 <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="\rho_w" />：水密度 · t/m³
+                  <InlineMath math="\rho_w" />：水密度 · kg/m³
                 </span>
-                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={rhoWStr} onChange={(e) => setRhoWStr(e.target.value)} className={subInputCls} placeholder="水密度，默认值1" />
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  className="mt-1 w-full"
+                  inputClassName={stokesAssistInputCls}
+                  value={rhoWStr}
+                  onChange={(e) => setRhoWStr(e.target.value)}
+                  placeholder="水密度，默认1000"
+                  unit="kg/m³"
+                />
               </div>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <span className={`text-xs font-medium ${hintStrong}`}>
-                  <InlineMath math="d" />：颗粒粒径 · mm
+                  <InlineMath math="d_i" />：物料粒径 · m
                 </span>
-                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={dStr} onChange={(e) => setDStr(e.target.value)} className={subInputCls} placeholder="颗粒粒径d（默认取d_L，单位mm）" />
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  className="mt-1 w-full"
+                  inputClassName={stokesAssistInputCls}
+                  value={diMStr}
+                  onChange={(e) => setDiMStr(e.target.value)}
+                  placeholder="与同页 ω 辅助一致，如 2e-4"
+                  unit="m"
+                />
               </div>
               <div>
                 <span className={`text-xs font-medium ${hintStrong}`}>
                   <InlineMath math="\mu_w" />：水动力粘度 · Pa·s
                 </span>
-                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={muWStr} onChange={(e) => setMuWStr(e.target.value)} className={subInputCls} placeholder="水动力粘度，默认值0.001" />
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  className="mt-1 w-full"
+                  inputClassName={stokesAssistInputCls}
+                  value={muWStr}
+                  onChange={(e) => setMuWStr(e.target.value)}
+                  placeholder="水动力粘度，默认 0.0010559 Pa·s"
+                  unit="Pa·s"
+                />
               </div>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1968,20 +2710,46 @@ function LiuDezhongOmegaSStokesField({
                 <span className={`text-xs font-medium ${hintStrong}`}>
                   <InlineMath math="g" />：重力加速度 · m/s²
                 </span>
-                <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={gStr} onChange={(e) => setGStr(e.target.value)} className={subInputCls} placeholder="重力加速度，默认值 9.81" />
+                <InputWithTrailingUnit
+                  darkMode={darkMode}
+                  className="mt-1 w-full"
+                  inputClassName={stokesAssistInputCls}
+                  value={gStr}
+                  onChange={(e) => setGStr(e.target.value)}
+                  placeholder="重力加速度，默认值 9.81"
+                  unit="m/s²"
+                />
               </div>
             </div>
             <div
               className={`rounded-lg border px-2.5 py-2 text-[11px] ${darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'}`}
             >
-              <div className={`mb-1 text-xs font-semibold ${hintStrong}`}>计算结果：</div>
-              <div className={hintMuted}>
-                <InlineMath math="\omega_s" /> = {Number.isFinite(omegaSRounded) ? <span className="font-mono font-semibold">{String(omegaSRounded)}</span> : '—'} m/s
+              <div className={`mb-1.5 text-xs font-semibold ${hintStrong}`}>中间计算结果</div>
+              <div
+                className={`mb-1.5 h-1.5 w-full overflow-hidden rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}
+                aria-hidden
+              >
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-[width] duration-1000 ease-linear"
+                  style={{ width: `${stokesCalcBarPct}%` }}
+                />
               </div>
+              <ul className={`space-y-1.5 leading-relaxed ${hintMuted}`}>
+                <li className={`flex flex-wrap items-baseline gap-x-1 gap-y-0.5 ${hintStrong}`}>
+                  <InlineMath math="\omega_s" />
+                  <span>（水中加权平均沉速）=</span>
+                  {stokesCommittedWs != null && Number.isFinite(stokesCommittedWs) ? (
+                    <span className="font-mono font-semibold">{formatLiuBinghamAuxScalar(stokesCommittedWs)}</span>
+                  ) : (
+                    '—'
+                  )}
+                  <span>m/s</span>
+                </li>
+              </ul>
             </div>
-            {!ok && (rhoGStr || rhoWStr || dStr || muWStr) && (
+            {!ok && (rhoGStr || rhoWStr || diMStr || muWStr) && (
               <p className={`text-[11px] ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>
-                需满足 <InlineMath math="\rho_g>\rho_w>0" />、<InlineMath math="d>0" />、<InlineMath math="\mu_w>0" />、<InlineMath math="g>0" />。
+                需满足 <InlineMath math="\rho_g>\rho_w>0" />、<InlineMath math="d_i>0" />、<InlineMath math="\mu_w>0" />、<InlineMath math="g>0" />。
               </p>
             )}
             <div className="flex flex-wrap justify-end gap-2 pt-0.5">
@@ -1997,18 +2765,25 @@ function LiuDezhongOmegaSStokesField({
               </button>
               <button
                 type="button"
-                disabled={!Number.isFinite(omegaSRounded)}
+                disabled={!ok || stokesCalcBusy}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
                   darkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  if (!Number.isFinite(omegaSRounded) || !ok) return
-                  onApplyOmegaS(String(omegaSRounded), { dMm: dValMm })
-                  setOpen(false)
+                  if (!ok || stokesCalcBusy || !Number.isFinite(omegaSRounded)) return
+                  setStokesCalcBusy(true)
+                  setStokesCalcBarPct(0)
+                  window.requestAnimationFrame(() => setStokesCalcBarPct(100))
+                  window.setTimeout(() => {
+                    setStokesCommittedWs(omegaSRounded)
+                    onApplyOmegaS(formatLiuSlurryVelocityRawInput(omegaSRounded), { dM: d_i_m })
+                    setStokesCalcBusy(false)
+                    setOpen(false)
+                  }, 1000)
                 }}
               >
-                填入上方 <InlineMath math="\omega_s" />
+                计算
               </button>
             </div>
           </div>
@@ -2021,9 +2796,9 @@ function LiuDezhongOmegaSStokesField({
 /** 孔板消能三步：参数与结果挂在独立 subId，与 slurry_dissipation_orifice 页面联动 */
 const ORIFICE_WORKFLOW_SUB_IDS = ['orifice_step1', 'orifice_step2', 'orifice_step3'] as const
 
-function kPaToFluidHeadM(kpa: number, rhoTPerM3: number, g: number): string {
-  if (!Number.isFinite(kpa) || rhoTPerM3 <= 0 || g <= 0) return '—'
-  return (kpa / (rhoTPerM3 * g)).toFixed(3)
+function kPaToFluidHeadM(kpa: number, rhoKgPerM3: number, g: number): string {
+  if (!Number.isFinite(kpa) || rhoKgPerM3 <= 0 || g <= 0) return '—'
+  return ((kpa * 1000) / (rhoKgPerM3 * g)).toFixed(3)
 }
 
 /** 横轴刻度等分数（与 L_max 计算步长 L_max/10）；曲线本身用密集点折线便于悬停读数 */
@@ -2065,7 +2840,7 @@ function slurryCumLossKpaAt(
   i_k: number,
   P_j: number
 ): number {
-  return rho_s * g * i_k * l + (Lmax > 0 ? P_j * (l / Lmax) : 0)
+  return (rho_s * g * i_k * l) / 1000 + (Lmax > 0 ? P_j * (l / Lmax) : 0)
 }
 
 /** 清水总扬程：沿程损失压力（kPa），与 clear_water_total_head 中 ρ_w g i_w L + 按长分摊 P_j 一致 */
@@ -2077,7 +2852,7 @@ function clearWaterCumLossKpaAt(
   i_w: number,
   P_j: number
 ): number {
-  return rho_w * g * i_w * l + (Lmax > 0 ? P_j * (l / Lmax) : 0)
+  return (rho_w * g * i_w * l) / 1000 + (Lmax > 0 ? P_j * (l / Lmax) : 0)
 }
 
 function buildDenseHydraulicGradeHead(
@@ -2105,8 +2880,8 @@ function hydraulicGradeXTicks(Lmax: number, divisions: number): number[] {
 
 type MergedHydraulicRow = { L: number; headSlurry: number; headClear?: number }
 
-/** 浆体页对比用「清水」水力坡度：与当前页浆体输入一致的几何扬程 H、管长 L、P_j、g，取 ρ_w=1 t/m³、i_w=i_k（清水总扬程同一损失模型，不读清水模块参数）。 */
-const SLURRY_CHART_CLEAR_WATER_RHO = 1
+/** 浆体页对比用「清水」水力坡度：与当前页浆体输入一致的几何扬程 H、管长 L、P_j、g，取 ρ_w=1000 kg/m³、i_w=i_k（清水总扬程同一损失模型，不读清水模块参数）。 */
+const SLURRY_CHART_CLEAR_WATER_RHO = 1000
 
 function buildMergedSlurryClearHydraulicData(
   Lmax: number,
@@ -2137,7 +2912,7 @@ function buildMergedSlurryClearHydraulicData(
   }
 
   const slurryLossHeadM = (l: number) =>
-    slurryCumLossKpaAt(l, Lmax, rho_s, gS, i_k, PjS) / (rho_k * gS)
+    (slurryCumLossKpaAt(l, Lmax, rho_s, gS, i_k, PjS) * 1000) / (rho_k * gS)
   const slurrySeries = slurryOk
     ? buildDenseHydraulicGradeHead(Lmax, Hs, slurryLossHeadM, numPoints)
     : []
@@ -2149,7 +2924,7 @@ function buildMergedSlurryClearHydraulicData(
 
   const rho_w = SLURRY_CHART_CLEAR_WATER_RHO
   const clearLossHeadM = (l: number) =>
-    clearWaterCumLossKpaAt(l, Lmax, rho_w, gS, i_k, PjS) / (rho_w * gS)
+    (clearWaterCumLossKpaAt(l, Lmax, rho_w, gS, i_k, PjS) * 1000) / (rho_w * gS)
   const clearSeries = buildDenseHydraulicGradeHead(Lmax, Hs, clearLossHeadM, numPoints)
   const data: MergedHydraulicRow[] = slurrySeries.map((row, i) => ({
     L: row.L,
@@ -2241,7 +3016,7 @@ function computeClearWaterHydraulicDerivativeValues(
   params: Record<string, number | undefined>
 ): null | { H: number; deltaHw: number; H0: number } {
   const Lmax = Number(params.L)
-  const rho_w = Number(params.rho_w ?? 1)
+  const rho_w = Number(params.rho_w ?? 1000)
   const g = Number(params.g ?? 9.81)
   const i_w = Number(params.i_w)
   const P_j = Number(params.P_j ?? 0)
@@ -2258,7 +3033,7 @@ function computeClearWaterHydraulicDerivativeValues(
   ) {
     return null
   }
-  const deltaHw = clearWaterCumLossKpaAt(Lmax, Lmax, rho_w, g, i_w, P_j) / (rho_w * g)
+  const deltaHw = (clearWaterCumLossKpaAt(Lmax, Lmax, rho_w, g, i_w, P_j) * 1000) / (rho_w * g)
   return { H, deltaHw, H0: H + deltaHw }
 }
 
@@ -2322,7 +3097,7 @@ const TERRAIN_EXPORT_LINE = '#22c55e'
 const MAX_PRESS_HYDRAULIC_LINE = '#DC2626'
 
 type SlurryHydraulicChartRow = MergedHydraulicRow & {
-  /** 纵坐标：折算清水柱高度 (m)，≈ P/(ρ_w g)，ρ_w=1 t/m³；等于 headSlurry（内层混合水头）× ρ_k */
+  /** 纵坐标：折算清水柱高度 (m)，≈ 1000·P/(ρ_w g)，ρ_w=1000 kg/m³ 时与同压力下水柱米高一致；等于 headSlurry（内层混合水头）× ρ_k/1000 */
   headSlurryDisplay: number
   terrainZ?: number
   maxPressZ?: number
@@ -2418,7 +3193,7 @@ function SlurryClearHydraulicGradeChartBlock({
   const chartRows: SlurryHydraulicChartRow[] = useMemo(() => {
     const rk = Number(slurryParams.rho_k)
     const headSlurryToDisplay = (raw: number) =>
-      slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(raw) ? raw * rk : raw
+      slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(raw) ? (raw * rk) / 1000 : raw
     return chartData.map((r) => {
       const headSlurryDisplay = headSlurryToDisplay(r.headSlurry)
       if (!terrainDrawOk) {
@@ -2447,11 +3222,11 @@ function SlurryClearHydraulicGradeChartBlock({
   const P_j_s = Number(slurryParams.P_j ?? 0)
   const totalLossHeadM =
     slurryOk && Number.isFinite(rho_k) && rho_k > 0 && gSlurry > 0
-      ? slurryCumLossKpaAt(Lmax, Lmax, rho_s, gSlurry, i_k, P_j_s) / (rho_k * gSlurry)
+      ? (slurryCumLossKpaAt(Lmax, Lmax, rho_s, gSlurry, i_k, P_j_s) * 1000) / (rho_k * gSlurry)
       : 0
   const totalLossHeadClearM =
     slurryOk && Number.isFinite(rho_w_clear) && rho_w_clear > 0 && gClear > 0
-      ? clearWaterCumLossKpaAt(Lmax, Lmax, rho_w_clear, gClear, i_k, P_j_s) / (rho_w_clear * gClear)
+      ? (clearWaterCumLossKpaAt(Lmax, Lmax, rho_w_clear, gClear, i_k, P_j_s) * 1000) / (rho_w_clear * gClear)
       : 0
 
   const { yMin, yMax } = useMemo(() => {
@@ -2486,7 +3261,7 @@ function SlurryClearHydraulicGradeChartBlock({
   const hydraulicExportYDomain = useMemo(() => {
     const rk = Number(slurryParams.rho_k)
     const headSlurryToDisplay = (raw: number) =>
-      slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(raw) ? raw * rk : raw
+      slurryOk && Number.isFinite(rk) && rk > 0 && Number.isFinite(raw) ? (raw * rk) / 1000 : raw
     let lo = Infinity
     let hi = -Infinity
     for (const d of chartData) {
@@ -2732,14 +3507,14 @@ function SlurryClearHydraulicGradeChartBlock({
                   <p>
                     Abscissa <InlineMath math="[0,L_{\max}]" />; tick step{' '}
                     <span className="font-mono">{stepStr}</span> m. Ordinate: freshwater-equivalent head{' '}
-                    <InlineMath math="P/(\rho_w g)" /> with <InlineMath math="\rho_w=1\ \mathrm{t/m^3}" /> (slurry: model head ×{' '}
-                    <InlineMath math="\rho_k" />
+                    <InlineMath math="1000\,P/(\rho_w g)" /> with <InlineMath math="\rho_w=1000\ \mathrm{kg/m^3}" /> (slurry: model head ×{' '}
+                    <InlineMath math="\rho_k/1000" />
                     ). Hover shows elevation and pressure.
                   </p>
                   <p>
                     <strong className="text-amber-600 dark:text-amber-400">Slurry</strong> line uses this page’s slurry total-head model;{' '}
                     <strong className="text-blue-600 dark:text-blue-400">clear-water comparison</strong> uses the same{' '}
-                    <InlineMath math="H,L,P_j,g" /> with <InlineMath math="\rho_w=1" />, <InlineMath math="i_w=i_k" />.
+                    <InlineMath math="H,L,P_j,g" /> with <InlineMath math="\rho_w=1000\ \mathrm{kg/m^3}" />, <InlineMath math="i_w=i_k" />.
                   </p>
                   <p>
                     Terrain is edited below; preview is separate until{' '}
@@ -2751,13 +3526,13 @@ function SlurryClearHydraulicGradeChartBlock({
                 <>
                   <p>
                     横轴 <InlineMath math="[0,L_{\max}]" />，主刻度步长 <span className="font-mono">{stepStr}</span> m。纵坐标为折算清水柱{' '}
-                    <InlineMath math="P/(\rho_w g)" />（<InlineMath math="\rho_w=1\ \mathrm{t/m^3}" />
-                    ），浆体线为模型水头 × <InlineMath math="\rho_k" />；悬停可读高程与压力。
+                    <InlineMath math="1000\,P/(\rho_w g)" />（<InlineMath math="\rho_w=1000\ \mathrm{kg/m^3}" />
+                    ），浆体线为模型水头 × <InlineMath math="\rho_k/1000" />；悬停可读高程与压力。
                   </p>
                   <p>
                     <strong className="text-amber-600 dark:text-amber-400">浆体线</strong>按本页浆体总扬程；
                     <strong className="text-blue-600 dark:text-blue-400">清水对比线</strong>与当前页相同 <InlineMath math="H,L,P_j,g" />，取{' '}
-                    <InlineMath math="\rho_w=1" />、<InlineMath math="i_w=i_k" />。
+                    <InlineMath math="\rho_w=1000\ \mathrm{kg/m^3}" />、<InlineMath math="i_w=i_k" />。
                   </p>
                   <p>
                     地形在下方编辑；预览与主图分离，点击「
@@ -2781,14 +3556,17 @@ function SlurryClearHydraulicGradeChartBlock({
               {language === 'en' ? (
                 <>
                   <p>
-                    Slurry-line inlet ordinate (freshwater head, <InlineMath math="P/(\rho_w g)" />, <InlineMath math="\rho_w=1" />) ≈{' '}
+                    Slurry-line inlet ordinate (freshwater head, <InlineMath math="1000\,P/(\rho_w g)" />, <InlineMath math="\rho_w=1000\ \mathrm{kg/m^3}" />) ≈{' '}
                     {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
-                      ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
+                      ? (((H_in + totalLossHeadM) * rho_k) / 1000).toFixed(1)
                       : '—'}{' '}
                     m (inner <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
-                    {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k" />
+                    {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k/1000" />
                     ; <InlineMath math="P_j" /> share ≈{' '}
-                    {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k) ? (totalLossHeadM * rho_k).toFixed(1) : '—'} m column).
+                    {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
+                      ? ((totalLossHeadM * rho_k) / 1000).toFixed(1)
+                      : '—'}{' '}
+                    m column).
                     Clear-water inlet ≈ <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
                     {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m (Δh_w ={' '}
                     {totalLossHeadClearM.toFixed(1)} m).
@@ -2800,12 +3578,12 @@ function SlurryClearHydraulicGradeChartBlock({
                   <p>
                     浆体线进口纵坐标（折算清水柱）≈{' '}
                     {Number.isFinite(H_in) && Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k)
-                      ? ((H_in + totalLossHeadM) * rho_k).toFixed(1)
+                      ? (((H_in + totalLossHeadM) * rho_k) / 1000).toFixed(1)
                       : '—'}{' '}
                     m（内层 <InlineMath math="H+\Delta h_{\mathrm{k}}(L_{\max})" /> ≈{' '}
-                    {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k" />
+                    {Number.isFinite(H_in + totalLossHeadM) ? (H_in + totalLossHeadM).toFixed(1) : '—'} m × <InlineMath math="\rho_k/1000" />
                     ；<InlineMath math="P_j" /> 分摊损失折合约{' '}
-                    {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k) ? (totalLossHeadM * rho_k).toFixed(1) : '—'} m）。清水对比线同端 ≈{' '}
+                    {Number.isFinite(totalLossHeadM) && Number.isFinite(rho_k) ? ((totalLossHeadM * rho_k) / 1000).toFixed(1) : '—'} m）。清水对比线同端 ≈{' '}
                     <InlineMath math="H+\Delta h_{\mathrm{w}}(L_{\max})" /> ≈{' '}
                     {Number.isFinite(H_in + totalLossHeadClearM) ? (H_in + totalLossHeadClearM).toFixed(1) : '—'} m（分摊折合{' '}
                     {totalLossHeadClearM.toFixed(1)} m）。
@@ -2891,7 +3669,7 @@ function SlurryClearHydraulicGradeChartBlock({
                             const hm = Number(p.value)
                             const pk =
                               Number.isFinite(hm) && Number.isFinite(rho_w_clear) && rho_w_clear > 0 && gClear > 0
-                                ? hm * rho_w_clear * gClear
+                                ? (hm * rho_w_clear * gClear) / 1000
                                 : NaN
                             return (
                               <div key="c" className="text-blue-600 dark:text-blue-400">
@@ -3498,7 +4276,7 @@ function ClearWaterHydraulicGradeChartBlock({
     ) {
       return []
     }
-    const lossHeadM = (l: number) => clearWaterCumLossKpaAt(l, Lmax, rho_w, g, i_w, P_j) / (rho_w * g)
+    const lossHeadM = (l: number) => (clearWaterCumLossKpaAt(l, Lmax, rho_w, g, i_w, P_j) * 1000) / (rho_w * g)
     return buildDenseHydraulicGradeHead(Lmax, H, lossHeadM, HYDRAULIC_GRADE_CURVE_POINTS).map((r) => ({
       L: r.L,
       headClear: r.headM,
@@ -3517,7 +4295,7 @@ function ClearWaterHydraulicGradeChartBlock({
   const yMax = maxHead + yPad
   const totalLossHeadM =
     chartData.length && Number.isFinite(rho_w) && rho_w > 0 && g > 0
-      ? clearWaterCumLossKpaAt(Lmax, Lmax, rho_w, g, i_w, P_j) / (rho_w * g)
+      ? (clearWaterCumLossKpaAt(Lmax, Lmax, rho_w, g, i_w, P_j) * 1000) / (rho_w * g)
       : 0
 
   const handleExportChartPNG = () => {
@@ -3908,7 +4686,8 @@ export default function MainContent({
   const [formulaRawInputs, setFormulaRawInputs] = useState<Record<string, Record<string, string>>>({})
   const [formulaResults, setFormulaResults] = useState<Record<string, CalculationResult | null>>({})
   const [formulaLockedVc, setFormulaLockedVc] = useState<Record<string, number | null>>({})
-  const [liuOmegaDLByFormula, setLiuOmegaDLByFormula] = useState<Record<string, number | null>>({})
+  /** 宾汉 ω 面板中求得的物料粒径 d_i（m），供斯托克斯 ω_s 面板默认值与锁定后刷新 */
+  const [liuOmegaDiMByFormula, setLiuOmegaDiMByFormula] = useState<Record<string, number | null>>({})
   const [kronodzeStep2ReadyMap, setKronodzeStep2ReadyMap] = useState<Record<string, boolean>>({})
   const [kronodzeStep3VisibleMap, setKronodzeStep3VisibleMap] = useState<Record<string, boolean>>({})
   
@@ -3917,7 +4696,7 @@ export default function MainContent({
   const rawInputs = formula ? (formulaRawInputs[formula.id] || {}) : {}
   const result = formula ? (formulaResults[formula.id] || null) : null
   const lockedVc = formula ? (formulaLockedVc[formula.id] ?? null) : null
-  const liuOmegaDL = formula ? (liuOmegaDLByFormula[formula.id] ?? null) : null
+  const liuOmegaDiM = formula ? (liuOmegaDiMByFormula[formula.id] ?? null) : null
   const kronodzeStep2Ready = formula ? (kronodzeStep2ReadyMap[formula.id] || false) : false
   const kronodzeStep3Visible = formula ? (kronodzeStep3VisibleMap[formula.id] || false) : false
   const { setAssistantSnapshot } = useAssistantSnapshotOptional()
@@ -3963,6 +4742,7 @@ export default function MainContent({
   const isSlurryDissipationFormula = isSlurryDissipationReducer
   const isClearWaterFrictionLoss = formula?.id === 'clear_water_friction_loss'
   const isSlurryFrictionWorkflow = formula?.id === 'slurry_friction_workflow'
+  const isPseudoHomogeneousFlowJudgment = formula?.id === 'pseudo_homogeneous_flow_judgment'
   const isCentrifugalPumpTotalHead = formula?.id === 'centrifugal_pump_total_head'
   const isPositiveDisplacementPumpFormula = formula?.id === 'positive_displacement_pump_outlet_pressure'
   const isKronodzeFormula = formula?.id === 'kronodze_pressure'
@@ -4005,15 +4785,15 @@ export default function MainContent({
     if (hasRaw || hasParsed) return
     setFormulaRawInputs((prev) => ({
       ...prev,
-      density_mixing: { ...(prev.density_mixing || {}), rho_s: '1' }
+      density_mixing: { ...(prev.density_mixing || {}), rho_s: '1000' }
     }))
     setFormulaParameters((prev) => ({
       ...prev,
-      density_mixing: { ...(prev.density_mixing || {}), rho_s: 1 }
+      density_mixing: { ...(prev.density_mixing || {}), rho_s: 1000 }
     }))
   }, [isSlurryFrictionWorkflow, densityMixingRawRhoS, densityMixingRhoS])
 
-  // 浆体摩阻工作流步骤4：ε 默认显示并使用「直缝新钢管 0.053」
+  // 浆体摩阻工作流步骤4：ε 默认显示并使用「直缝新钢管 0.053 mm」
   useEffect(() => {
     if (!isSlurryFrictionWorkflow) return
     const hasPreset = darcyRawEpsilonPreset != null && darcyRawEpsilonPreset.trim() !== ''
@@ -4054,19 +4834,17 @@ export default function MainContent({
   const [fullscreenAnimationType, setFullscreenAnimationType] = useState<string | null>(null)
   const [fullscreenStatusText, setFullscreenStatusText] = useState<string>('')
   const [fullscreenStatusColor, setFullscreenStatusColor] = useState<string>('')
-  /** 费祥俊公式：按浆体摩阻达西法辅助求 λ（Re_B → step3） */
-  const [feiLambdaAuxV, setFeiLambdaAuxV] = useState('')
   const [feiLambdaAuxEta1, setFeiLambdaAuxEta1] = useState('')
   const [feiLambdaAuxEpsilonPreset, setFeiLambdaAuxEpsilonPreset] =
     useState<SlurryEpsilonPresetKey>(DEFAULT_SLURRY_EPSILON_PRESET)
-  const [feiLambdaAuxEpsilonCustom, setFeiLambdaAuxEpsilonCustom] = useState('0.0002')
+  const [feiLambdaAuxEpsilonCustom, setFeiLambdaAuxEpsilonCustom] = useState('0.053')
   /** 费祥俊 λ：用户在主表手写后置 true；从辅助「填入」后置 false */
   const feiLambdaManualRef = useRef(false)
   /** 刘德忠 ω / ω_s：主表直接编辑后置 true；从辅助「填入」后置 false 并记录 η、d 等供锁定后自动刷新 */
   const liuOmegaManualRef = useRef(false)
   const liuOmegaSManualRef = useRef(false)
   const liuBinghamEtaForAutoRef = useRef<number | null>(null)
-  const liuStokesDForAutoRef = useRef<number | null>(null)
+  const liuStokesDiMForAutoRef = useRef<number | null>(null)
   /** 浆体消能：步骤1 成功后自动写入的 K_QL（按 formula.id），用于提示是否与步骤1同步 */
   const dissipationAutoKqlRef = useRef<Record<string, number | null>>({})
   /** 与 ref 同步的状态，便于根据「是否与步骤1一致」刷新 UI */
@@ -4096,6 +4874,23 @@ export default function MainContent({
   const [positiveDisplacementStep1SnapshotByFormula, setPositiveDisplacementStep1SnapshotByFormula] = useState<
     Record<string, { P_b: number; intermediate: Record<string, unknown> }>
   >({})
+  /** 浆体管道流态判断公式：代表粒径档状态（按公式 id 分槽；界面不再展示粒径表） */
+  const [pseudoFlowRowsByFormula, setPseudoFlowRowsByFormula] = useState<
+    Record<string, PseudoHomogeneousFlowRow[]>
+  >({})
+  /** 分步行 C/C_A：各档链路中间量；选中行索引按公式分槽 */
+  const [pseudoCcaChainByFormula, setPseudoCcaChainByFormula] = useState<
+    Record<string, Record<number, PseudoCcaChainSnapshot>>
+  >({})
+  const [pseudoCcaActiveRowByFormula, setPseudoCcaActiveRowByFormula] = useState<Record<string, number>>({})
+  const [pseudoCcaKnownOverrideByFormula, setPseudoCcaKnownOverrideByFormula] = useState<
+    Record<string, Record<number, PseudoCcaKnownOverrideFields>>
+  >({})
+  const [pseudoCcaStepBusyKey, setPseudoCcaStepBusyKey] = useState<string | null>(null)
+  /** 浆体管道流态判断公式 · 分步 f_L：粗糙度下拉与手填（mm），写入主参数 epsilon 供链式调用 */
+  const [pseudoCcaEpsilonPreset, setPseudoCcaEpsilonPreset] =
+    useState<SlurryEpsilonPresetKey>(DEFAULT_SLURRY_EPSILON_PRESET)
+  const [pseudoCcaEpsilonCustomMm, setPseudoCcaEpsilonCustomMm] = useState('0.053')
 
   // 更新检查相关状态
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'>('idle')
@@ -4145,22 +4940,60 @@ export default function MainContent({
   const feiLambdaAssistPreview = useMemo(() => {
     if (formula?.id !== 'fei_xiangjun') return null
     return computeFeiDarcyAssistPreview({
+      language,
       D: parameters['D'],
       rho_g: parameters['rho_g'],
       rho_k: parameters['rho_k'],
       Cv: parameters['Cv'],
-      feiLambdaAuxV,
+      d90: parameters['d90'],
+      g: parameters['g'],
+      coefficient_2_26: parameters['coefficient_2_26'],
       feiLambdaAuxEta1,
       feiLambdaAuxEpsilonPreset,
       feiLambdaAuxEpsilonCustom,
+      lambdaSeed: parameters['lambda_coef'],
     })
   }, [
     formula?.id,
+    language,
     parameters.D,
     parameters.rho_g,
     parameters.rho_k,
     parameters.Cv,
-    feiLambdaAuxV,
+    parameters.d90,
+    parameters.g,
+    parameters.coefficient_2_26,
+    parameters.lambda_coef,
+    feiLambdaAuxEta1,
+    feiLambdaAuxEpsilonPreset,
+    feiLambdaAuxEpsilonCustom,
+  ])
+
+  const computeFeiAssistPreviewNow = useCallback((): FeiDarcyAssistPreviewRow => {
+    return computeFeiDarcyAssistPreview({
+      language,
+      D: parameters['D'],
+      rho_g: parameters['rho_g'],
+      rho_k: parameters['rho_k'],
+      Cv: parameters['Cv'],
+      d90: parameters['d90'],
+      g: parameters['g'],
+      coefficient_2_26: parameters['coefficient_2_26'],
+      feiLambdaAuxEta1,
+      feiLambdaAuxEpsilonPreset,
+      feiLambdaAuxEpsilonCustom,
+      lambdaSeed: parameters['lambda_coef'],
+    })
+  }, [
+    language,
+    parameters.D,
+    parameters.rho_g,
+    parameters.rho_k,
+    parameters.Cv,
+    parameters.d90,
+    parameters.g,
+    parameters.coefficient_2_26,
+    parameters.lambda_coef,
     feiLambdaAuxEta1,
     feiLambdaAuxEpsilonPreset,
     feiLambdaAuxEpsilonCustom,
@@ -4290,7 +5123,7 @@ export default function MainContent({
       const step3Motor: Record<string, { zh: string; math: string }> = {
         H_b_m: { zh: '主泵扬送清水的总扬程（液柱）', math: 'H_b' },
         H_m: { zh: '式中液柱项（数值同 H_b）', math: 'H_b' },
-        rho_k_t_m3: { zh: '浆体密度（t/m³）', math: '\\rho_k\\ \\mathrm{(t/m^3)}' },
+        rho_k_input_kg_m3: { zh: '浆体密度（输入，kg/m³）', math: '\\rho_k\\ \\mathrm{(kg/m^3)}' },
         rho_si_kg_m3: { zh: '参与功率计算的 SI 密度（kg/m³）', math: '\\rho_k\\ \\mathrm{(kg/m^3)}' },
         Q_k: { zh: '浆体体积流量', math: 'Q_k' },
         K_1: { zh: '电机功率富余系数', math: 'K_1' },
@@ -4404,13 +5237,21 @@ export default function MainContent({
       'leading_coef': '核心系数',
       'coefficient_2_26': '经验系数',
       'lambda_coef': '达西摩阻系数',
+      'fei_iteration_count': 'λ–Vc 迭代次数',
+      'fei_lambda_rel_residual': 'λ 迭代相对残差',
+      'Vc_for_Re': '用于雷诺数的 Vc',
+      'rho_1': '混合物密度 ρ₁',
+      'epsilon': '管壁绝对粗糙度 ε（mm）',
+      'epsilon_mm': '管壁绝对粗糙度 ε（mm）',
+
+      'eta_1': '刚度系数 η',
       
       // 克诺罗兹法（公式中间项）
       'term_cd': '浓度修正项',
       'term_dl': '管径修正项',
       'sqrt_term': '平方根项',
       'sin_theta': 'sin(θ)',
-      'step_A_Qk': '矿浆流量',
+      'step_A_Qk': '浆体体积流量',
       'step_B_DL_mm': '临界管径',
       'Cd': '重量砂水比 C_d',
       'step_C_V_L': '步骤C 临界流速 V_L',
@@ -4457,6 +5298,8 @@ export default function MainContent({
       'P_z': '出口余压',
 
       // 离心泵总扬程
+      'rho_k_input_kg_m3': '浆体密度 ρ_k（输入，kg/m³）',
+      'rho_si_kg_m3': '参与功率计算的 ρ_k（kg/m³）',
       'term_0p25_Cw': '项 0.25·C_w',
       'Sigma_H_s': 'ΣH_s（m）',
       'K_p_K_m': 'K_p·K_m',
@@ -4464,8 +5307,24 @@ export default function MainContent({
       'P_k': '管道输送压力 P_k',
 
     }
-    
-    let label = labelMap[key] || key
+
+    const feiIntermediateLabelOverride: Record<string, string> =
+      formulaId === 'fei_xiangjun'
+        ? {
+            fei_Re_flow: language === 'en' ? 'Reynolds number & flow regime' : '雷诺数与流态',
+            fei_lambda_rel_residual:
+              language === 'en' ? 'Final relative residual (λ iteration)' : 'λ 迭代末步相对残差',
+            lambda_coef:
+              language === 'en' ? 'Converged Darcy friction factor λ' : '达西摩阻系数 λ（收敛值）',
+            delta_rho_ratio: language === 'en' ? 'Relative density difference Δρ/ρ' : '相对密度差 Δρ/ρ',
+            bracket_term: language === 'en' ? 'Bracket term' : '核心项',
+            conc_term: language === 'en' ? 'Concentration correction' : '浓度修正项',
+            size_term: language === 'en' ? 'Size-ratio correction' : '粒径比修正项',
+            leading_coef: language === 'en' ? 'Leading coefficient' : '核心系数',
+          }
+        : {}
+
+    let label = feiIntermediateLabelOverride[key] ?? labelMap[key] ?? key
     if (key === 'bracket_term' && formulaId === 'kronodze_pressure') label = '综合修正项'
 
     // 根据key返回对应的数学公式显示（bracket_term 在费祥俊、瓦斯普、克诺罗兹中形式不同）
@@ -4489,9 +5348,11 @@ export default function MainContent({
       'leading_coef': '\\frac{2.26}{\\sqrt{\\lambda}}',
       'coefficient_2_26': '2.26',
       'lambda_coef': '\\lambda',
+      'fei_lambda_rel_residual':
+        '\\frac{|\\lambda_{n+1}-\\lambda_n|}{\\max(\\lambda_n,\\,10^{-12})}',
       'term_cd': '\\sqrt[3]{C_d}',
       'term_dl': '\\sqrt[4]{D_L}',
-      'step_A_Qk': 'Q_k',
+      'step_A_Qk': 'Q_K',
       'step_B_DL_mm': 'D_L',
       'sqrt_term': '\\sqrt{gD \\cdot \\frac{\\Delta\\rho}{\\rho}}',
       'sin_theta': '\\sin(\\theta)',
@@ -4501,8 +5362,8 @@ export default function MainContent({
       'term_rho_g_C1v': '\\rho_g \\cdot C_{1v}',
       'term_1minusC1v_rho_k': '(1-C_{1v})\\cdot\\rho_k',
       'term_1minusC1v_rho_s': '(1-C_{1v})\\cdot\\rho_k',
-      'rho_1_kg_m3': '1000\\rho_1\\ \\mathrm{(kg/m^3)}',
-      're_numerator_V_D_rho_kg': 'V \\cdot D_n \\cdot 1000\\rho_1',
+      'rho_1_kg_m3': '\\rho_1\\ \\mathrm{(kg/m^3)}',
+      're_numerator_V_D_rho_kg': 'V \\cdot D_n \\cdot \\rho_1',
       'mixture_rho_1': '\\rho_1',
       're_B_used': '\\mathrm{Re}_B',
       'Re_B': '\\mathrm{Re}_B',
@@ -4518,7 +5379,7 @@ export default function MainContent({
     
     if (key === 'gravity_pressure') {
       const latex =
-        formulaId === 'clear_water_total_head' ? '\\rho_w g H' : '\\rho_k g H'
+        formulaId === 'clear_water_total_head' ? '\\rho_w g H/1000' : '\\rho_k g H/1000'
       return (
         <span className="inline-flex items-baseline gap-x-1 flex-wrap">
           <span>{label}:</span>
@@ -4529,8 +5390,8 @@ export default function MainContent({
     if (key === 'friction_pressure') {
       const latex =
         formulaId === 'clear_water_total_head'
-          ? '\\rho_w g i_w L'
-          : '\\rho_s g i_k L'
+          ? '\\rho_w g i_w L/1000'
+          : '\\rho_s g i_k L/1000'
       return (
         <span className="inline-flex items-baseline gap-x-1 flex-wrap">
           <span>{label}:</span>
@@ -5062,6 +5923,9 @@ export default function MainContent({
           if (formulaId === 'kronodze_pressure' && (newParams['dp'] === undefined || newParams['dp'] === null || isNaN(newParams['dp'] as number))) {
             newParams['dp'] = 0.07
           }
+          if (formulaId === 'kronodze_pressure' && (newParams['rho_s'] === undefined || newParams['rho_s'] === null || isNaN(newParams['rho_s'] as number))) {
+            newParams['rho_s'] = 1000
+          }
           if (formulaId === 'clear_water_friction_loss') {
             if (newParams['C_h'] === undefined || newParams['C_h'] === null || isNaN(newParams['C_h'] as number)) {
               newParams['C_h'] = 100
@@ -5084,6 +5948,7 @@ export default function MainContent({
           })
           if (formulaId === 'kronodze_pressure') {
             initialParams['dp'] = 0.07
+            initialParams['rho_s'] = 1000
           }
           if (formulaId === 'clear_water_friction_loss') {
             initialParams['C_h'] = 100
@@ -5113,6 +5978,9 @@ export default function MainContent({
           if (formulaId === 'kronodze_pressure' && !newRaw['dp']) {
             newRaw['dp'] = '0.07'
           }
+          if (formulaId === 'kronodze_pressure' && !(newRaw['rho_s'] && String(newRaw['rho_s']).trim() !== '')) {
+            newRaw['rho_s'] = '1000'
+          }
           if (formulaId === 'clear_water_friction_loss') {
             if (!newRaw['ch_preset']) newRaw['ch_preset'] = 'steel100'
             if (!newRaw['C_h']) newRaw['C_h'] = '100'
@@ -5132,6 +6000,7 @@ export default function MainContent({
           })
           if (formulaId === 'kronodze_pressure') {
             initialRaw['dp'] = '0.07'
+            initialRaw['rho_s'] = '1000'
           }
           if (formulaId === 'clear_water_friction_loss') {
             initialRaw['C_h'] = '100'
@@ -5151,10 +6020,17 @@ export default function MainContent({
       liuOmegaManualRef.current = false
       liuOmegaSManualRef.current = false
       liuBinghamEtaForAutoRef.current = null
-      liuStokesDForAutoRef.current = null
+      liuStokesDiMForAutoRef.current = null
       if (formula.id === 'kronodze_pressure') {
         updateKronodzeStep2Ready(false)
         updateKronodzeStep3Visible(false)
+      }
+      if (formula.id === 'pseudo_homogeneous_flow_judgment') {
+        setPseudoFlowRowsByFormula((prev) => ({
+          ...prev,
+          [formulaId]: PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS.map((r) => ({ ...r })),
+        }))
+        setPseudoCcaActiveRowByFormula((p) => ({ ...p, [formulaId]: 0 }))
       }
     }
     // 仅随公式 id 变化初始化，避免父组件传入的 formula 对象引用变化时误清锁定状态
@@ -5262,10 +6138,28 @@ export default function MainContent({
   useEffect(() => {
     if (lockedVc !== null && formula && autoCalculateRef && formula.id !== 'kronodze_pressure') {
       // 检查所有必填参数是否已填写
-      const allParamsFilled = formula.parameters.every(param => {
+      let allParamsFilled = formula.parameters.every((param) => {
+        if (formula.id === 'fei_xiangjun') {
+          if (
+            param.name === 'lambda_coef' ||
+            param.name === 'eta_1' ||
+            param.name === 'epsilon' ||
+            param.name === 'fei_iterate_lambda'
+          ) {
+            return true
+          }
+        }
         const value = parameters[param.name]
         return param.default !== undefined || (value !== undefined && value !== null && !isNaN(value))
       })
+
+      if (allParamsFilled && formula.id === 'fei_xiangjun') {
+        const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+        const eta1 = parseFloat(norm(feiLambdaAuxEta1))
+        const epsMm = parseFeiAuxEpsilonMm(feiLambdaAuxEpsilonPreset, feiLambdaAuxEpsilonCustom)
+        allParamsFilled =
+          Number.isFinite(eta1) && eta1 > 0 && epsMm != null && epsMm > 0
+      }
       
       if (allParamsFilled) {
         // 延迟一下，避免频繁计算
@@ -5278,7 +6172,14 @@ export default function MainContent({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parameters, lockedVc, formula, autoCalculateRef])
+  }, [
+    parameters,
+    lockedVc,
+    formula,
+    feiLambdaAuxEta1,
+    feiLambdaAuxEpsilonPreset,
+    feiLambdaAuxEpsilonCustom,
+  ])
 
   const normalizeDecimalInput = (value: string) => {
     // 兼容中文/欧式小数分隔符：将 “，” 或 “,” 统一为 “.”
@@ -5323,16 +6224,26 @@ export default function MainContent({
     // 允许用户输入中间态：比如 "-"、"."、"1."，这时不立刻覆盖数值
     if (normalized === '-' || normalized === '.' || normalized === '-.') return
 
-    // 只接受标准数字格式
-    if (!/^-?\d+(\.\d*)?$/.test(normalized)) return
+    const isLiuSlurryVelocity =
+      formula.id === 'liu_dezhong' && (name === 'omega' || name === 'omega_s')
+
+    // 只接受标准数字格式（刘德忠 ω、ω_s 另允科学计数法）
+    if (isLiuSlurryVelocity) {
+      if (!LIU_SLURRY_VELOCITY_INPUT_RE.test(normalized)) return
+    } else if (!/^-?\d+(\.\d*)?$/.test(normalized)) {
+      return
+    }
 
     const numValue = parseFloat(normalized)
     if (isNaN(numValue)) return
 
     if (name === 'C_w' && (numValue < 0 || numValue > 1)) return
 
-    // 保留最多 6 位小数
-    const rounded = Math.round(numValue * 1e6) / 1e6
+    const rounded = isLiuSlurryVelocity
+      ? roundLiuDezhongSlurryVelocity(numValue)
+      : formula.id === 'liu_dezhong'
+        ? roundLiuDezhongScalarParam(numValue)
+        : Math.round(numValue * 1e6) / 1e6
     updateParameters(prev => ({ ...prev, [name]: rounded }))
     if (formula.id === 'fei_xiangjun' && name === 'lambda_coef') {
       feiLambdaManualRef.current = true
@@ -5377,8 +6288,15 @@ export default function MainContent({
       }
     }
 
-    const rounded = Math.round(numValue * 1e6) / 1e6
-    updateRawInputs(prev => ({ ...prev, [name]: String(rounded) }))
+    const isLiuSlurryVelocity =
+      formula.id === 'liu_dezhong' && (name === 'omega' || name === 'omega_s')
+    const rounded = isLiuSlurryVelocity
+      ? roundLiuDezhongSlurryVelocity(numValue)
+      : formula.id === 'liu_dezhong'
+        ? roundLiuDezhongScalarParam(numValue)
+        : Math.round(numValue * 1e6) / 1e6
+    const rawStr = isLiuSlurryVelocity ? formatLiuSlurryVelocityRawInput(rounded) : String(rounded)
+    updateRawInputs((prev) => ({ ...prev, [name]: rawStr }))
     updateParameters(prev => ({ ...prev, [name]: rounded }))
     if (formula.id === 'fei_xiangjun' && name === 'lambda_coef') {
       feiLambdaManualRef.current = true
@@ -5406,12 +6324,6 @@ export default function MainContent({
     updateParameters((prev) => ({ ...prev, lambda_coef: lv }))
   }
 
-  const applyFeiLambdaFromAssist = () => {
-    const p = feiLambdaAssistPreview
-    if (!p || p.lambda == null) return
-    writeFeiLambdaCoefFromPreview({ lambda: p.lambda })
-  }
-
   // 锁定后：费祥俊 λ 在用户未手写覆盖时，随管径/C_V 与辅助量自动重算（与面板实时预览同源）
   useEffect(() => {
     if (formula?.id !== 'fei_xiangjun' || lockedVc === null || !autoCalculateRef || feiLambdaManualRef.current) return
@@ -5425,50 +6337,28 @@ export default function MainContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formula?.id, lockedVc, autoCalculateRef, feiLambdaAssistPreview])
 
-  // 锁定后：刘德忠 ω / ω_s 在曾从辅助填入且非手写覆盖时，随密度/管径/粘度等自动刷新
+  // 锁定后：刘德忠 ω_s 在曾从斯托克斯辅助填入且非手写覆盖时，仍随 ρ_g、d_i、μ_w 刷新；ω 仅在使用宾汉辅助点「填入」时写入主栏，不因面板内实时改参而自动覆盖
   useEffect(() => {
     if (formula?.id !== 'liu_dezhong' || lockedVc === null || !autoCalculateRef) return
     const timer = window.setTimeout(() => {
-      if (!liuOmegaManualRef.current) {
-        const eta = liuBinghamEtaForAutoRef.current
-        const rg = parameters.rho_g
-        const rk = parameters.rho_k
-        const g = parameters.g ?? 9.81
-        if (eta != null && Number.isFinite(eta) && rg != null && rk != null && !isNaN(rg) && !isNaN(rk)) {
-          const w = computeLiuBinghamOmegaFromAux({ rho_g: rg, rho_k: rk, g, eta })
-          if (w != null) {
-            updateRawInputs((prev) => ({ ...prev, omega: String(w) }))
-            updateParameters((prev) => ({ ...prev, omega: w }))
-          }
-        }
-      }
       if (!liuOmegaSManualRef.current) {
         const rg = parameters.rho_g
-        const rk = parameters.rho_k
-        const dMm =
-          liuStokesDForAutoRef.current ??
-          (parameters.D != null && !isNaN(Number(parameters.D))
-            ? Number(parameters.D) * 1000
-            : undefined)
-        const mu = parameters.eta_1 != null && !isNaN(parameters.eta_1) ? parameters.eta_1 : 0.001
+        const dM =
+          liuStokesDiMForAutoRef.current ??
+          (parameters.D != null && !isNaN(Number(parameters.D)) ? Number(parameters.D) : undefined)
+        const mu = parameters.eta_1 != null && !isNaN(parameters.eta_1) ? parameters.eta_1 : 0.0010559
         const g = parameters.g ?? 9.81
-        if (
-          rg != null &&
-          rk != null &&
-          dMm != null &&
-          !isNaN(rg) &&
-          !isNaN(rk) &&
-          !isNaN(Number(dMm))
-        ) {
+        const rhoWater = 1000
+        if (rg != null && dM != null && !isNaN(rg) && !isNaN(Number(dM)) && Number(dM) > 0) {
           const ws = computeLiuStokesOmegaSFromAux({
             rho_g: rg,
-            rho_w: rk,
+            rho_w: rhoWater,
             g,
-            d_mm: Number(dMm),
+            d_m: Number(dM),
             mu_w: mu,
           })
           if (ws != null) {
-            updateRawInputs((prev) => ({ ...prev, omega_s: String(ws) }))
+            updateRawInputs((prev) => ({ ...prev, omega_s: formatLiuSlurryVelocityRawInput(ws) }))
             updateParameters((prev) => ({ ...prev, omega_s: ws }))
           }
         }
@@ -5481,7 +6371,6 @@ export default function MainContent({
     lockedVc,
     autoCalculateRef,
     parameters.rho_g,
-    parameters.rho_k,
     parameters.g,
     parameters.D,
     parameters.eta_1,
@@ -5616,7 +6505,7 @@ export default function MainContent({
     if (subId === 'darcy_friction_step2_re') {
       const rho1 = getWorkflowNumeric('darcy_friction', 'rho_1')
       if (rho1 == null || isNaN(rho1) || rho1 <= 0) {
-        return '步骤3：请填写「混合物密度 ρ₁」（t/m³）；可由步骤2计算写入，或在本步参数表填写'
+        return '步骤3：请填写「混合物密度 ρ₁」（kg/m³）；可由步骤2计算写入，或在本步参数表填写'
       }
       const reB = getWorkflowNumeric('darcy_friction', 'Re_B')
       if (reB != null && !isNaN(reB) && reB > 0) return null
@@ -5625,7 +6514,7 @@ export default function MainContent({
       const Dn = getWorkflowNumeric('darcy_friction', 'D_n')
       if (Dn == null || isNaN(Dn) || Dn <= 0) return '步骤3：请填写管道内径 D_n'
       const eta = getWorkflowNumeric('darcy_friction', 'eta_1')
-      if (eta == null || isNaN(eta) || eta <= 0) return '步骤3：请填写混合物动力粘度 η₁（Pa·s）'
+      if (eta == null || isNaN(eta) || eta <= 0) return '步骤3：请填写刚度系数 η（Pa·s）'
       return null
     }
     if (subId === 'darcy_friction_step3_lambda') {
@@ -5640,7 +6529,7 @@ export default function MainContent({
     if (subId === 'slurry_friction_loss') {
       const rhoK = getWorkflowNumeric('slurry_friction_loss', 'rho_k')
       if (rhoK == null || isNaN(rhoK) || rhoK <= 0) {
-        return '步骤5：请填写浆体密度 ρ_k（与步骤1浆体密度同义，t/m³）'
+        return '步骤5：请填写浆体密度 ρ_k（与步骤1浆体密度同义，kg/m³）'
       }
       const step5Names: Record<'lambda_coef' | 'V' | 'D', string> = {
         lambda_coef: '达西摩阻系数 λ',
@@ -5697,7 +6586,7 @@ export default function MainContent({
           if (c1 !== undefined && !isNaN(c1)) validParameters.C1v = c1
         }
       } else if (subId === 'darcy_friction_step2_re') {
-        for (const key of ['rho_1', 'V', 'D_n', 'eta_1', 'Re_B'] as const) {
+        for (const key of ['V', 'D_n', 'rho_1', 'eta_1', 'Re_B'] as const) {
           const value = getWorkflowNumeric('darcy_friction', key)
           if (value !== undefined && !isNaN(value)) validParameters[key] = value
         }
@@ -5859,6 +6748,211 @@ export default function MainContent({
       await showAppAlert('计算失败', e.response?.data?.error || '请检查输入参数')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const runPseudoCcaChainStep = async (
+    step: 'rho' | 're' | 'fl' | 'u' | 'ratio',
+    rowIndex: number
+  ) => {
+    if (!formula || formula.id !== 'pseudo_homogeneous_flow_judgment') return
+    const fid = formula.id
+    const rows = pseudoFlowRowsByFormula[fid] ?? PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS
+    const row = rows[rowIndex]
+
+    const chainRow = (): PseudoCcaChainSnapshot =>
+      pseudoCcaChainByFormula[fid]?.[rowIndex] || {}
+
+    const patchChain = (patch: PseudoCcaChainSnapshot) =>
+      setPseudoCcaChainByFormula((prev) => ({
+        ...prev,
+        [fid]: {
+          ...(prev[fid] || {}),
+          [rowIndex]: { ...(prev[fid]?.[rowIndex] || {}), ...patch },
+        },
+      }))
+
+    const rg = parameters['rho_g']
+    const rs = parameters['rho_s']
+    const v = parameters['v']
+    const D = parameters['D']
+    const eta = parameters['eta']
+    const epsMm =
+      parseFeiAuxEpsilonMm(pseudoCcaEpsilonPreset, pseudoCcaEpsilonCustomMm) ??
+      (parameters['epsilon'] != null && !isNaN(parameters['epsilon']!) ? Number(parameters['epsilon']) : null)
+    const Kk = parameters['K_karman']
+    const bet = parameters['beta_ismail']
+
+    const bust = `${step}-${rowIndex}`
+    const fail = async (msg: string) => {
+      await showAppAlert('浆体管道流态判断公式·分步', msg)
+    }
+
+    if (!row) {
+      await fail('无效的粒径档索引')
+      return
+    }
+
+    const c1vStr = normalizeCsvDecimalInput(String(rawInputs['Cv'] ?? ''))
+
+    try {
+      if (step === 'rho') {
+        if (c1vStr === '' || !Number.isFinite(parseFloat(c1vStr))) {
+          await fail(`请先填写 $C_{1V}$（小数 0～1；与「临界流速」相同，可展开「体积浓度——辅助计算」）`)
+          return
+        }
+        if (rg == null || rs == null || isNaN(rg) || isNaN(rs)) {
+          await fail('请在步骤「1 · 计算浆体密度」内填写固体密度 $\\rho_g$、液相密度 $\\rho_s$')
+          return
+        }
+      }
+      const chNow = chainRow()
+      const ovRow = pseudoCcaKnownOverrideByFormula[fid]?.[rowIndex] || {}
+      let paramsPayload: Record<string, unknown> = {}
+
+      if (step === 'rho') {
+        paramsPayload = {
+          rho_g: rg as number,
+          rho_s: rs as number,
+          C1v: parseFloat(c1vStr),
+        }
+      } else if (step === 're') {
+        const rlOv = parsePseudoCcaOptionalNumber(ovRow.rho_l)
+        const rl = rlOv ?? chNow.rho_l
+        if (rl == null || !Number.isFinite(rl)) {
+          await fail('请先对本档执行步骤「1」求 $\\rho_1$，或在步骤「2」中手填已知 $\\rho_1$（kg/m³）')
+          return
+        }
+        if (v == null || D == null || eta == null || isNaN(v) || isNaN(D) || isNaN(eta)) {
+          await fail('请填写断面平均流速 $v$、管道内径 $D_{n}$ 与混合物动力粘度 $\\eta$（Pa·s；步骤「计算雷诺数」）')
+          return
+        }
+        paramsPayload = { v, D, eta, rho_l: rl }
+      } else if (step === 'fl') {
+        const reBOv = parsePseudoCcaOptionalNumber(ovRow.Re_B)
+        const reB = reBOv ?? chNow.Re_B
+        if (reB == null || !Number.isFinite(reB)) {
+          await fail('请先对本档执行步骤「2」求 $\\mathrm{Re}_B$，或在步骤「3」中手填已知 $\\mathrm{Re}_B$')
+          return
+        }
+        const dOv = parsePseudoCcaOptionalNumber(ovRow.D_n)
+        const Duse =
+          dOv != null && Number.isFinite(dOv) && dOv > 0
+            ? dOv
+            : D != null && !isNaN(Number(D)) && Number(D) > 0
+              ? Number(D)
+              : null
+        if (Duse == null) {
+          await fail('请填写管道内径 $D_{n}$（m；可与步骤 2 相同，或在步骤 3 直接填写）')
+          return
+        }
+        const epsSend = epsMm != null && Number.isFinite(epsMm) && epsMm > 0 ? epsMm : 0.053
+        paramsPayload = { Re_B: reB, D: Duse, epsilon: epsSend }
+      } else if (step === 'u') {
+        const flOv = parsePseudoCcaOptionalNumber(ovRow.f_L)
+        const fl = flOv ?? chNow.f_L
+        if (fl == null || !Number.isFinite(fl)) {
+          await fail('请先对本档执行步骤「3」求刘德忠–Fanning $f_L$，或在步骤「4」中手填已知 $f_L$')
+          return
+        }
+        if (v == null || isNaN(v)) {
+          await fail('请先填写断面平均流速 $V$（步骤「2」或本页 $v$ 主栏，与步骤 4 联动）')
+          return
+        }
+        paramsPayload = { v, f_L: fl }
+      } else if (step === 'ratio') {
+        const UOv = parsePseudoCcaOptionalNumber(ovRow.U)
+        const Uv = UOv ?? chNow.U
+        if (Uv == null || !Number.isFinite(Uv)) {
+          await fail('请先对本档执行步骤「4」求摩阻流速 $U$，或在步骤「5」中手填已知 $U$（m/s）')
+          return
+        }
+        const oms = normalizeCsvDecimalInput(row.omega)
+        if (oms === '') {
+          await fail(
+            `请先填写第 ${rowIndex + 1} 档的 $W_i$（似均质中加权平均沉速，m/s）：可手输或在本步展开辅助计算求解，不可用空值代入。`
+          )
+          return
+        }
+        const ow = parseFloat(oms)
+        if (!Number.isFinite(ow) || ow < 0) {
+          await fail(`第 ${rowIndex + 1} 档 $W_i$（m/s）须为非负数`)
+          return
+        }
+        const omegaVal = ow
+        const kStep = parsePseudoCcaOptionalNumber(ovRow.K_karman)
+        const betStep = parsePseudoCcaOptionalNumber(ovRow.beta_ismail)
+        const kSend = kStep ?? (Kk != null && !isNaN(Kk) ? Kk : 0.36)
+        const betSend = betStep ?? (bet != null && !isNaN(bet) ? bet : 1)
+        paramsPayload = {
+          omega_i: omegaVal,
+          friction_velocity_U: Uv,
+          K_karman: kSend,
+          beta_ismail: betSend,
+        }
+      }
+
+      let formulaIdPayload = ''
+      if (step === 'rho') formulaIdPayload = 'pseudo_cca_step_rho_mixture'
+      else if (step === 're') formulaIdPayload = 'pseudo_cca_step_Re_B'
+      else if (step === 'fl') formulaIdPayload = 'pseudo_cca_step_fanning_f_L'
+      else if (step === 'u') formulaIdPayload = 'pseudo_cca_step_friction_velocity_u'
+      else formulaIdPayload = 'pseudo_cca_step_ratio_i'
+
+      setPseudoCcaStepBusyKey(bust)
+      const response = await apiClient.post(
+        `${API_BASE_URL}/calculate`,
+        { formula_id: formulaIdPayload, parameters: paramsPayload },
+        { timeout: API_TIMEOUT }
+      )
+      const data = response.data as CalculationResult
+      if (!data.success) {
+        await fail(data.error || '计算失败')
+        return
+      }
+      const r = data.result
+      const im = (r?.intermediate || {}) as { c_over_ca_i?: number }
+      if (step === 'rho' && r?.rho_l != null) {
+        const rhoNum = Number(r.rho_l)
+        patchChain({ rho_l: rhoNum })
+        setPseudoCcaKnownOverrideByFormula((prev) => ({
+          ...prev,
+          [fid]: {
+            ...(prev[fid] || {}),
+            [rowIndex]: { ...(prev[fid]?.[rowIndex] || {}), rho_l: String(rhoNum) },
+          },
+        }))
+      }
+      if (step === 're' && r?.Re_B != null) {
+        patchChain({ Re_B: Number(r.Re_B) })
+        const rlUsed = parsePseudoCcaOptionalNumber(ovRow.rho_l) ?? chNow.rho_l
+        if (rlUsed != null && Number.isFinite(rlUsed)) patchChain({ rho_l: rlUsed })
+      }
+      if (step === 'fl' && r?.f_L != null) {
+        const reBPatch = parsePseudoCcaOptionalNumber(ovRow.Re_B) ?? chNow.Re_B
+        patchChain({
+          f_L: Number(r.f_L),
+          ...(reBPatch != null && Number.isFinite(reBPatch) ? { Re_B: reBPatch } : {}),
+        })
+      }
+      if (step === 'u' && r?.friction_velocity_U != null) {
+        const flPatch = parsePseudoCcaOptionalNumber(ovRow.f_L) ?? chNow.f_L
+        patchChain({
+          U: Number(r.friction_velocity_U),
+          ...(flPatch != null && Number.isFinite(flPatch) ? { f_L: flPatch } : {}),
+        })
+      }
+      if (step === 'ratio' && im.c_over_ca_i != null && !isNaN(Number(im.c_over_ca_i))) {
+        const uPatch = parsePseudoCcaOptionalNumber(ovRow.U) ?? chNow.U
+        patchChain({
+          c_over_ca_i: Number(im.c_over_ca_i),
+          ...(uPatch != null && Number.isFinite(uPatch) ? { U: uPatch } : {}),
+        })
+      }
+    } catch (e: any) {
+      await fail(e.response?.data?.error || String(e.message || '网络或计算异常'))
+    } finally {
+      setPseudoCcaStepBusyKey(null)
     }
   }
 
@@ -7347,7 +8441,7 @@ export default function MainContent({
     if (Number(etaj) <= 0) return 'η_j 须大于 0'
     if (etab == null || isNaN(etab)) return '步骤3 请填写泵效率 η_b'
     if (Number(etab) <= 0) return 'η_b 须大于 0'
-    if (rho == null || isNaN(rho) || Number(rho) <= 0) return '步骤3 需要有效的 ρ_k（t/m³）'
+    if (rho == null || isNaN(rho) || Number(rho) <= 0) return '步骤3 需要有效的 ρ_k（kg/m³）'
     if (gVal == null || isNaN(gVal) || Number(gVal) <= 0) return '步骤3 需要有效的 g'
     return null
   }
@@ -7440,14 +8534,63 @@ export default function MainContent({
       return validatePositiveDisplacementStep(2)
     }
 
+    /** B.C.克诺罗兹：步骤1 四项 W、C_W、ρ_g、ρ_s 均须为有效数值 */
+    if (formula.id === 'kronodze_pressure') {
+      const w = parameters['W']
+      const rg = parameters['rho_g']
+      const rs = parameters['rho_s']
+      const cw = parameters['C_w']
+      if (w == null || isNaN(w)) return '步骤1：请填写干固体质量流量 W（kg/h）'
+      if (w <= 0) return '步骤1：W 须大于 0'
+      if (rg == null || isNaN(rg) || rg <= 0) return '步骤1：请填写固体密度 ρ_g（kg/m³）'
+      if (rs == null || isNaN(rs) || rs <= 0) return '步骤1：请填写液相密度 ρ_s（kg/m³，清水常用 1000）'
+      if (cw == null || isNaN(cw)) return '步骤1：请填写浆体重量浓度 C_W（如 0.42）'
+      if (cw <= 0 || cw >= 1) {
+        return '步骤1：C_W 须在 0 与 1 之间且不取端点（须含固、液两相），如 0.42'
+      }
+    }
+
+    if (formula.id === 'pseudo_homogeneous_flow_judgment') {
+      const rows = pseudoFlowRowsByFormula[formula.id] ?? PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS
+      const pf = parsePseudoFlowFractionsFromRows(rows)
+      if (pf.error) return pf.error
+      const cmap = pseudoCcaChainByFormula[formula.id] || {}
+      const built = buildPseudoSummarizeFractionsFromChain(rows, cmap)
+      if (built.error) return built.error
+      return null
+    }
+
     // 浆体消能：与步骤2相同规则（Q + K_QL 或 Q + λ_d/L_s/d）
     if (isSlurryDissipationFormula) {
       return validateSlurryDissipationStep(2)
+    }
+
+    if (formula.id === 'fei_xiangjun') {
+      const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+      const eta1 = parseFloat(norm(feiLambdaAuxEta1))
+      if (!Number.isFinite(eta1) || eta1 <= 0) {
+        return '请在「达西摩阻系数——辅助计算」中填写有效的混合物动力粘度 η₁（Pa·s）'
+      }
+      const epsMm = parseFeiAuxEpsilonMm(feiLambdaAuxEpsilonPreset, feiLambdaAuxEpsilonCustom)
+      if (epsMm == null || epsMm <= 0) {
+        return '请在「达西摩阻系数——辅助计算」中填写有效的管壁绝对粗糙度 ε（mm）'
+      }
     }
     
     const paramsToCheck = formula.parameters
 
     for (const param of paramsToCheck) {
+      if (formula.id === 'fei_xiangjun') {
+        if (
+          param.name === 'lambda_coef' ||
+          param.name === 'eta_1' ||
+          param.name === 'epsilon' ||
+          param.name === 'fei_iterate_lambda'
+        ) {
+          continue
+        }
+      }
+
       const value = parameters[param.name]
       
       // 如果参数没有默认值且未填写
@@ -7465,8 +8608,7 @@ export default function MainContent({
         if (param.name === 'omega' && formula.id === 'liu_dezhong' && value === 0) {
           return '似均质中加权平均沉速 ω 不能为 0'
         }
-        // lambda_coef必须大于0（费祥俊公式）
-        if (param.name === 'lambda_coef' && value <= 0) {
+        if (param.name === 'lambda_coef' && formula.id !== 'fei_xiangjun' && value <= 0) {
           return 'λ系数必须大于0'
         }
         // Cv体积浓度应该在0-1之间
@@ -7485,15 +8627,18 @@ export default function MainContent({
 
   const validateKronodzeStep = (step: 1 | 2): string | null => {
     if (!formula || formula.id !== 'kronodze_pressure') return null
-    const G = parameters['G']
     const W = parameters['W']
     const rhoG = parameters['rho_g']
-    if (G == null || isNaN(G)) return '步骤1 需要填写 G（矿浆中水重）'
-    if (W == null || isNaN(W)) return '步骤1 需要填写 W（干尾矿重量）'
-    if (rhoG == null || isNaN(rhoG)) return '步骤1 需要填写 ρg（固体密度）'
-    if (W <= 0) return '干尾矿重量 W 必须大于 0'
-    if (G <= 0) return '矿浆中水重 G 必须大于 0'
-    if (rhoG <= 0) return '固体密度 ρg 必须大于 0'
+    const rhoS = parameters['rho_s']
+    const cw = parameters['C_w']
+    if (W == null || isNaN(W)) return '步骤1 需要填写 W（干固体质量流量，kg/h）'
+    if (rhoG == null || isNaN(rhoG)) return '步骤1 需要填写 ρ_g（固体密度）'
+    if (rhoS == null || isNaN(rhoS)) return '步骤1 需要填写 ρ_s（液相密度，清水常用 1000 kg/m³）'
+    if (W <= 0) return '干固体质量流量 W 必须大于 0'
+    if (rhoG <= 0) return '固体密度 ρ_g 必须大于 0'
+    if (rhoS <= 0) return '液相密度 ρ_s 必须大于 0'
+    if (cw == null || isNaN(cw)) return '步骤1 需要填写 C_W（浆体重量浓度）'
+    if (cw <= 0 || cw >= 1) return '步骤1：C_W 须在 0 与 1 之间且不取端点（须含固、液两相）'
 
     if (step === 2) {
       const dp = parameters['dp']
@@ -7593,12 +8738,12 @@ export default function MainContent({
     }
 
     if (step === 1) {
-      // 步骤1：只算矿浆流量 Qk，不传 dp/beta 以防后端连算步骤2、3
+      // 步骤1：只算浆体体积流量 Q_K（m³/h），不传 dp/beta 以防后端连算步骤2、3
       if (!formula) return
       setLoading(true)
       try {
         const step1Params: Record<string, number> = {}
-        for (const key of ['K', 'G', 'W', 'rho_g']) {
+        for (const key of ['W', 'rho_g', 'rho_s', 'C_w'] as const) {
           const v = parameters[key]
           if (v !== undefined && v !== null && !isNaN(v)) step1Params[key] = v
         }
@@ -7876,17 +9021,49 @@ export default function MainContent({
       setLoading(true)
     }
     try {
+      if (formula.id === 'pseudo_homogeneous_flow_judgment') {
+        const rows = pseudoFlowRowsByFormula[formula.id] ?? PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS
+        const cmap = pseudoCcaChainByFormula[formula.id] || {}
+        const built = buildPseudoSummarizeFractionsFromChain(rows, cmap)
+        if (built.error || !built.fractions) {
+          updateResult({ success: false, error: built.error || '数据不完整' })
+          return null
+        }
+        const response = await apiClient.post(
+          `${API_BASE_URL}/calculate`,
+          {
+            formula_id: 'pseudo_homogeneous_summarize_ratios',
+            parameters: { particle_fractions: built.fractions },
+            locked_vc: null,
+          },
+          { timeout: API_TIMEOUT }
+        )
+        const calcPayload = response.data as CalculationResult
+        updateResult(calcPayload)
+        setFormulaResults((prev) => ({ ...prev, pseudo_homogeneous_summarize_ratios: calcPayload }))
+        return calcPayload
+      }
+
       // 过滤掉undefined值，只发送有效参数
-      const validParameters: Record<string, number> = {}
+      const parametersPayload: Record<string, unknown> = {}
       for (const [key, value] of Object.entries(parameters)) {
         if (value !== undefined && value !== null && !isNaN(value)) {
-          validParameters[key] = value as number
+          parametersPayload[key] = value as number
         }
       }
-      
+
+      if (formula.id === 'fei_xiangjun') {
+        const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+        const eta1 = parseFloat(norm(feiLambdaAuxEta1))
+        const epsMm = parseFeiAuxEpsilonMm(feiLambdaAuxEpsilonPreset, feiLambdaAuxEpsilonCustom)
+        if (Number.isFinite(eta1) && eta1 > 0) parametersPayload.eta_1 = eta1
+        if (epsMm != null && epsMm > 0) parametersPayload.epsilon = epsMm
+        parametersPayload.fei_iterate_lambda = 1
+      }
+
       const response = await apiClient.post(`${API_BASE_URL}/calculate`, {
         formula_id: effectiveFormulaId,
-        parameters: validParameters,
+        parameters: parametersPayload,
         // B.C.克诺罗兹法不参与锁定反推
         locked_vc: formula.id === 'kronodze_pressure' ? null : lockedVc
       }, {
@@ -7955,6 +9132,16 @@ export default function MainContent({
         if (value !== undefined && value !== null && !isNaN(value)) {
           validParameters[key] = value as number
         }
+      }
+    }
+
+    const exportParameters: Record<string, unknown> = { ...validParameters }
+    if (formula.id === 'pseudo_homogeneous_flow_judgment') {
+      const pf = parsePseudoFlowFractionsFromRows(
+        pseudoFlowRowsByFormula[formula.id] ?? PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS
+      )
+      if (!pf.error) {
+        exportParameters.particle_fractions = pf.fractions
       }
     }
 
@@ -8038,7 +9225,7 @@ export default function MainContent({
     const payload = {
       formula_id: formula.id === 'slurry_dissipation_orifice' ? 'slurry_dissipation_orifice' : effectiveFormulaId,
       formula_info: { ...formula, id: formula.id === 'slurry_dissipation_orifice' ? 'slurry_dissipation_orifice' : effectiveFormulaId },
-      parameters: validParameters,
+      parameters: exportParameters,
       result: exportResult,
     }
 
@@ -8584,8 +9771,63 @@ export default function MainContent({
           <h2 className={`text-xl font-semibold mb-3 ${
             darkMode ? 'text-gray-100' : 'text-gray-900'
           }`}>
-            {(formula?.id === 'slurry_accel_energy' ? '浆体加速流' : formula.name)}：
+            {(formula?.id === 'slurry_accel_energy'
+              ? '浆体加速流'
+              : formula?.id === 'pseudo_homogeneous_flow_judgment'
+                ? language === 'en'
+                  ? 'Slurry pipeline regime judgment formulas'
+                  : '浆体管道流态判断公式'
+                : formula.name)}：
           </h2>
+
+          {formula?.id === 'pseudo_homogeneous_flow_judgment' ? (
+            <div className="mb-6 space-y-4">
+              <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                {language === 'en'
+                  ? renderDescriptionWithMath(
+                      'This formula classifies slurry pipeline flow regimes from concentration distributions at different heights in the pipe. First evaluate $R=C/C_A$ together with $R_{d95}$, the concentration ratio at particle size $d_{95}$; compare these against thresholds to assign pseudo-homogeneous, heterogeneous, or composite flow. Here $C$ is volumetric concentration at $0.92D$ above the invert, $C_A$ at $0.5D$, $R$ reflects how uniformly concentration is distributed over the cross-section, and $R_{d95}$ reflects suspension of the representative coarse fraction ($d_{95}$) over the cross-section.'
+                    )
+                  : renderDescriptionWithMath(
+                      '该公式用于根据管道内不同高度处的浆体浓度分布特征，对浆体管道流态进行分类判定。计算时先求取浓度比值 $R = C/C_A$，并结合粒径 $d_{95}$ 对应的浓度比值 $R_{d95}$，将计算结果与给定阈值进行比较，从而判断浆体属于似均质流态、非均质流态或复合流态。其中，$C$ 为距管内底 $0.92D$ 处的体积浓度，$C_A$ 为距管内底 $0.5D$ 处的体积浓度，$R$ 反映整体浆体在管道断面上的浓度分布均匀程度，$R_{d95}$ 反映粗颗粒代表粒径在管道断面上的悬浮分布状态。'
+                    )}
+              </p>
+              <div className={`overflow-x-auto pb-1 flex justify-center ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                <BlockMath math="\displaystyle R=\frac{C}{C_A},\qquad R_{d95}=\left(\frac{C}{C_A}\right)_{d95}" />
+              </div>
+              <div
+                className={`overflow-x-auto rounded-xl border px-3 py-4 sm:px-4 ${
+                  darkMode ? 'border-gray-500 bg-gray-700/35' : 'border-gray-200 bg-gray-50'
+                }`}
+              >
+                <div className={`text-sm font-semibold mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  {language === 'en' ? 'Flow regime classification' : '流态判定'}
+                </div>
+                <div className={`${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                  {language === 'en' ? (
+                    <BlockMath
+                      math={
+                        '\\text{Regime}=\\begin{cases}' +
+                        '\\text{Pseudo-homogeneous}, & R \\geqslant 0.8 \\ \\text{and} \\ R_{d95} \\geqslant 0.5 \\\\' +
+                        '\\text{Heterogeneous}, & R \\leqslant 0.1 \\\\' +
+                        '\\text{Composite}, & 0.1 < R < 0.8 \\ \\text{and} \\ R_{d95} > 0.5' +
+                        '\\end{cases}'
+                      }
+                    />
+                  ) : (
+                    <BlockMath
+                      math={
+                        '\\text{流态}=\\begin{cases}' +
+                        '\\text{似均质流态}, & R \\geqslant 0.8 \\ \\text{且} \\ R_{d95} \\geqslant 0.5 \\\\' +
+                        '\\text{非均质流态}, & R \\leqslant 0.1 \\\\' +
+                        '\\text{复合流态}, & 0.1 < R < 0.8 \\ \\text{且} \\ R_{d95} > 0.5' +
+                        '\\end{cases}'
+                      }
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
           
           {isPositiveDisplacementPumpFormula ? (
             <>
@@ -8612,47 +9854,40 @@ export default function MainContent({
                   容积式泵出口总扬程采用压力形式。已知浆体管道输送压力 <InlineMath math="P_k" />（kPa）与泵的压力富余系数 <InlineMath math="K_f" />，由下式得到出口侧总扬程{' '}
                   <InlineMath math="P_b" />（kPa）。
                 </p>
-                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <FormulaFrame darkMode={darkMode}>
                   <BlockMath math="P_b = \frac{P_k}{K_f}" />
-                </div>
+                </FormulaFrame>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div className="relative min-w-0">
                     <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                       {renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, 'P_k'))}
                     </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        autoComplete="off"
-                        spellCheck={false}
-                        value={
-                          rawInputs['P_k'] ??
-                          (parameters['P_k'] != null && !isNaN(parameters['P_k']!) ? String(parameters['P_k']) : '')
-                        }
-                        onChange={(e) => handleParameterChange('P_k', e.target.value)}
-                        onFocus={() => {
-                          if (totalHeadPkSuggestionItems.length > 0) setPkSuggestOpen(true)
-                        }}
-                        onBlur={() => {
-                          handleParameterBlur('P_k')
-                          window.setTimeout(() => setPkSuggestOpen(false), 200)
-                        }}
-                        placeholder={paramPlaceholderFromFormula(
-                          formula.parameters,
-                          'P_k',
-                          POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH
-                        )}
-                        className={`flex-1 min-w-0 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                          darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                        }`}
-                      />
-                      {paramUnitDisplaySuffix(formula.parameters, 'P_k') !== '' && (
-                        <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {paramUnitDisplaySuffix(formula.parameters, 'P_k')}
-                        </span>
+                    <InputWithTrailingUnit
+                      darkMode={darkMode}
+                      className="relative z-10"
+                      value={
+                        rawInputs['P_k'] ??
+                        (parameters['P_k'] != null && !isNaN(parameters['P_k']!) ? String(parameters['P_k']) : '')
+                      }
+                      onChange={(e) => handleParameterChange('P_k', e.target.value)}
+                      onFocus={() => {
+                        if (totalHeadPkSuggestionItems.length > 0) setPkSuggestOpen(true)
+                      }}
+                      onBlur={() => {
+                        handleParameterBlur('P_k')
+                        window.setTimeout(() => setPkSuggestOpen(false), 200)
+                      }}
+                      placeholder={paramPlaceholderFromFormula(
+                        formula.parameters,
+                        'P_k',
+                        POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH
                       )}
-                    </div>
+                      unit={
+                        paramUnitDisplaySuffix(formula.parameters, 'P_k') !== ''
+                          ? paramUnitDisplaySuffix(formula.parameters, 'P_k')
+                          : null
+                      }
+                    />
                     {pkSuggestOpen && totalHeadPkSuggestionItems.length > 0 && (
                       <div
                         role="listbox"
@@ -8710,28 +9945,20 @@ export default function MainContent({
                     <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                       {renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, 'K_f'))}
                     </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        autoComplete="off"
-                        spellCheck={false}
-                        value={
-                          rawInputs['K_f'] ??
-                          (parameters['K_f'] != null && !isNaN(parameters['K_f']!) ? String(parameters['K_f']) : '')
-                        }
-                        onChange={(e) => handleParameterChange('K_f', e.target.value)}
-                        onBlur={() => handleParameterBlur('K_f')}
-                        placeholder={paramPlaceholderFromFormula(
-                          formula.parameters,
-                          'K_f',
-                          POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH
-                        )}
-                        className={`flex-1 min-w-0 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                          darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                        }`}
-                      />
-                    </div>
+                    <InputWithTrailingUnit
+                      darkMode={darkMode}
+                      value={
+                        rawInputs['K_f'] ??
+                        (parameters['K_f'] != null && !isNaN(parameters['K_f']!) ? String(parameters['K_f']) : '')
+                      }
+                      onChange={(e) => handleParameterChange('K_f', e.target.value)}
+                      onBlur={() => handleParameterBlur('K_f')}
+                      placeholder={paramPlaceholderFromFormula(
+                        formula.parameters,
+                        'K_f',
+                        POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH
+                      )}
+                    />
                     {parameters['K_f'] != null &&
                       !isNaN(parameters['K_f'] as number) &&
                       (Number(parameters['K_f']) < 0.75 || Number(parameters['K_f']) > 0.95) && (
@@ -8788,14 +10015,11 @@ export default function MainContent({
                   由出口总扬程压力 <InlineMath math="P_b" />（kPa）、浆体计算流量 <InlineMath math="Q_k" />（m³/s）、电机功率富余系数 <InlineMath math="K_1" />、泵容积效率{' '}
                   <InlineMath math="\eta_v" /> 与总机械效率 <InlineMath math="\eta_c" />，按下式估算驱动容积式泵所需的电机功率 <InlineMath math="N" />（kW）。
                 </p>
-                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <FormulaFrame darkMode={darkMode}>
                   <BlockMath math="N=\frac{K_1\,Q_k\,P_b}{\eta_v\,\eta_c}" />
-                </div>
+                </FormulaFrame>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   {(() => {
-                    const inputCls = `flex-1 min-w-0 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                      darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                    }`
                     const field = (name: 'P_b' | 'Q_k' | 'K_1' | 'eta_v' | 'eta_c', colSpan2?: boolean) => {
                       const unit = paramUnitDisplaySuffix(formula.parameters, name)
                       return (
@@ -8805,31 +10029,21 @@ export default function MainContent({
                           >
                             {renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, name))}
                           </label>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              autoComplete="off"
-                              spellCheck={false}
-                              value={
-                                rawInputs[name] ??
-                                (parameters[name] != null && !isNaN(parameters[name]!) ? String(parameters[name]) : '')
-                              }
-                              onChange={(e) => handleParameterChange(name, e.target.value)}
-                              onBlur={() => handleParameterBlur(name)}
-                              placeholder={paramPlaceholderFromFormula(
-                                formula.parameters,
-                                name,
-                                POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH
-                              )}
-                              className={inputCls}
-                            />
-                            {unit !== '' && (
-                              <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                {unit}
-                              </span>
+                          <InputWithTrailingUnit
+                            darkMode={darkMode}
+                            value={
+                              rawInputs[name] ??
+                              (parameters[name] != null && !isNaN(parameters[name]!) ? String(parameters[name]) : '')
+                            }
+                            onChange={(e) => handleParameterChange(name, e.target.value)}
+                            onBlur={() => handleParameterBlur(name)}
+                            placeholder={paramPlaceholderFromFormula(
+                              formula.parameters,
+                              name,
+                              POSITIVE_DISPLACEMENT_PARAM_PLACEHOLDER_ZH
                             )}
-                          </div>
+                            unit={unit !== '' ? unit : null}
+                          />
                         </div>
                       )
                     }
@@ -8918,40 +10132,37 @@ export default function MainContent({
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.step1)}
                 </p>
-                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <FormulaFrame darkMode={darkMode}>
                   <BlockMath math="\rho_k = \frac{1}{\frac{C_w}{\rho_g}+\frac{1-C_w}{\rho_s}}" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                </FormulaFrame>
+                <ParameterFrame darkMode={darkMode} showTitle={false} className="mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {SLURRY_FRICTION_WF_STEP1_FIELDS.map(({ name, label, unit, placeholder }) => (
                     <div key={name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                         {renderDescriptionWithMath(label)}
                       </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          spellCheck={false}
-                          placeholder={placeholder}
-                          value={
-                            formulaRawInputs['density_mixing']?.[name] ??
-                            (formulaParameters['density_mixing']?.[name] != null &&
-                            !isNaN(formulaParameters['density_mixing']![name]!)
-                              ? String(formulaParameters['density_mixing']![name])
-                              : '')
-                          }
-                          onChange={(e) => handleSubParameterChange('density_mixing', name, e.target.value)}
-                          onBlur={() => handleSubParameterBlur('density_mixing', name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                            darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                          }`}
-                        />
-                        <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
-                      </div>
+                      <InputWithTrailingUnit
+                        darkMode={darkMode}
+                        value={
+                          formulaRawInputs['density_mixing']?.[name] ??
+                          (formulaParameters['density_mixing']?.[name] != null &&
+                          !isNaN(formulaParameters['density_mixing']![name]!)
+                            ? String(formulaParameters['density_mixing']![name])
+                            : '')
+                        }
+                        onChange={(e) => handleSubParameterChange('density_mixing', name, e.target.value)}
+                        onBlur={() => handleSubParameterBlur('density_mixing', name)}
+                        placeholder={placeholder}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        spellCheck={false}
+                        unit={unit}
+                      />
                     </div>
                   ))}
                 </div>
+                </ParameterFrame>
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
                   <button
                     type="button"
@@ -8979,7 +10190,7 @@ export default function MainContent({
                       {renderPrimaryResultCallout({
                         nameZh: '浆体密度',
                         symbolMath: '\\rho_k',
-                        unitZh: 't/m³（吨每立方米）',
+                        unitZh: 'kg/m³',
                         value:
                           r?.rho_k != null ? (
                             <span className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
@@ -9007,10 +10218,11 @@ export default function MainContent({
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.darcy_rho1)}
                 </p>
-                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <FormulaFrame darkMode={darkMode}>
                   <BlockMath math="\rho_1 = \rho_g \cdot C_{1V} + (1 - C_{1V}) \cdot \rho_k" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                </FormulaFrame>
+                <ParameterFrame darkMode={darkMode} showTitle={false} className="mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {SLURRY_FRICTION_WF_DARCY_RHO1_FIELDS.map(({ name, label, unit, placeholder }) => {
                     const displayVal =
                       formulaRawInputs['darcy_friction']?.[name] ??
@@ -9030,35 +10242,27 @@ export default function MainContent({
                             onInputChange={(v) => handleSubParameterChange('darcy_friction', name, v)}
                             onInputBlur={() => handleSubParameterBlur('darcy_friction', name)}
                             placeholder={placeholder}
-                            unit={
-                              <span className={`self-center text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                {unit}
-                              </span>
-                            }
+                            unitText={unit}
                             onApplyCvFromRatio={(s) => handleSubParameterChange('darcy_friction', name, s)}
                           />
                         ) : (
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              autoComplete="off"
-                              spellCheck={false}
-                              placeholder={placeholder}
-                              value={displayVal}
-                              onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
-                              onBlur={() => handleSubParameterBlur('darcy_friction', name)}
-                              className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                                darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                              }`}
-                            />
-                            <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
-                          </div>
+                          <InputWithTrailingUnit
+                            darkMode={darkMode}
+                            placeholder={placeholder}
+                            value={displayVal}
+                            onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
+                            onBlur={() => handleSubParameterBlur('darcy_friction', name)}
+                            inputMode="decimal"
+                            autoComplete="off"
+                            spellCheck={false}
+                            unit={unit}
+                          />
                         )}
                       </div>
                     )
                   })}
                 </div>
+                </ParameterFrame>
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
                   <button
                     type="button"
@@ -9086,16 +10290,16 @@ export default function MainContent({
                   const tS = im?.term_1minusC1v_rho_k ?? im?.term_1minusC1v_rho_s
                   const mid: [string, string][] = []
                   if (tL != null && !isNaN(Number(tL))) {
-                    mid.push(['term_rho_g_C1v', `${fmtDissipation(Number(tL))} t/m³`])
+                    mid.push(['term_rho_g_C1v', `${fmtDissipation(Number(tL))} kg/m³`])
                   }
                   if (tS != null && !isNaN(Number(tS))) {
-                    mid.push(['term_1minusC1v_rho_k', `${fmtDissipation(Number(tS))} t/m³`])
+                    mid.push(['term_1minusC1v_rho_k', `${fmtDissipation(Number(tS))} kg/m³`])
                   }
                   return (
                     <>
                       {renderPrimaryResultCallout({
                         titleRow: renderDescriptionWithMath('混合物密度 $\\rho_1$：'),
-                        unitZh: 't/m³（吨每立方米）',
+                        unitZh: 'kg/m³',
                         value:
                           r?.rho_1 != null ? (
                             <span className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
@@ -9113,48 +10317,42 @@ export default function MainContent({
 
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  {renderDescriptionWithMath('3. 雷诺数 ($Re_B$)')}
+                  {renderDescriptionWithMath('3. 计算雷诺数')}
                 </div>
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.darcy_re)}
                 </p>
-                <div className={`mb-3 space-y-2 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <BlockMath math="Re_B = \frac{V \cdot D_n \cdot 1000 \rho_1}{\eta_1}" />
-                  <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <InlineMath math="\rho_1" /> 输入单位为 t/m³，计算时自动换算为 kg/m³。
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <FormulaFrame darkMode={darkMode}>
+                  <BlockMath math="Re_B = \frac{V \cdot D_n \cdot \rho_1}{\eta}" />
+                </FormulaFrame>
+                <ParameterFrame darkMode={darkMode} showTitle={false} className="mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {SLURRY_FRICTION_WF_DARCY_RE_FIELDS.map(({ name, label, unit, placeholder }) => (
                     <div key={name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                         {renderDescriptionWithMath(label)}
                       </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          spellCheck={false}
-                          placeholder={placeholder}
-                          value={
-                            formulaRawInputs['darcy_friction']?.[name] ??
-                            (formulaParameters['darcy_friction']?.[name] != null &&
-                            !isNaN(formulaParameters['darcy_friction']![name]!)
-                              ? String(formulaParameters['darcy_friction']![name])
-                              : '')
-                          }
-                          onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
-                          onBlur={() => handleSubParameterBlur('darcy_friction', name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                            darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                          }`}
-                        />
-                        <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
-                      </div>
+                      <InputWithTrailingUnit
+                        darkMode={darkMode}
+                        placeholder={placeholder}
+                        value={
+                          formulaRawInputs['darcy_friction']?.[name] ??
+                          (formulaParameters['darcy_friction']?.[name] != null &&
+                          !isNaN(formulaParameters['darcy_friction']![name]!)
+                            ? String(formulaParameters['darcy_friction']![name])
+                            : '')
+                        }
+                        onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
+                        onBlur={() => handleSubParameterBlur('darcy_friction', name)}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        spellCheck={false}
+                        unit={unit}
+                      />
                     </div>
                   ))}
                 </div>
+                </ParameterFrame>
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
                   <button
                     type="button"
@@ -9190,7 +10388,7 @@ export default function MainContent({
                           : '通常为湍流'
                   const mid: [string, string][] = []
                   if (r?.rho_1 != null && !isNaN(Number(r.rho_1))) {
-                    mid.push(['mixture_rho_1', `${fmtDissipation(Number(r.rho_1))} t/m³`])
+                    mid.push(['mixture_rho_1', `${fmtDissipation(Number(r.rho_1))} kg/m³`])
                   }
                   if (rhoKg != null && !isNaN(Number(rhoKg))) {
                     mid.push(['rho_1_kg_m3', `${fmtDissipation(Number(rhoKg))} kg/m³`])
@@ -9243,13 +10441,21 @@ export default function MainContent({
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.darcy_lambda)}
                 </p>
-                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <FormulaFrame darkMode={darkMode}>
                   <BlockMath math="\lambda = \frac{1.33036}{\left[\ln\left(\frac{\varepsilon}{3.7 D_n} + \frac{5.7385}{Re_B^{0.9}}\right)\right]^2}" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                </FormulaFrame>
+                <p className={`text-xs leading-relaxed mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {language === 'en'
+                    ? 'Note: enter wall roughness ε in mm below; the program converts to SI metres (ε/1000) for use with D_n in m in the equation above.'
+                    : '说明：下方管壁绝对粗糙度 ε 请以 mm 为单位输入；程序按 ε/1000 换算为 m 后与管内径 D_n（m）配套代入上式。'}
+                </p>
+                <ParameterFrame darkMode={darkMode} showTitle={false} className="mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {SLURRY_FRICTION_WF_DARCY_LAMBDA_FIELDS.map(({ name, label, unit, placeholder }) => {
                     if (name === 'epsilon') {
-                      const epsPresetKey = formulaRawInputs['darcy_friction']?.['epsilon_preset'] ?? DEFAULT_SLURRY_EPSILON_PRESET
+                      const epsPresetKey = normalizeSlurryEpsilonPresetKey(
+                        formulaRawInputs['darcy_friction']?.['epsilon_preset']
+                      )
                       const epsilonRaw =
                         formulaRawInputs['darcy_friction']?.['epsilon'] ??
                         (formulaParameters['darcy_friction']?.['epsilon'] != null &&
@@ -9261,59 +10467,31 @@ export default function MainContent({
                           <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                             {renderDescriptionWithMath(label)}
                           </label>
-                          <div className={`grid grid-cols-1 ${epsPresetKey === 'custom' ? 'md:grid-cols-2' : ''} gap-3`}>
-                            <div className="min-w-0">
-                              <div className="flex items-center space-x-2">
-                                <div className="flex-1">
-                                  <SlurryEpsilonPresetMenu
-                                    darkMode={darkMode}
-                                    presetKey={epsPresetKey}
-                                    onPick={(key) => {
-                                      if (key === 'custom') {
-                                        setFormulaRawInputs((prev) => ({
-                                          ...prev,
-                                          darcy_friction: { ...(prev.darcy_friction || {}), epsilon_preset: 'custom' }
-                                        }))
-                                        return
-                                      }
-                                      const n = SLURRY_EPSILON_PRESET_VALUES[key]
-                                      if (n != null) {
-                                        setFormulaParameters((prev) => ({
-                                          ...prev,
-                                          darcy_friction: { ...(prev.darcy_friction || {}), epsilon: n }
-                                        }))
-                                        setFormulaRawInputs((prev) => ({
-                                          ...prev,
-                                          darcy_friction: { ...(prev.darcy_friction || {}), epsilon_preset: key, epsilon: String(n) }
-                                        }))
-                                      }
-                                    }}
-                                  />
-                                </div>
-                                <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
-                              </div>
-                            </div>
-                            {epsPresetKey === 'custom' && (
-                              <div className="min-w-0">
-                                <div className="flex items-center space-x-2">
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    autoComplete="off"
-                                    spellCheck={false}
-                                    placeholder={placeholder}
-                                    value={epsilonRaw}
-                                    onChange={(e) => handleSubParameterChange('darcy_friction', 'epsilon', e.target.value)}
-                                    onBlur={() => handleSubParameterBlur('darcy_friction', 'epsilon')}
-                                    className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                                      darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                                    }`}
-                                  />
-                                  <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <SlurryEpsilonCombinedRow
+                            darkMode={darkMode}
+                            language={language}
+                            presetKey={epsPresetKey}
+                            valueMm={epsilonRaw}
+                            onChange={(preset, mm) => {
+                              setFormulaRawInputs((prev) => ({
+                                ...prev,
+                                darcy_friction: {
+                                  ...(prev.darcy_friction || {}),
+                                  epsilon_preset: preset,
+                                  epsilon: mm,
+                                },
+                              }))
+                              const norm = (s: string) => s.replace(/，/g, ',').replace(/,/g, '.').trim()
+                              const parsed = parseFloat(norm(mm))
+                              if (Number.isFinite(parsed) && parsed > 0) {
+                                setFormulaParameters((prev) => ({
+                                  ...prev,
+                                  darcy_friction: { ...(prev.darcy_friction || {}), epsilon: parsed },
+                                }))
+                              }
+                            }}
+                            onBlur={() => handleSubParameterBlur('darcy_friction', 'epsilon')}
+                          />
                         </div>
                       )
                     }
@@ -9322,32 +10500,28 @@ export default function MainContent({
                         <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                           {renderDescriptionWithMath(label)}
                         </label>
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            autoComplete="off"
-                            spellCheck={false}
-                            placeholder={placeholder}
-                            value={
-                              formulaRawInputs['darcy_friction']?.[name] ??
-                              (formulaParameters['darcy_friction']?.[name] != null &&
-                              !isNaN(formulaParameters['darcy_friction']![name]!)
-                                ? String(formulaParameters['darcy_friction']![name])
-                                : '')
-                            }
-                            onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
-                            onBlur={() => handleSubParameterBlur('darcy_friction', name)}
-                            className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                              darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                            }`}
-                          />
-                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
-                        </div>
+                        <InputWithTrailingUnit
+                          darkMode={darkMode}
+                          placeholder={placeholder}
+                          value={
+                            formulaRawInputs['darcy_friction']?.[name] ??
+                            (formulaParameters['darcy_friction']?.[name] != null &&
+                            !isNaN(formulaParameters['darcy_friction']![name]!)
+                              ? String(formulaParameters['darcy_friction']![name])
+                              : '')
+                          }
+                          onChange={(e) => handleSubParameterChange('darcy_friction', name, e.target.value)}
+                          onBlur={() => handleSubParameterBlur('darcy_friction', name)}
+                          inputMode="decimal"
+                          autoComplete="off"
+                          spellCheck={false}
+                          unit={unit}
+                        />
                       </div>
                     )
                   })}
                 </div>
+                </ParameterFrame>
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
                   <button
                     type="button"
@@ -9419,44 +10593,41 @@ export default function MainContent({
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   {renderDescriptionWithMath(SLURRY_FRICTION_WF_STEP_INTROS.step5_ik)}
                 </p>
-                <div className={`mb-3 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <FormulaFrame darkMode={darkMode}>
                   <BlockMath math="i_k = \lambda \cdot \frac{V^2 \rho_k}{2 g D \rho_s}" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                </FormulaFrame>
+                <ParameterFrame darkMode={darkMode} showTitle={false} className="mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {SLURRY_FRICTION_WF_STEP3_FIELDS.map(({ name, label, unit, placeholder }) => (
                     <div key={name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                         {renderDescriptionWithMath(label)}
                       </label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          spellCheck={false}
-                          placeholder={placeholder}
-                          value={
-                            formulaRawInputs['slurry_friction_loss']?.[name] ??
-                            (formulaParameters['slurry_friction_loss']?.[name] != null &&
-                            !isNaN(formulaParameters['slurry_friction_loss']![name]!)
-                              ? String(formulaParameters['slurry_friction_loss']![name])
-                              : name === 'rho_s'
-                                ? '1'
-                              : name === 'g'
-                                ? '9.81'
-                                : '')
-                          }
-                          onChange={(e) => handleSubParameterChange('slurry_friction_loss', name, e.target.value)}
-                          onBlur={() => handleSubParameterBlur('slurry_friction_loss', name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                            darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                          }`}
-                        />
-                        <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{unit}</span>
-                      </div>
+                      <InputWithTrailingUnit
+                        darkMode={darkMode}
+                        placeholder={placeholder}
+                        value={
+                          formulaRawInputs['slurry_friction_loss']?.[name] ??
+                          (formulaParameters['slurry_friction_loss']?.[name] != null &&
+                          !isNaN(formulaParameters['slurry_friction_loss']![name]!)
+                            ? String(formulaParameters['slurry_friction_loss']![name])
+                            : name === 'rho_s'
+                              ? '1'
+                            : name === 'g'
+                              ? '9.81'
+                              : '')
+                        }
+                        onChange={(e) => handleSubParameterChange('slurry_friction_loss', name, e.target.value)}
+                        onBlur={() => handleSubParameterBlur('slurry_friction_loss', name)}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        spellCheck={false}
+                        unit={unit}
+                      />
                     </div>
                   ))}
                 </div>
+                </ParameterFrame>
                 <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
                   <button
                     type="button"
@@ -9514,6 +10685,1433 @@ export default function MainContent({
                 )}
               </div>
             </>
+          ) : isPseudoHomogeneousFlowJudgment ? (
+            <>
+              {(() => {
+                const fid = formula.id
+                const sar = pseudoCcaActiveRowByFormula[fid] ?? 0
+                const snap = pseudoCcaChainByFormula[fid]?.[sar] || {}
+                const ovRow = pseudoCcaKnownOverrideByFormula[fid]?.[sar] || {}
+                const setOv = (field: keyof PseudoCcaKnownOverrideFields, val: string) => {
+                  setPseudoCcaKnownOverrideByFormula((prev) => ({
+                    ...prev,
+                    [fid]: {
+                      ...(prev[fid] || {}),
+                      [sar]: { ...(prev[fid]?.[sar] || {}), [field]: val },
+                    },
+                  }))
+                }
+                const stepBusy = (st: string) => pseudoCcaStepBusyKey === `${st}-${sar}`
+                const phRows = pseudoFlowRowsByFormula[fid] ?? PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS
+                const phRow = phRows[sar] ?? PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS[0]
+                const wiNorm = normalizeCsvDecimalInput(phRow.omega ?? '')
+                const wiParsed = parseFloat(wiNorm)
+                const wiStep5Ok = wiNorm !== '' && Number.isFinite(wiParsed) && wiParsed >= 0
+                const patchPseudoFlowRowField = (rowIdx: number, patch: Partial<PseudoHomogeneousFlowRow>) => {
+                  setPseudoFlowRowsByFormula((prev) => {
+                    const base = (prev[fid] ?? PSEUDO_HOMOGENEOUS_FLOW_TEMPLATE_ROWS.map((r) => ({ ...r }))).map((r) => ({
+                      ...r,
+                    }))
+                    while (base.length <= rowIdx) {
+                      base.push({ d: '2e-4', delta_P: '1', omega: '' })
+                    }
+                    base[rowIdx] = { ...base[rowIdx], ...patch }
+                    return { ...prev, [fid]: base }
+                  })
+                }
+                const lblCls = `block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`
+                const calcBtnCls = `px-6 py-2 rounded-lg font-medium disabled:opacity-50 ${
+                  darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`
+                const phParam = (name: string) => {
+                  const param = formula.parameters.find((p) => p.name === name)
+                  if (!param) return null
+                  return (
+                    <div key={name} className="min-w-0">
+                      <label className={lblCls}>
+                        {renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, param.name))}
+                      </label>
+                      <InputWithTrailingUnit
+                        darkMode={darkMode}
+                        value={
+                          rawInputs[param.name] ??
+                          (parameters[param.name] != null && !isNaN(parameters[param.name]!)
+                            ? String(parameters[param.name])
+                            : '')
+                        }
+                        onChange={(e) => handleParameterChange(param.name, e.target.value)}
+                        onBlur={() => handleParameterBlur(param.name)}
+                        placeholder={commonParamPlaceholder(formula.parameters, param.name)}
+                        unit={shouldShowParameterUnitSuffix(param.unit) ? param.unit ?? null : null}
+                      />
+                    </div>
+                  )
+                }
+                return (
+                  <>
+                    {/* Step 1 · 计算浆体密度 ρ₁（式 4-8） */}
+                    <div
+                      className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}
+                    >
+                      <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                        {language === 'en'
+                          ? '1. Slurry mixture density ρ₁'
+                          : '1. 计算浆体密度'}
+                      </div>
+                      <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {language === 'en' ? (
+                          <span>
+                            From solid density <InlineMath math="\rho_g" />
+                            , liquid density <InlineMath math="\rho_s" />
+                            , and slurry volumetric concentration <InlineMath math="C_{1V}" />
+                            , compute slurry mixture density <InlineMath math="\rho_1" />
+                            . It is the equivalent density from solid and liquid volumetric fractions and underpins the{' '}
+                            <InlineMath math="\mathrm{Re}_B" /> calculation used later.
+                          </span>
+                        ) : (
+                          renderDescriptionWithMath(
+                            '由固体密度 $\\rho_g$、液相密度 $\\rho_s$ 及浆体体积浓度 $C_{1V}$ 计算浆体混合密度 $\\rho_1$。该密度表示浆体中固相与液相按体积分数组成后的等效密度，是后续雷诺数 $\\mathrm{Re}_B$ 计算所需的基础参数。'
+                          )
+                        )}
+                      </p>
+                      <FormulaFrame darkMode={darkMode}>
+                        <BlockMath math="\displaystyle \rho_1 = \rho_g C_{1V} + (1-C_{1V})\rho_s" />
+                      </FormulaFrame>
+                      <ParameterFrame darkMode={darkMode} showTitle={false} className="mb-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {phParam('rho_g')}
+                        {phParam('rho_s')}
+                        <div className="md:col-span-2">
+                          <label className={lblCls}>
+                            {language === 'en'
+                              ? renderDescriptionWithMath(
+                                  '$C_{1V}$ (0–1): same expandable assist as critical-velocity $C_V$ ($C/C_A$ or volumes)'
+                                )
+                              : renderDescriptionWithMath(
+                                  '$C_{1V}$（小数 0～1）：与「临界流速」模块相同，点击输入框展开「体积浓度——辅助计算」'
+                                )}
+                          </label>
+                          <CvVolumeConcentrationField
+                            darkMode={darkMode}
+                            inputValue={rawInputs['Cv'] ?? ''}
+                            onInputChange={(v) => handleParameterChange('Cv', v)}
+                            onInputBlur={() => handleParameterBlur('Cv')}
+                            placeholder={
+                              language === 'en'
+                                ? 'Click input to expand volumetric-concentration assist (same as critical velocity)'
+                                : CV_VOLUME_ASSIST_HINT
+                            }
+                            unitText="（0～1）"
+                            onApplyCvFromRatio={(s) => handleParameterChange('Cv', s)}
+                            assistKind="solid_volume_ratio"
+                            rhoGKgM3FromForm={
+                              parameters.rho_g != null && !isNaN(Number(parameters.rho_g))
+                                ? Number(parameters.rho_g)
+                                : undefined
+                            }
+                          />
+                        </div>
+                      </div>
+                      </ParameterFrame>
+                      <div className="flex justify-end mb-4">
+                        <button
+                          type="button"
+                          disabled={pseudoCcaStepBusyKey != null}
+                          onClick={() => runPseudoCcaChainStep('rho', sar)}
+                          className={calcBtnCls}
+                        >
+                          {stepBusy('rho') ? '…' : language === 'en' ? 'Calculate' : '计算'}
+                        </button>
+                      </div>
+                      {renderPrimaryResultCallout({
+                        nameZh: '浆体密度',
+                        symbolMath: '\\rho_1',
+                        unitZh: 'kg/m³',
+                        value: (
+                          <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            {snap.rho_l != null && Number.isFinite(snap.rho_l) ? fmtDissipation(snap.rho_l) : '—'}
+                          </span>
+                        ),
+                      })}
+                    </div>
+
+                    {/* Step 2 · 计算雷诺数 */}
+                    <div
+                      className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}
+                    >
+                      <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                        {language === 'en' ? '2. Calculate Reynolds number' : renderDescriptionWithMath('2. 计算雷诺数')}
+                      </div>
+                      <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {language === 'en' ? (
+                          <span>
+                            This step computes the Bingham Reynolds number <InlineMath math="\mathrm{Re}_B" />. It accounts for
+                            cross-sectional average velocity <InlineMath math="v" />, pipe inner diameter{' '}
+                            <InlineMath math="D_{n}" />, mixture density, and mixture dynamic viscosity{' '}
+                            <InlineMath math="\eta" /> to characterize Bingham-type
+                            slurry flow in the pipe. The value then feeds the{' '}
+                            <strong className="font-medium">Liu–Fanning</strong> friction factor step used to relate friction to flow regime.
+                          </span>
+                        ) : (
+                          renderDescriptionWithMath(
+                            '本步骤用于计算浆体的宾汉雷诺数 $\\mathrm{Re}_B$。该参数综合考虑断面平均流速 $v$、管道内径 $D_{n}$、浆体混合物密度 $\\rho_1$ 及混合物动力粘度 $\\eta$，用于表征宾汉型浆体在管道中的流动状态。计算得到的 $\\mathrm{Re}_B$ 将作为后续刘德忠–Fanning 摩阻系数计算的基础参数，用于确定摩阻系数与流动状态之间的关系。'
+                          )
+                        )}
+                      </p>
+                      <FormulaFrame darkMode={darkMode}>
+                        <BlockMath math="\displaystyle \mathrm{Re}_B = \frac{v\, D_{n}\, \rho_1}{\eta}" />
+                      </FormulaFrame>
+                      <ParameterFrame darkMode={darkMode} showTitle={false} className="mb-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="min-w-0">
+                          <label className={lblCls}>{renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, 'v'))}</label>
+                          <InputWithTrailingUnit
+                            darkMode={darkMode}
+                            value={
+                              rawInputs['v'] ??
+                              (parameters['v'] != null && !isNaN(parameters['v']!) ? String(parameters['v']) : '')
+                            }
+                            onChange={(e) => handleParameterChange('v', e.target.value)}
+                            onBlur={() => handleParameterBlur('v')}
+                            placeholder={commonParamPlaceholder(formula.parameters, 'v')}
+                            unit="m/s"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <label className={lblCls}>{renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, 'D'))}</label>
+                          <InputWithTrailingUnit
+                            darkMode={darkMode}
+                            value={
+                              rawInputs['D'] ??
+                              (parameters['D'] != null && !isNaN(parameters['D']!) ? String(parameters['D']) : '')
+                            }
+                            onChange={(e) => handleParameterChange('D', e.target.value)}
+                            onBlur={() => handleParameterBlur('D')}
+                            placeholder={commonParamPlaceholder(formula.parameters, 'D')}
+                            unit="m"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <label className={lblCls}>
+                            {renderDescriptionWithMath('$\\rho_1$：浆体密度（kg/m³）；取步骤「1」计算结果，可修改')}
+                          </label>
+                          <InputWithTrailingUnit
+                            darkMode={darkMode}
+                            value={
+                              ovRow.rho_l !== undefined
+                                ? ovRow.rho_l
+                                : snap.rho_l != null && Number.isFinite(snap.rho_l)
+                                  ? String(snap.rho_l)
+                                  : ''
+                            }
+                            onChange={(e) => setOv('rho_l', e.target.value)}
+                            placeholder={language === 'en' ? 'From step 1 or manual' : '步骤 1 结果或手填'}
+                            unit="kg/m³"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <label className={lblCls}>{renderDescriptionWithMath(paramLabelFromFormula(formula.parameters, 'eta'))}</label>
+                          <InputWithTrailingUnit
+                            darkMode={darkMode}
+                            value={
+                              rawInputs['eta'] ??
+                              (parameters['eta'] != null && !isNaN(parameters['eta']!) ? String(parameters['eta']) : '')
+                            }
+                            onChange={(e) => handleParameterChange('eta', e.target.value)}
+                            onBlur={() => handleParameterBlur('eta')}
+                            placeholder={commonParamPlaceholder(formula.parameters, 'eta')}
+                            unit="Pa·s"
+                          />
+                        </div>
+                      </div>
+                      </ParameterFrame>
+                      <div className="flex justify-end mb-4">
+                        <button
+                          type="button"
+                          disabled={pseudoCcaStepBusyKey != null}
+                          onClick={() => runPseudoCcaChainStep('re', sar)}
+                          className={calcBtnCls}
+                        >
+                          {stepBusy('re') ? '…' : language === 'en' ? 'Calculate' : '计算'}
+                        </button>
+                      </div>
+                      {renderPrimaryResultCallout({
+                        nameZh: '宾汉雷诺数',
+                        symbolMath: '\\mathrm{Re}_B',
+                        unitZh: '无量纲',
+                        value: (
+                          <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            {snap.Re_B != null && Number.isFinite(snap.Re_B) ? fmtDissipation(snap.Re_B) : '—'}
+                          </span>
+                        ),
+                      })}
+                    </div>
+
+                    {/* Step 3 · 刘德忠–Fanning f_L（式 4-6） */}
+                    <div
+                      className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}
+                    >
+                      <div
+                        className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}
+                      >
+                        {language === 'en' ? '3. Calculate Liu–Fanning friction factor' : '3. 计算刘德忠–Fanning摩阻系数'}
+                      </div>
+                      <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {language === 'en' ? (
+                          <span>
+                            This step calculates the Liu–Fanning friction factor <InlineMath math="f_L" />. It accounts for
+                            slurry flow state, pipe inner diameter, and wall roughness effects on along-pipe losses, and
+                            characterizes friction during transport. The resulting <InlineMath math="f_L" /> feeds the next
+                            step’s friction velocity <InlineMath math="U" />.
+                          </span>
+                        ) : (
+                          renderDescriptionWithMath(
+                            '本步骤用于计算刘德忠–Fanning 摩阻系数 $f_L$。该系数综合考虑浆体流动状态、管道内径和管壁粗糙度对沿程阻力的影响，用于表征浆体在管道输送过程中的摩阻特性。计算得到的 $f_L$ 将作为下一步摩阻流速 $U$ 计算的基础参数。'
+                          )
+                        )}
+                      </p>
+                      <div className={`mb-5 overflow-x-auto rounded-xl border px-3 py-4 md:px-4 ${darkMode ? 'border-gray-500/50 bg-gray-800/40' : 'border-gray-200 bg-gray-50/90'}`}>
+                        <BlockMath math="\displaystyle f_L=\frac{0.33259}{\left[\ln\left(\frac{\varepsilon}{3.7D_n}+\frac{5.7385}{\mathrm{Re}_B^{0.9}}\right)\right]^2}" />
+                      </div>
+                      <div
+                        className={`mb-5 rounded-2xl border px-4 py-5 md:px-6 md:py-6 ${
+                          darkMode
+                            ? 'border-gray-500/60 bg-gradient-to-b from-gray-700/45 to-gray-800/25 shadow-inner'
+                            : 'border-gray-200/90 bg-gradient-to-b from-white to-gray-50/95 shadow-sm'
+                        }`}
+                      >
+                        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-x-6 md:gap-y-5">
+                          <div className="min-w-0 space-y-2">
+                            <label className={lblCls}>
+                              {language === 'en'
+                                ? renderDescriptionWithMath('$Re_B$: Reynolds number — defaults to step 2 result if empty')
+                                : renderDescriptionWithMath(
+                                    '$Re_B$：雷诺数；取步骤「2」计算结果，可修改'
+                                  )}
+                            </label>
+                            <div
+                              className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                                darkMode
+                                  ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                  : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                              }`}
+                            >
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                spellCheck={false}
+                                value={
+                                  ovRow.Re_B != null && String(ovRow.Re_B).trim() !== ''
+                                    ? ovRow.Re_B
+                                    : snap.Re_B != null && Number.isFinite(snap.Re_B)
+                                      ? String(snap.Re_B)
+                                      : ''
+                                }
+                                onChange={(e) => setOv('Re_B', e.target.value)}
+                                className={`min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                                  darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                                }`}
+                                placeholder={language === 'en' ? 'From step 2 or manual' : '步骤 2 结果或手填，如 20000'}
+                              />
+                              <span
+                                className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium tracking-wide ${
+                                  darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                                }`}
+                              >
+                                {language === 'en' ? 'nondim.' : '无量纲'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="min-w-0 space-y-2">
+                            <label className={lblCls}>
+                              {language === 'en'
+                                ? renderDescriptionWithMath('$D_n$: pipe inner diameter — defaults to step 2 / main form')
+                                : renderDescriptionWithMath(
+                                    '$D_{n}$：管道内径；取步骤「2」参数输入结果，可修改'
+                                  )}
+                            </label>
+                            <div
+                              className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                                darkMode
+                                  ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                  : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                              }`}
+                            >
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                spellCheck={false}
+                                value={
+                                  ovRow.D_n != null && String(ovRow.D_n).trim() !== ''
+                                    ? ovRow.D_n
+                                    : rawInputs['D'] ??
+                                      (parameters['D'] != null && !isNaN(Number(parameters['D']))
+                                        ? String(parameters['D'])
+                                        : '')
+                                }
+                                onChange={(e) => {
+                                  const s = e.target.value
+                                  setOv('D_n', s)
+                                  handleParameterChange('D', s)
+                                }}
+                                onBlur={() => handleParameterBlur('D')}
+                                className={`min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                                  darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                                }`}
+                                placeholder={language === 'en' ? 'e.g. 0.2' : '如 0.2'}
+                              />
+                              <span
+                                className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium ${
+                                  darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                                }`}
+                              >
+                                m
+                              </span>
+                            </div>
+                          </div>
+                          <div className="min-w-0 space-y-2 md:col-span-2">
+                            <label className={lblCls}>
+                              {language === 'en'
+                                ? renderDescriptionWithMath('$\\varepsilon$: pipe wall absolute roughness')
+                                : renderDescriptionWithMath('$\\varepsilon$：管壁绝对粗糙度')}
+                            </label>
+                            <div
+                              className={`rounded-xl transition-shadow ${
+                                darkMode
+                                  ? 'ring-1 ring-gray-500/70 focus-within:ring-blue-500/50'
+                                  : 'shadow-sm ring-1 ring-gray-200 focus-within:ring-2 focus-within:ring-blue-100'
+                              }`}
+                            >
+                              <SlurryEpsilonCombinedRow
+                                darkMode={darkMode}
+                                language={language}
+                                presetKey={pseudoCcaEpsilonPreset}
+                                valueMm={pseudoCcaEpsilonCustomMm}
+                                onChange={(preset, mmStr) => {
+                                  setPseudoCcaEpsilonPreset(preset)
+                                  setPseudoCcaEpsilonCustomMm(mmStr)
+                                  const epsVal = parseFeiAuxEpsilonMm(preset, mmStr)
+                                  if (epsVal != null && Number.isFinite(epsVal))
+                                    handleParameterChange('epsilon', String(epsVal))
+                                }}
+                                onBlur={() => handleParameterBlur('epsilon')}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-end mb-4">
+                        <button
+                          type="button"
+                          disabled={pseudoCcaStepBusyKey != null}
+                          onClick={() => runPseudoCcaChainStep('fl', sar)}
+                          className={calcBtnCls}
+                        >
+                          {stepBusy('fl') ? '…' : language === 'en' ? 'Calculate' : '计算'}
+                        </button>
+                      </div>
+                      {renderPrimaryResultCallout({
+                        nameZh: 'Fanning 摩阻系数',
+                        symbolMath: 'f_L',
+                        unitZh: '无量纲',
+                        value: (
+                          <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            {snap.f_L != null && Number.isFinite(snap.f_L) ? fmtDissipation(snap.f_L) : '—'}
+                          </span>
+                        ),
+                      })}
+                    </div>
+
+                    {/* Step 4 · 摩阻流速 U（式 4-5） */}
+                    <div
+                      className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}
+                    >
+                      <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                        {language === 'en' ? '4. Calculate friction velocity' : '4. 计算摩阻流速'}
+                      </div>
+                      <p className={`text-sm mb-3 leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {language === 'en' ? (
+                          <span>
+                            This step calculates the friction velocity <InlineMath math="U" />. Friction velocity links the
+                            cross-sectional average velocity <InlineMath math="V" /> to the Fanning friction factor{' '}
+                            <InlineMath math="f_L" />, characterizing the shear-flow intensity near the pipe wall from
+                            friction. The resulting <InlineMath math="U" /> serves as the velocity-scale parameter in the
+                            subsequent relative volumetric concentration{' '}
+                            <InlineMath math="(C/C_A)_i" />
+                            , supporting analysis of size-class concentration distributions across the pipe section.
+                          </span>
+                        ) : (
+                          renderDescriptionWithMath(
+                            '本步骤用于计算摩阻流速 $U$。摩阻流速将断面平均流速 $V$ 与 Fanning 摩阻系数 $f_L$ 联系起来，用于表征浆体在管道壁面附近由摩阻作用产生的剪切流动强度。计算得到的 $U$ 将作为后续相对体积浓度 $(C/C_A)_i$ 计算中的速度尺度参数，用于进一步分析不同粒径颗粒在管道断面上的浓度分布状态。'
+                          )
+                        )}
+                      </p>
+                      <div
+                        className={`mb-5 overflow-x-auto rounded-xl border px-3 py-4 md:px-4 ${darkMode ? 'border-gray-500/50 bg-gray-800/40' : 'border-gray-200 bg-gray-50/90'}`}
+                      >
+                        <BlockMath math={"U = V\\sqrt{f_L/2}"} />
+                      </div>
+                      <div
+                        className={`mb-5 rounded-2xl border px-4 py-5 md:px-6 md:py-6 ${
+                          darkMode
+                            ? 'border-gray-500/60 bg-gradient-to-b from-gray-700/45 to-gray-800/25 shadow-inner'
+                            : 'border-gray-200/90 bg-gradient-to-b from-white to-gray-50/95 shadow-sm'
+                        }`}
+                      >
+                        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
+                          <div className="min-w-0 space-y-2">
+                            <label className={lblCls}>
+                              {language === 'en'
+                                ? renderDescriptionWithMath(
+                                    '$V$: cross-sectional average velocity — from step 2 / main form when linked; editable here'
+                                  )
+                                : renderDescriptionWithMath(
+                                    '$V$：断面平均流速；取步骤「2」参数输入结果，可修改'
+                                  )}
+                            </label>
+                            <div
+                              className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                                darkMode
+                                  ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                  : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                              }`}
+                            >
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                spellCheck={false}
+                                value={
+                                  rawInputs['v'] ??
+                                  (parameters['v'] != null && !isNaN(Number(parameters['v']))
+                                    ? String(parameters['v'])
+                                    : '')
+                                }
+                                onChange={(e) => handleParameterChange('v', e.target.value)}
+                                onBlur={() => handleParameterBlur('v')}
+                                className={`min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                                  darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                                }`}
+                                placeholder={language === 'en' ? 'e.g. from step 2 or type here' : '步骤「2」联动或手填，如 2'}
+                              />
+                              <span
+                                className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium ${
+                                  darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-200/90 text-gray-600'
+                                }`}
+                              >
+                                m/s
+                              </span>
+                            </div>
+                          </div>
+                          <div className="min-w-0 space-y-2">
+                            <label className={lblCls}>
+                              {language === 'en'
+                                ? renderDescriptionWithMath(
+                                    '$f_L$: Fanning friction factor — defaults to step 3; editable if needed'
+                                  )
+                                : renderDescriptionWithMath(
+                                    '$f_L$：Fanning 摩阻系数；取步骤「3」计算结果，可修改'
+                                  )}
+                            </label>
+                            <div
+                              className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                                darkMode
+                                  ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                  : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                              }`}
+                            >
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                spellCheck={false}
+                                value={
+                                  ovRow.f_L != null && String(ovRow.f_L).trim() !== ''
+                                    ? ovRow.f_L
+                                    : snap.f_L != null && Number.isFinite(snap.f_L)
+                                      ? String(snap.f_L)
+                                      : ''
+                                }
+                                onChange={(e) => setOv('f_L', e.target.value)}
+                                className={`min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                                  darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                                }`}
+                                placeholder={language === 'en' ? 'From step 3 or manual' : '步骤 3 结果或手填'}
+                              />
+                              <span
+                                className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium tracking-wide ${
+                                  darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                                }`}
+                              >
+                                {language === 'en' ? 'nondim.' : '无量纲'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-end mb-4">
+                        <button
+                          type="button"
+                          disabled={pseudoCcaStepBusyKey != null}
+                          onClick={() => runPseudoCcaChainStep('u', sar)}
+                          className={calcBtnCls}
+                        >
+                          {stepBusy('u') ? '…' : language === 'en' ? 'Calculate' : '计算'}
+                        </button>
+                      </div>
+                      {renderPrimaryResultCallout({
+                        nameZh: '摩阻流速',
+                        symbolMath: 'U',
+                        unitZh: 'm/s',
+                        value: (
+                          <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            {snap.U != null && Number.isFinite(snap.U) ? fmtDissipation(snap.U) : '—'}
+                          </span>
+                        ),
+                      })}
+                    </div>
+
+                    {/* Step 5 · 计算相对体积浓度（式 4-4） */}
+                    <div
+                      className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}
+                    >
+                      <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                        {language === 'en' ? '5. Calculate relative volume concentration' : '5. 计算相对体积浓度'}
+                      </div>
+                      <p className={`text-sm mb-3 leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {language === 'en' ? (
+                          <span>
+                            This step calculates the relative volume concentration{' '}
+                            <InlineMath math="(C/C_A)_i" /> for each particle size group on the pipe cross-section. The
+                            formula uses settling velocity <InlineMath math="\omega_i" />, friction velocity{' '}
+                            <InlineMath math="U" />, and empirical coefficients <InlineMath math="K" /> and{' '}
+                            <InlineMath math="\beta" /> to estimate how the <InlineMath math="i" />
+                            -th size class is distributed in suspension. Larger <InlineMath math="\omega_i" /> tends to
+                            drive deposition toward the pipe bottom and usually yields smaller{' '}
+                            <InlineMath math="(C/C_A)_i" />
+                            ; larger <InlineMath math="U" /> means stronger shear and disturbance, helping particles remain
+                            suspended.
+                          </span>
+                        ) : (
+                          renderDescriptionWithMath(
+                            '本步骤用于计算各粒径组颗粒在管道断面上的相对体积浓度 $(C/C_A)_i$。该公式根据颗粒沉降速度 $\\omega_i$、摩阻流速 $U$ 以及经验系数 $K$、$\\beta$，估算第 $i$ 个粒径组颗粒在浆体中的悬浮分布状态。颗粒沉降速度越大，颗粒越容易向管底沉积，其相对体积浓度值通常越小；摩阻流速越大，管内剪切和扰动作用越强，颗粒越容易保持悬浮。'
+                          )
+                        )}
+                      </p>
+                      <div className={`mb-4 overflow-x-auto ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                        <BlockMath math="\displaystyle \left(\frac{C}{C_A}\right)_i = 10^{-1.8\,\omega_i/(K\beta U)}" />
+                      </div>
+                      <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        <div className="min-w-0 space-y-2 md:col-span-2">
+                          <label className={lblCls}>
+                            {language === 'en'
+                              ? renderDescriptionWithMath('$W_i$: weighted mean settling velocity (m/s)')
+                              : <>Wi：似均质中加权平均沉速（m/s）</>}
+                          </label>
+                          <LiuDezhongOmegaBinghamField
+                            darkMode={darkMode}
+                            assistContext="flow_judgment"
+                            language={language === 'en' ? 'en' : 'zh'}
+                            inputValue={phRow.omega ?? ''}
+                            onInputChange={(v) => patchPseudoFlowRowField(sar, { omega: v })}
+                            onInputBlur={() => {}}
+                            placeholder={
+                              language === 'en'
+                                ? 'Enter or open assist — m/s required'
+                                : '点击展开沉速辅助计算，或手动输入'
+                            }
+                            parameters={{
+                              ...parameters,
+                              ...(snap.rho_l != null && Number.isFinite(snap.rho_l)
+                                ? { rho_k: snap.rho_l }
+                                : {}),
+                            }}
+                            onApplyOmega={(s) => {
+                              const n = parseFloat(normalizeDecimalInput(String(s).trim()))
+                              if (!Number.isFinite(n)) return
+                              const rounded = roundLiuDezhongSlurryVelocity(n)
+                              patchPseudoFlowRowField(sar, { omega: formatLiuSlurryVelocityRawInput(rounded) })
+                            }}
+                          />
+                        </div>
+                        <div className="min-w-0 space-y-2">
+                          <label className={lblCls}>
+                            {language === 'en'
+                              ? renderDescriptionWithMath(
+                                  '$K$: modified von Kármán constant — default 0.36; page-top or below'
+                                )
+                              : renderDescriptionWithMath('$K$：修正卡门常数；')}
+                          </label>
+                          <div
+                            className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                              darkMode
+                                ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                            }`}
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={
+                                ovRow.K_karman != null && String(ovRow.K_karman).trim() !== ''
+                                  ? ovRow.K_karman
+                                  : parameters.K_karman != null && !isNaN(Number(parameters.K_karman))
+                                    ? String(parameters.K_karman)
+                                    : ''
+                              }
+                              onChange={(e) => setOv('K_karman', e.target.value)}
+                              className={`min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                                darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                              }`}
+                              placeholder="0.36"
+                            />
+                            <span
+                              className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium tracking-wide ${
+                                darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              {language === 'en' ? 'nondim.' : '无量纲'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0 space-y-2">
+                          <label className={lblCls}>
+                            {language === 'en'
+                              ? renderDescriptionWithMath('$\\beta$: Ismail coefficient — default 1')
+                              : renderDescriptionWithMath('$\\beta$：伊斯梅尔系数；')}
+                          </label>
+                          <div
+                            className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                              darkMode
+                                ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                            }`}
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={
+                                ovRow.beta_ismail != null && String(ovRow.beta_ismail).trim() !== ''
+                                  ? ovRow.beta_ismail
+                                  : parameters.beta_ismail != null && !isNaN(Number(parameters.beta_ismail))
+                                    ? String(parameters.beta_ismail)
+                                    : ''
+                              }
+                              onChange={(e) => setOv('beta_ismail', e.target.value)}
+                              className={`min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                                darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                              }`}
+                              placeholder="1"
+                            />
+                            <span
+                              className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium tracking-wide ${
+                                darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              {language === 'en' ? 'nondim.' : '无量纲'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0 space-y-2">
+                          <label className={lblCls}>
+                            {language === 'en'
+                              ? renderDescriptionWithMath(
+                                  '$U$: friction velocity (m/s) — defaults to step 4; editable / override'
+                                )
+                              : renderDescriptionWithMath(
+                                  '$U$：摩阻流速（m/s）；取步骤「4」计算结果，可修改'
+                                )}
+                          </label>
+                          <div
+                            className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                              darkMode
+                                ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                            }`}
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={
+                                ovRow.U != null && String(ovRow.U).trim() !== ''
+                                  ? ovRow.U
+                                  : snap.U != null && Number.isFinite(snap.U)
+                                    ? String(snap.U)
+                                    : ''
+                              }
+                              onChange={(e) => setOv('U', e.target.value)}
+                              className={`min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                                darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                              }`}
+                              placeholder={language === 'en' ? 'From step 4 or manual' : '步骤「4」结果或手填'}
+                            />
+                            <span
+                              className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium ${
+                                darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              m/s
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-end mb-4">
+                        <button
+                          type="button"
+                          disabled={pseudoCcaStepBusyKey != null || !wiStep5Ok}
+                          onClick={() => runPseudoCcaChainStep('ratio', sar)}
+                          className={calcBtnCls}
+                        >
+                          {stepBusy('ratio') ? '…' : language === 'en' ? 'Calculate' : '计算'}
+                        </button>
+                      </div>
+                      {renderPrimaryResultCallout({
+                        nameZh: '本档比值',
+                        symbolMath: '(C/C_A)_i',
+                        unitZh: '无量纲',
+                        value: (
+                          <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            {snap.c_over_ca_i != null && Number.isFinite(snap.c_over_ca_i)
+                              ? fmtDissipation(snap.c_over_ca_i)
+                              : '—'}
+                          </span>
+                        ),
+                      })}
+                    </div>
+
+                    {/* Step 6 · 流态判断 */}
+                    <div
+                      className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}
+                    >
+                      <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                        {language === 'en' ? '6. Flow regime judgment' : '6. 流态判断'}
+                      </div>
+                      <p className={`text-sm mb-3 leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {language === 'en' ? (
+                          <span>
+                            This step computes the overall relative volume concentration{' '}
+                            <InlineMath math="C/C_A" /> by weighted summation of each size class’s{' '}
+                            <InlineMath math="(C/C_A)_i" /> using the gradation weights{' '}
+                            <InlineMath math="\Delta P_i" />. Weights <InlineMath math="\Delta P_i" /> are mass fractions
+                            (summing to 1); <InlineMath math="d_{95}" /> is used only to interpolate{' '}
+                            <InlineMath math="(C/C_A)_{d95}" /> on the cumulative size distribution—it is not itself a
+                            summation weight. After step 5, use the page-wide <strong>开始计算</strong> button to submit:
+                            the program returns overall <InlineMath math="C/C_A" />,{' '}
+                            <InlineMath math="(C/C_A)_{d95}" />, and the regime class.
+                          </span>
+                        ) : (
+                          <>
+                            {renderDescriptionWithMath(
+                              '本公式用于计算浆体整体相对体积浓度 $C/C_A$。通过将各粒径组的相对体积浓度 $(C/C_A)_i$ 按其级配比例 $\\Delta P_i$ 进行加权求和，得到最终的整体相对体积浓度结果。'
+                            )}
+                            <span className="block mt-2 text-sm leading-relaxed">
+                              {renderDescriptionWithMath(
+                                '说明：加权权重为各粒径档的级配比例 $\\Delta P_i$（质量分数，总和须为 1）；$d_{95}$ 仅用于在累计粒径分布上插值得到 $(C/C_A)_{d95}$，不是求和权重本身。完成各档步骤 5 后，请使用页面右下角「开始计算」提交，由程序给出整体 $C/C_A$、$(C/C_A)_{d95}$ 及流态归类。'
+                              )}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                      <div className={`mb-4 overflow-x-auto ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                        <BlockMath math="\displaystyle \frac{C}{C_A}=\sum_i \left(\frac{C}{C_A}\right)_i \Delta P_i" />
+                      </div>
+                      <div
+                        className={`mb-5 rounded-2xl border px-4 py-5 md:px-6 ${
+                          darkMode
+                            ? 'border-gray-500/60 bg-gradient-to-b from-gray-700/45 to-gray-800/25 shadow-inner'
+                            : 'border-gray-200/90 bg-gradient-to-b from-white to-gray-50/95 shadow-sm'
+                        }`}
+                      >
+                        <div className={`mb-3 text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                          {language === 'en'
+                            ? 'Summation-linked parameters (per size class; editable)'
+                            : '汇总联动参数（各粒径档；可在此处核对或改写）'}
+                        </div>
+                        <div className="space-y-4">
+                          {phRows.map((r, idx) => {
+                            const rowSnap = pseudoCcaChainByFormula[fid]?.[idx] || {}
+                            const cci = rowSnap.c_over_ca_i
+                            const activeCls =
+                              idx === sar
+                                ? darkMode
+                                  ? 'ring-2 ring-blue-500/35 border-blue-500/40'
+                                  : 'ring-2 ring-blue-200 border-blue-200/90'
+                                : ''
+                            const rowShell = `flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 transition-shadow ${
+                              darkMode
+                                ? 'border-gray-500/80 bg-gray-800/60 focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30'
+                                : 'border-gray-200 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100'
+                            }`
+                            const rowInp = `min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base focus:outline-none focus:ring-0 ${
+                              darkMode ? 'text-gray-100 placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                            }`
+                            const pill =
+                              `shrink-0 rounded-md px-2 py-1 text-xs font-medium tracking-wide ${
+                                darkMode ? 'bg-gray-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                              }`
+                            return (
+                              <div
+                                key={idx}
+                                className={`rounded-xl border px-3 py-3 md:px-4 transition-all ${activeCls} ${
+                                  darkMode ? 'border-gray-600/70 bg-gray-900/22' : 'border-gray-200 bg-white'
+                                }`}
+                              >
+                                <div
+                                  className={`mb-3 flex flex-wrap items-baseline gap-2 text-xs font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+                                >
+                                  {language === 'en' ? `Size class ${idx + 1}` : `第 ${idx + 1} 粒径档`}
+                                  {idx === sar ? (
+                                    <span className={`text-[10px] font-normal ${darkMode ? 'text-blue-300/90' : 'text-blue-700'}`}>
+                                      {language === 'en'
+                                        ? '(current row for steps 1–5 above)'
+                                        : '（与上方步骤 1～5 当前档一致）'}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                  <div className="min-w-0 space-y-2">
+                                    <label className={lblCls}>
+                                      {language === 'en'
+                                        ? renderDescriptionWithMath('$d_i$ (m): diameter; editable')
+                                        : renderDescriptionWithMath('$d_i$（m）；与级配/斯托克斯代表性粒径相关，可修改')}
+                                    </label>
+                                    <div className={rowShell}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        className={rowInp}
+                                        value={r.d}
+                                        onChange={(e) => patchPseudoFlowRowField(idx, { d: e.target.value })}
+                                        placeholder={language === 'en' ? 'e.g. 2e-4' : '如 2e-4'}
+                                      />
+                                      <span className={pill}>m</span>
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0 space-y-2">
+                                    <label className={lblCls}>
+                                      {language === 'en'
+                                        ? renderDescriptionWithMath('$\\Delta P_i$: mass fraction weight; editable')
+                                        : renderDescriptionWithMath(
+                                            '$\\Delta P_i$：级配质量分数权重（小数）；可修改，程序汇总时会归一化'
+                                          )}
+                                    </label>
+                                    <div className={rowShell}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        className={rowInp}
+                                        value={r.delta_P}
+                                        onChange={(e) => patchPseudoFlowRowField(idx, { delta_P: e.target.value })}
+                                        placeholder={language === 'en' ? 'e.g. 1' : '如 1'}
+                                      />
+                                      <span className={pill}>{language === 'en' ? 'fraction' : '小数'}</span>
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0 space-y-2">
+                                    <label className={lblCls}>
+                                      {language === 'en'
+                                        ? <>Wi (m/s): weighted settling velocity; editable</>
+                                        : <>Wi：似均质中加权平均沉速（m/s）；可修改（改后请重算步骤「5」）</>}
+                                    </label>
+                                    <div className={rowShell}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        className={rowInp}
+                                        value={r.omega ?? ''}
+                                        onChange={(e) => patchPseudoFlowRowField(idx, { omega: e.target.value })}
+                                        placeholder={language === 'en' ? 'Required' : '须填写'}
+                                      />
+                                      <span className={pill}>m/s</span>
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0 space-y-2">
+                                    <label className={lblCls}>
+                                      {language === 'en'
+                                        ? renderDescriptionWithMath(
+                                            '$(C/C_A)_i$: from step 5 (recalc after changing $W_i$ or $U$)'
+                                          )
+                                        : renderDescriptionWithMath(
+                                            '$(C/C_A)_i$：取步骤「5」计算结果（改 $W_i$、$U$ 等后请重算步骤「5」）'
+                                          )}
+                                    </label>
+                                    <div
+                                      className={`flex min-h-[2.75rem] items-center gap-3 rounded-xl border px-3 ${
+                                        darkMode ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`min-w-0 flex-1 py-2.5 font-mono text-base font-semibold ${
+                                          darkMode ? 'text-gray-200' : 'text-gray-900'
+                                        }`}
+                                      >
+                                        {cci != null && Number.isFinite(cci) ? fmtDissipation(cci) : '—'}
+                                      </span>
+                                      <span className={pill}>{language === 'en' ? 'nondim.' : '无量纲'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {language === 'en' ? (
+                          <span>
+                            Use the bottom-right <strong>Calculate</strong> button for this step (same as the main form).
+                          </span>
+                        ) : (
+                          <>流态判别请使用页面右下角「开始计算」，无需在本框内单独点按钮。</>
+                        )}
+                      </p>
+                    </div>
+                  </>
+                )
+              })()}
+
+              <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
+                <div className={`text-lg font-semibold mb-3 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>计算结果</div>
+                {(() => {
+                  const pseudoSumm = formulaResults['pseudo_homogeneous_summarize_ratios']
+                  const effResult =
+                    result?.success && result.result
+                      ? result.result
+                      : pseudoSumm?.success && pseudoSumm.result
+                        ? pseudoSumm.result
+                        : undefined
+                  const rgEff = inferredSlurryPipelineFlowRegime(effResult)
+                  const isFullIterationPseudo =
+                    result?.success &&
+                    result.result &&
+                    result.result.C1v != null &&
+                    !Number.isNaN(Number(result.result.C1v))
+                  return (
+                    <div className="space-y-4">
+                      {pseudoSumm?.success === false ? (
+                        <div
+                          className={`rounded-lg border px-3 py-3 text-sm ${
+                            darkMode ? 'border-amber-500/50 bg-amber-950/30 text-amber-100' : 'border-amber-200 bg-amber-50 text-amber-900'
+                          }`}
+                        >
+                          分步汇总：{pseudoSumm?.error || '汇总失败'}
+                        </div>
+                      ) : null}
+
+                      {result?.error ? (
+                        <div
+                          className={`rounded-lg border px-3 py-3 text-sm ${
+                            darkMode ? 'border-red-500/50 bg-red-950/40 text-red-200' : 'border-red-200 bg-red-50 text-red-800'
+                          }`}
+                        >
+                          {result.error}
+                        </div>
+                      ) : null}
+
+                      {pseudoSumm?.success && pseudoSumm.result && !result?.success ? (
+                        <div className="space-y-3 pb-4 border-b border-dashed border-gray-500/40">
+                          <div className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                            分步汇总（各档链路）
+                          </div>
+                          {renderPrimaryResultCallout({
+                            titleRow: <>分步链路流态归类</>,
+                            unitZh:
+                              language === 'en'
+                                ? 'From summed C/C_A and interpolated (C/C_A) at d₉₅'
+                                : '由本分步汇总得到的 $C/C_A$ 与 $(C/C_A)_{d95}$',
+                            value: (
+                              <span className={`text-xl font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                                {language === 'en'
+                                  ? rgEff === 'pseudo_homogeneous'
+                                    ? 'Pseudo-homogeneous'
+                                    : rgEff === 'heterogeneous'
+                                      ? 'Heterogeneous'
+                                      : rgEff === 'composite'
+                                        ? 'Composite'
+                                        : '—'
+                                  : rgEff === 'pseudo_homogeneous'
+                                    ? '似均质流态'
+                                    : rgEff === 'heterogeneous'
+                                      ? '非均质流态'
+                                      : rgEff === 'composite'
+                                        ? '复合流态'
+                                        : '—'}
+                              </span>
+                            ),
+                          })}
+                          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="C/C_A" />
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {pseudoSumm.result.C_over_CA != null
+                                  ? fmtDissipation(Number(pseudoSumm.result.C_over_CA))
+                                  : '—'}
+                              </div>
+                            </div>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="(C/C_A)_{d95}" />（插值）
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {pseudoSumm.result.C_CA_d95 != null
+                                  ? fmtDissipation(Number(pseudoSumm.result.C_CA_d95))
+                                  : '—'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {result?.success && result.result && isFullIterationPseudo ? (
+                        <div className="space-y-4">
+                          <div className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                            {language === 'en' ? 'One-shot iteration' : '迭代一键计算'}
+                          </div>
+                          {(() => {
+                            const rg = inferredSlurryPipelineFlowRegime(result.result)
+                            const conclusionZh =
+                              rg === 'pseudo_homogeneous'
+                                ? '似均质流态'
+                                : rg === 'heterogeneous'
+                                  ? '非均质流态'
+                                  : rg === 'composite'
+                                    ? '复合流态'
+                                    : '—'
+                            const conclusionEn =
+                              rg === 'pseudo_homogeneous'
+                                ? 'Pseudo-homogeneous regime'
+                                : rg === 'heterogeneous'
+                                  ? 'Heterogeneous regime'
+                                  : rg === 'composite'
+                                    ? 'Composite regime'
+                                    : '—'
+                            return renderPrimaryResultCallout({
+                              titleRow: <>{language === 'en' ? 'Regime from C/C_A' : '流态判定结论（迭代）'}</>,
+                              unitZh:
+                                language === 'en'
+                                  ? 'Based on computed C/C_A and (C/C_A) at d₉₅'
+                                  : '由迭代得到的 $C/C_A$ 与 $(C/C_A)_{d95}$ 归类',
+                              value: (
+                                <span className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                                  {language === 'en' ? conclusionEn : conclusionZh}
+                                </span>
+                              ),
+                            })
+                          })()}
+                          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="C/C_A" />
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {result.result.C_over_CA != null ? fmtDissipation(Number(result.result.C_over_CA)) : '—'}
+                              </div>
+                            </div>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="(C/C_A)_{d95}" />（插值）
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {result.result.C_CA_d95 != null ? fmtDissipation(Number(result.result.C_CA_d95)) : '—'}
+                              </div>
+                            </div>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="C_{1V}" />
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {result.result.C1v != null ? fmtDissipation(Number(result.result.C1v)) : '—'}
+                              </div>
+                            </div>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="\rho_l" />
+                                <span> · kg/m³</span>
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {result.result.rho_l != null ? fmtDissipation(Number(result.result.rho_l)) : '—'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                            <div className="mb-1">
+                              总体 <InlineMath math="\mathrm{Re}_B" /> ={' '}
+                              {result.result.Re_B != null ? fmtDissipation(Number(result.result.Re_B)) : '—'}；Fanning{' '}
+                              <InlineMath math="f_L" /> ={' '}
+                              {result.result.f_L != null ? fmtDissipation(Number(result.result.f_L)) : '—'}；摩阻流速{' '}
+                              <InlineMath math="U" /> ={' '}
+                              {result.result.friction_velocity_U != null
+                                ? fmtDissipation(Number(result.result.friction_velocity_U))
+                                : '—'}{' '}
+                              m/s
+                            </div>
+                          </div>
+                          {(() => {
+                            const im = result.result.intermediate as Record<string, unknown> | undefined
+                            const rowsTbl = im?.rows_final
+                            if (!Array.isArray(rowsTbl) || rowsTbl.length === 0) return null
+                            return (
+                              <div className="overflow-x-auto">
+                                <div className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                  内置粒径档收敛后中间量明细
+                                </div>
+                                <table className={`min-w-[720px] text-xs border-collapse ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                  <thead>
+                                    <tr className={darkMode ? 'border-b border-gray-500' : 'border-b border-gray-300'}>
+                                      {['i', 'd', 'ΔP', 'ω', 'Cv,i', 'C1V,i', 'ρl,i', 'Re', 'fL', 'U', 'C/CA,i'].map((h) => (
+                                        <th key={h} className="py-2 pr-2 text-left font-semibold whitespace-nowrap">
+                                          {h}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(rowsTbl as Record<string, unknown>[]).map((r, idx) => (
+                                      <tr key={idx} className={darkMode ? 'border-b border-gray-600/80' : 'border-b border-gray-100'}>
+                                        <td className="py-1.5 pr-2">{String(r.index ?? idx + 1)}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.d_m))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.delta_P))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.omega_m_s))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.Cv_i))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.C1V_i))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.rho_li_kg_m3))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.Re_B_i))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.f_L_i))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.U_m_s))}</td>
+                                        <td className="py-1.5 pr-2 font-mono">{fmtDissipation(Number(r.C_over_CA_i))}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      ) : null}
+
+                      {result?.success && result.result && !isFullIterationPseudo ? (
+                        <div className="space-y-3 pb-4 border-b border-dashed border-gray-500/40">
+                          <div className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                            {language === 'en' ? 'Weighted summary (after step 5)' : '加权汇总（步骤 5 各档结果）'}
+                          </div>
+                          {renderPrimaryResultCallout({
+                            titleRow: <>{language === 'en' ? 'Regime judgment' : '流态判定结论'}</>,
+                            unitZh:
+                              language === 'en'
+                                ? 'From Σ (C/C_A)ᵢ·ΔPᵢ and (C/C_A) at d₉₅'
+                                : '由整体 $C/C_A$ 与 $(C/C_A)_{d95}$ 判别',
+                            value: (
+                              <span className={`text-xl font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                                {language === 'en'
+                                  ? rgEff === 'pseudo_homogeneous'
+                                    ? 'Pseudo-homogeneous'
+                                    : rgEff === 'heterogeneous'
+                                      ? 'Heterogeneous'
+                                      : rgEff === 'composite'
+                                        ? 'Composite'
+                                        : '—'
+                                  : rgEff === 'pseudo_homogeneous'
+                                    ? '似均质流态'
+                                    : rgEff === 'heterogeneous'
+                                      ? '非均质流态'
+                                      : rgEff === 'composite'
+                                        ? '复合流态'
+                                        : '—'}
+                              </span>
+                            ),
+                          })}
+                          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="C/C_A" />
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {result.result.C_over_CA != null
+                                  ? fmtDissipation(Number(result.result.C_over_CA))
+                                  : '—'}
+                              </div>
+                            </div>
+                            <div className={`rounded-lg border px-3 py-2 ${darkMode ? 'border-gray-500' : 'border-gray-200'}`}>
+                              <div className={`text-xs mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <InlineMath math="(C/C_A)_{d95}" />（插值）
+                              </div>
+                              <div className="font-mono font-semibold">
+                                {result.result.C_CA_d95 != null
+                                  ? fmtDissipation(Number(result.result.C_CA_d95))
+                                  : '—'}
+                              </div>
+                            </div>
+                          </div>
+                          {effResult &&
+                          effResult.C_over_CA != null &&
+                          effResult.C_CA_d95 != null &&
+                          !Number.isNaN(Number(effResult.C_over_CA)) &&
+                          !Number.isNaN(Number(effResult.C_CA_d95)) ? (
+                            <div
+                              className={`rounded-lg border px-3 py-2 text-sm leading-relaxed ${
+                                darkMode ? 'border-gray-500 bg-gray-900/30 text-gray-200' : 'border-gray-200 bg-white text-gray-800'
+                              }`}
+                            >
+                              <div className={`font-medium mb-1 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                {language === 'en' ? 'Threshold check' : '判据核对（手册阈值）'}
+                              </div>
+                              {language === 'en' ? (
+                                <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm">
+                                  <li>
+                                    <InlineMath math="C/C_A" /> = {fmtDissipation(Number(effResult.C_over_CA))}:{' '}
+                                    {Number(effResult.C_over_CA) <= 0.1
+                                      ? '≤ 0.1 (heterogeneous branch)'
+                                      : Number(effResult.C_over_CA) >= 0.8
+                                        ? '≥ 0.8 (pseudo-homogeneous needs d95 too)'
+                                        : 'between 0.1 and 0.8 (often composite-related)'}
+                                  </li>
+                                  <li>
+                                    <InlineMath math="(C/C_A)_{d95}" /> = {fmtDissipation(Number(effResult.C_CA_d95))}:{' '}
+                                    {Number(effResult.C_CA_d95) >= 0.5
+                                      ? '≥ 0.5 (satisfies pseudo-homogeneous 2nd criterion)'
+                                      : '< 0.5 (does not satisfy that item)'}
+                                  </li>
+                                </ul>
+                              ) : (
+                                <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm">
+                                  <li>
+                                    整体{' '}
+                                    <InlineMath math="C/C_A" /> = {fmtDissipation(Number(effResult.C_over_CA))}
+                                    {Number(effResult.C_over_CA) <= 0.1
+                                      ? '：满足非均质判据（$C/C_A \\le 0.1$）。'
+                                      : Number(effResult.C_over_CA) >= 0.8
+                                        ? '：达到似均质对整体浓度的量级要求（≥ 0.8），是否定类还需结合 $(C/C_A)_{d95}$。'
+                                        : '：介于 0.1 与 0.8 之间（常与复合流态相关）。'}
+                                  </li>
+                                  <li>
+                                    <InlineMath math="(C/C_A)_{d95}" /> = {fmtDissipation(Number(effResult.C_CA_d95))}
+                                    {Number(effResult.C_CA_d95) >= 0.5
+                                      ? '：≥ 0.5，满足似均质流态判别的第二项（代表粗粒级相对浓度较高）。'
+                                      : '：< 0.5，不满足上述第二项；若整体浓度已高，仍可能归为复合等综合情形。'}
+                                  </li>
+                                </ul>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {effResult ? (
+                      <div
+                        className={`rounded-xl border-2 p-4 ${darkMode ? 'border-gray-500 bg-gray-800/40' : 'border-gray-200 bg-gray-50/80'}`}
+                      >
+                        <div className={`text-base font-semibold mb-3 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          三类流态说明与阈值（结果高亮对照）
+                        </div>
+                        <p className={`text-xs mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {renderDescriptionWithMath(
+                            '下列条文与手册判据对应；外框加亮表示当前计算所归入的流态。'
+                          )}
+                        </p>
+                        <div className="space-y-3">
+                          <div
+                            className={`rounded-lg border-2 px-4 py-3 text-sm leading-relaxed transition-shadow ${
+                              rgEff === 'pseudo_homogeneous'
+                                ? darkMode
+                                  ? 'ring-2 ring-amber-400/90 border-amber-500/70 bg-amber-950/20'
+                                  : 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/60'
+                                : darkMode
+                                  ? 'border-gray-500'
+                                  : 'border-gray-200'
+                            } ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
+                          >
+                            <div className={`font-semibold mb-1 ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>
+                              第一：似均质流态
+                            </div>
+                            <p>
+                              {renderDescriptionWithMath(
+                                '第一是 $R=C/C_A \\ge 0.8$ 且 $R_{d95}=(C/C_A)_{d95} \\ge 0.5$，此时称似均质流态，该流态中粒径为细颗粒，此时浆体接近均质流态，为区别单相均质流态称为似均质流态。该流态细颗粒等于或大于 $0.8$ 以上为载体。浆体长输管道输送应采用该流态。'
+                              )}
+                            </p>
+                          </div>
+                          <div
+                            className={`rounded-lg border-2 px-4 py-3 text-sm leading-relaxed transition-shadow ${
+                              rgEff === 'heterogeneous'
+                                ? darkMode
+                                  ? 'ring-2 ring-amber-400/90 border-amber-500/70 bg-amber-950/20'
+                                  : 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/60'
+                                : darkMode
+                                  ? 'border-gray-500'
+                                  : 'border-gray-200'
+                            } ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
+                          >
+                            <div className={`font-semibold mb-1 ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>
+                              第二：非均质流态
+                            </div>
+                            <p>
+                              {renderDescriptionWithMath(
+                                '第二是 $R=C/C_A \\le 0.1$，此时称非均质流态，该流态中粒径为粗颗粒，载体为水。浆体管道输送比较少见。'
+                              )}
+                            </p>
+                          </div>
+                          <div
+                            className={`rounded-lg border-2 px-4 py-3 text-sm leading-relaxed transition-shadow ${
+                              rgEff === 'composite'
+                                ? darkMode
+                                  ? 'ring-2 ring-amber-400/90 border-amber-500/70 bg-amber-950/20'
+                                  : 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/60'
+                                : darkMode
+                                  ? 'border-gray-500'
+                                  : 'border-gray-200'
+                            } ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
+                          >
+                            <div className={`font-semibold mb-1 ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>
+                              第三：复合流态
+                            </div>
+                            <p>
+                              {language === 'en' ? (
+                                <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
+                                  Third:{' '}
+                                  <InlineMath math="0.1<R<0.8" /> and <InlineMath math="R_{d95}>0.5" /> (with{' '}
+                                  <InlineMath math="R=C/C_A" />
+                                  ). Other combinations that fall outside the first two branches are also labeled composite in this module (e.g.{' '}
+                                  <InlineMath math="R\ge 0.8" /> with <InlineMath math="R_{d95}\le 0.5" />
+                                  ). Typical tailings pipelines often operate in the composite regime.
+                                </span>
+                              ) : (
+                                renderDescriptionWithMath(
+                                  '第三是 $0.1 < R < 0.8$ 且 $R_{d95} > 0.5$（$R=C/C_A$，$R_{d95}=(C/C_A)_{d95}$）。不属于前两类的其余情形在本模块中亦归为复合流态（例如 $R \\ge 0.8$ 且 $R_{d95} \\le 0.5$，或 $0.1 < R < 0.8$ 且 $R_{d95} \\le 0.5$ 等）。此时浆体管道中细颗粒似均质部分输送粗颗粒非均质部分的组合流态称复合流态，多数尾矿浆体管道为复合流态。'
+                                )
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      ) : null}
+
+                      {!effResult && !result?.error && !pseudoSumm?.error ? (
+                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {renderDescriptionWithMath(
+                            '请先完成各档步骤 5（相对体积浓度），再点击页面右下角「开始计算」：程序将按级配权重 $\\Delta P_i$ 对各档 $(C/C_A)_i$ 加权得到整体 $C/C_A$，并插值得 $(C/C_A)_{d95}$ 后判别流态。'
+                          )}
+                        </p>
+                      ) : null}
+                    </div>
+                  )
+                })()}
+              </div>
+            </>
           ) : isClearWaterFrictionLoss ? (
             <>
               <div className={`mb-4 p-3 rounded-lg overflow-x-auto ${darkMode ? 'bg-gray-600' : 'bg-gray-50'}`}>
@@ -9563,24 +12161,16 @@ export default function MainContent({
                       </div>
                       {(rawInputs['ch_preset'] ?? 'steel100') === 'custom' && (
                         <div className="min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              autoComplete="off"
-                              spellCheck={false}
-                              value={
-                                rawInputs['C_h'] ??
-                                (parameters['C_h'] != null && !isNaN(parameters['C_h']!) ? String(parameters['C_h']) : '')
-                              }
-                              onChange={(e) => handleParameterChange('C_h', e.target.value)}
-                              onBlur={() => handleParameterBlur('C_h')}
-                              placeholder="海澄-威廉系数，如130"
-                              className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                                darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                              }`}
-                            />
-                          </div>
+                          <InputWithTrailingUnit
+                            darkMode={darkMode}
+                            value={
+                              rawInputs['C_h'] ??
+                              (parameters['C_h'] != null && !isNaN(parameters['C_h']!) ? String(parameters['C_h']) : '')
+                            }
+                            onChange={(e) => handleParameterChange('C_h', e.target.value)}
+                            onBlur={() => handleParameterBlur('C_h')}
+                            placeholder="海澄-威廉系数，如130"
+                          />
                         </div>
                       )}
                     </div>
@@ -9604,29 +12194,17 @@ export default function MainContent({
                         <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                           {param ? renderDescriptionWithMath(displayParamLabelFromApi(param.label || name, param.unit)) : name}
                         </label>
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={
-                              rawInputs[name] ??
-                              (parameters[name] != null && !isNaN(parameters[name]!) ? String(parameters[name]) : '')
-                            }
-                            onChange={(e) => handleParameterChange(name, e.target.value)}
-                            onBlur={() => handleParameterBlur(name)}
-                            placeholder={ph}
-                            className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                              darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                            }`}
-                          />
-                          {suffixText != null && (
-                            <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {suffixText}
-                            </span>
-                          )}
-                        </div>
+                        <InputWithTrailingUnit
+                          darkMode={darkMode}
+                          value={
+                            rawInputs[name] ??
+                            (parameters[name] != null && !isNaN(parameters[name]!) ? String(parameters[name]) : '')
+                          }
+                          onChange={(e) => handleParameterChange(name, e.target.value)}
+                          onBlur={() => handleParameterBlur(name)}
+                          placeholder={ph}
+                          unit={suffixText}
+                        />
                       </div>
                     )
                   })}
@@ -9683,15 +12261,15 @@ export default function MainContent({
                   <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                     <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>浆体管道输送压力</div>
                     <div className={`mb-4 overflow-x-auto ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                      <BlockMath math="P_k = \rho_k g H + \rho_s g \cdot i_k L + P_j + P_n + P_z" />
+                      <BlockMath math="P_k = \dfrac{\rho_k g H}{1000}+\dfrac{\rho_s g\, i_k\, L}{1000}+P_j+P_n+P_z" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {formula.parameters.map((param) => {
                         const placeholders: Record<string, string> = {
-                          rho_k: '浆体密度，如1.2',
+                          rho_k: '浆体密度，如1470',
                           g: '重力加速度，默认值 9.81',
                           H: '几何扬程，如120',
-                          rho_s: '固体密度，如2.5',
+                          rho_s: '液体密度 ρ_s（i_k 参照介质，常温清水多用 1000）',
                           i_k: '沿程摩阻系数，如0.02',
                           L: '管道总长度，如1000',
                           P_j: '局部压力损失，常用 30～50 kPa',
@@ -9908,8 +12486,8 @@ export default function MainContent({
                             <span className={`block text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                               {language === 'en' ? (
                                 <>
-                                  Equivalent slurry head (<InlineMath math="P_k/(\rho_k g)" />,{' '}
-                                  <InlineMath math="\rho_k" /> = {Number(parameters['rho_k'])} t/m³): ≈{' '}
+                                  Equivalent slurry head (<InlineMath math="1000\,P_k/(\rho_k g)" />,{' '}
+                                  <InlineMath math="\rho_k" /> = {Number(parameters['rho_k'])} kg/m³): ≈{' '}
                                   <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                     {kPaToFluidHeadM(
                                       Number(result.result.H_total),
@@ -9921,8 +12499,8 @@ export default function MainContent({
                                 </>
                               ) : (
                                 <>
-                                  折合浆体液柱高度（<InlineMath math="P_k/(\rho_k g)" />，<InlineMath math="\rho_k" /> ={' '}
-                                  {Number(parameters['rho_k'])} t/m³）：约{' '}
+                                  折合浆体液柱高度（<InlineMath math="1000\,P_k/(\rho_k g)" />，<InlineMath math="\rho_k" /> ={' '}
+                                  {Number(parameters['rho_k'])} kg/m³）：约{' '}
                                   <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                     {kPaToFluidHeadM(
                                       Number(result.result.H_total),
@@ -9939,8 +12517,8 @@ export default function MainContent({
                           <span className={`block text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                             {language === 'en' ? (
                               <>
-                                Equivalent freshwater head (<InlineMath math="P_k/(\rho_w g)" />,{' '}
-                                <InlineMath math="\rho_w=1" /> t/m³): ≈{' '}
+                                Equivalent freshwater head (<InlineMath math="1000\,P_k/(\rho_w g)" />,{' '}
+                                <InlineMath math="\rho_w=1000\ \mathrm{kg/m^3}" />): ≈{' '}
                                 <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                   {kPaToFluidHeadM(
                                     Number(result.result.H_total),
@@ -9952,8 +12530,8 @@ export default function MainContent({
                               </>
                             ) : (
                               <>
-                                折合清水液柱高度（<InlineMath math="P_k/(\rho_w g)" />，<InlineMath math="\rho_w=1" />{' '}
-                                t/m³）：约{' '}
+                                折合清水液柱高度（<InlineMath math="1000\,P_k/(\rho_w g)" />，<InlineMath math="\rho_w=1000\ \mathrm{kg/m^3}" />
+                                ）：约{' '}
                                 <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                   {kPaToFluidHeadM(
                                     Number(result.result.H_total),
@@ -10002,12 +12580,12 @@ export default function MainContent({
                   <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                     <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>清水管道输送压力</div>
                     <div className={`mb-4 overflow-x-auto ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                      <BlockMath math="P_w = \rho_w g (H + i_w L) + P_j + P_n + P_z" />
+                      <BlockMath math="P_w = \dfrac{\rho_w\, g\, (H+i_w\, L)}{1000}+P_j+P_n+P_z" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {formula.parameters.map((param) => {
                         const placeholders: Record<string, string> = {
-                          rho_w: '液体密度，如1',
+                          rho_w: '液体密度，如1000',
                           g: '重力加速度，默认值 9.81',
                           H: '几何扬程，如120',
                           i_w: '清水沿程系数，如0.01',
@@ -10057,8 +12635,8 @@ export default function MainContent({
                           !isNaN(Number(parameters['rho_w'])) &&
                           !isNaN(Number(result.result.H_total)) && (
                             <span className={`block text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                              折合清水液柱高度（<InlineMath math="P_w/(\rho_w g)" />，<InlineMath math="\rho_w" /> ={' '}
-                              {Number(parameters['rho_w'])} t/m³）：约{' '}
+                              折合清水液柱高度（<InlineMath math="1000\,P_w/(\rho_w g)" />，<InlineMath math="\rho_w" /> ={' '}
+                              {Number(parameters['rho_w'])} kg/m³）：约{' '}
                               <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                 {kPaToFluidHeadM(
                                   Number(result.result.H_total),
@@ -10404,9 +12982,9 @@ export default function MainContent({
                   3. 泵所需电机功率 <InlineMath math="N" />
                 </div>
                 <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  功率式中液柱项为步骤2 的 <InlineMath math="H_b" />（m）；与 <InlineMath math="\rho_k" />（t/m³）、<InlineMath math="g" />、{' '}
+                  功率式中液柱项为步骤2 的 <InlineMath math="H_b" />（m）；与 <InlineMath math="\rho_k" />（kg/m³）、<InlineMath math="g" />、{' '}
                   <InlineMath math="Q_k" />、<InlineMath math="K_1" />、<InlineMath math="\eta_j" />、<InlineMath math="\eta_b" /> 共同求{' '}
-                  <InlineMath math="N" />（kW）。程序将 <InlineMath math="\rho_k" /> 换为 SI 密度（kg/m³）参与计算。
+                  <InlineMath math="N" />（kW）。式中 <InlineMath math="\rho_k" /> 与 <InlineMath math="g" />、<InlineMath math="Q_k" />、<InlineMath math="H_b" /> 均取 SI 相容单位。
                 </p>
                 <div className={`mb-2 overflow-x-auto ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   <BlockMath math="N = K_1 \cdot \dfrac{\rho_k\, g\, Q_k\, H_b}{1000\,\eta_j\,\eta_b}" />
@@ -10432,7 +13010,7 @@ export default function MainContent({
                     }
                     const etaJDropdownFace =
                       etaJPreset === 'custom'
-                        ? renderDescriptionWithMath('自定义（手填 $\\eta_j$）')
+                        ? renderDescriptionWithMath('自定义')
                         : etaJPreset === 'coupling'
                           ? renderDescriptionWithMath('联轴器，$\\eta_j=1.0$')
                           : etaJPreset === 'belt'
@@ -10559,7 +13137,7 @@ export default function MainContent({
                                     {renderDescriptionWithMath(it.subtitle)}
                                     <span>·</span>
                                     <span className="font-mono font-semibold">{fmtDissipation(it.value)}</span>
-                                    <span>t/m³</span>
+                                    <span>kg/m³</span>
                                   </div>
                                 </button>
                               ))}
@@ -10666,7 +13244,7 @@ export default function MainContent({
                                   setCentrifugalEtaJSelectOpen(false)
                                 }}
                               >
-                                {renderDescriptionWithMath('自定义（手填 $\\eta_j$）')}
+                                {renderDescriptionWithMath(' $\\eta自定义')}
                               </button>
                               </div>
                             )}
@@ -10723,7 +13301,7 @@ export default function MainContent({
                   const imo = result.result.intermediate as Record<string, unknown>
                   const order = [
                     'K_1',
-                    'rho_k_t_m3',
+                    'rho_k_input_kg_m3',
                     'rho_si_kg_m3',
                     'Q_k',
                     'H_b_m',
@@ -11302,12 +13880,12 @@ export default function MainContent({
           ) : formula?.id === 'density_mixing' ? (
             <>
               <p className={`text-sm leading-relaxed mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {renderDescriptionWithMath('本节由固体质量浓度与液、固相密度确定浆体密度 $\\rho_k$，作为沿程水力坡降计算的前置量。求得的 $\\rho_k$ 可输入同栏「浆体摩阻损失」分步流程或合并公式，用于后续核算。')}
+                {renderDescriptionWithMath('本节由浆体质量浓度与液、固相密度确定浆体密度 $\\rho_k$，作为沿程水力坡降计算的前置量。求得的 $\\rho_k$ 可输入同栏「浆体摩阻损失」分步流程或合并公式，用于后续核算。')}
               </p>
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>计算浆体密度</div>
                 <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('依据固体质量浓度 $C_w$ 及固体密度 $\\rho_g$、液体密度 $\\rho_s$，按质量加权关系计算浆体密度 $\\rho_k$（t/m³）。')}
+                  {renderDescriptionWithMath('依据浆体质量浓度 $C_w$ 及固体密度 $\\rho_g$、液体密度 $\\rho_s$，按质量加权关系计算浆体密度 $\\rho_k$（kg/m³）。')}
                 </p>
                 <div className={`mb-4 text-xl ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                   <BlockMath math="\rho_k = \frac{1}{\frac{C_w}{\rho_g} + \frac{1-C_w}{\rho_s}}" />
@@ -11346,7 +13924,7 @@ export default function MainContent({
               {renderPrimaryResultCallout({
                 nameZh: '浆体密度',
                 symbolMath: '\\rho_k',
-                unitZh: 't/m³（吨每立方米）',
+                unitZh: 'kg/m³',
                 bordered: true,
                 value: result?.success ? (
                   <span className={`text-xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
@@ -11377,11 +13955,11 @@ export default function MainContent({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {formula.parameters.filter((p) => ['rho_k', 'lambda_coef', 'V', 'D', 'rho_s', 'g'].includes(p.name)).map((param) => {
                     const placeholders: Record<string, string> = {
-                      rho_k: '浆体密度，如1.35',
+                      rho_k: '浆体密度，如1470',
                       lambda_coef: '达西摩阻系数，如0.018',
                       V: '断面平均流速，如2',
                       D: '管道内径，如0.2',
-                      rho_s: '水密度，默认值1',
+                      rho_s: '水密度，常用1000',
                       g: '重力加速度，默认值 9.81',
                     }
                     return (
@@ -11577,27 +14155,29 @@ export default function MainContent({
                 {renderDescriptionWithMath('本模型主要用于计算流体输送系统中压力管道的临界流速和摩阻损失，其计算结果可运用于管材和泵选型。该模型适用于：1、有压隧洞泥沙运输，管道内悬浮液处于第一、第二临界流速情况下；2、适用于固体密度小于 $3$、颗粒粒径小于 $0.4$ mm 的浆体。在重力流管道情况下，该模型的应用价值有限。当体积浓度 $C_V>30\\%$ 时，该模型计算得出的数据与实际情况偏差较大。本方法采用三步顺序计算，每步可独立执行，结果将作为下一步的输入。')}
               </p>
 
-              {/* 1. 计算矿浆流量：公式 → 本步参数 → 计算 → 结果 */}
+              {/* 1. 计算浆体体积流量：公式 → 本步参数 → 计算 → 结果 */}
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
-                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>1. 计算矿浆流量</div>
+                <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>1. 计算浆体体积流量</div>
                 <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('根据干尾矿重量 $W$、矿浆中水重 $G$、固体密度 $\\rho_g$ 及波动系数 $K$，计算矿浆流量 $Q_k$。$Q_k$ 为后续步骤的基础，单位 m^3/s。')}
+                  {renderDescriptionWithMath(
+                    '步骤1 须完整填写四项：$W$（kg/h）、$C_W$（重量浓度，如 $0.42$）、$\\rho_g$、$\\rho_s$（液相密度；清水常用 $1000\\ \\mathrm{kg/m^3}$，仍须在本栏填写）。式中变量单位与 SI 相容，求得浆体体积流量 $Q_K$（$\\mathrm{m^3/h}$），供步骤2、3 使用。'
+                  )}
                 </p>
                 <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <BlockMath math="Q_k = K \cdot W \cdot \left(\frac{1}{\rho_g}+\frac{G}{W}\right)" />
+                  <BlockMath math={'Q_K = W \\left( \\frac{1}{\\rho_g} + \\frac{1-C_W}{C_W\\,\\rho_s} \\right)'} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {formula.parameters.filter((p) => ['K', 'G', 'W', 'rho_g'].includes(p.name)).map((param) => (
+                  {formula.parameters.filter((p) => ['W', 'C_w', 'rho_g', 'rho_s'].includes(p.name)).map((param) => (
                     <div key={param.name}>
                       <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                         {renderDescriptionWithMath(
-                          param.name === 'K'
-                            ? 'K：波动系数，单位为 无量纲'
-                            : param.name === 'W'
-                            ? 'W：干尾矿重量，单位为 t/h'
-                            : param.name === 'G'
-                            ? 'G：矿浆中水重，单位为 t/h'
-                            : '$\\rho_g$：固体密度，单位为 t/m³'
+                          param.name === 'W'
+                            ? 'W：干固体质量流量，单位为 kg/h'
+                            : param.name === 'C_w'
+                              ? '$C_W$：浆体重量浓度（固相质量分数），0～1 小数且不取端点'
+                              : param.name === 'rho_g'
+                                ? '$\\rho_g$：固体密度，单位为 kg/m³'
+                                : '$\\rho_s$：液相密度，单位为 kg/m³（清水常用 1000，须填写）'
                         )}
                       </label>
                       <div className="flex items-center space-x-2">
@@ -11609,13 +14189,19 @@ export default function MainContent({
                           onChange={(e) => handleParameterChange(param.name, e.target.value)}
                           onBlur={() => handleParameterBlur(param.name)}
                           className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-                          placeholder={commonParamPlaceholder(formula?.parameters, param.name)}
+                          placeholder={
+                            param.name === 'C_w'
+                              ? '重量浓度，如 0.42'
+                              : param.name === 'rho_s'
+                                ? '液相密度，清水如 1000'
+                                : commonParamPlaceholder(formula?.parameters, param.name)
+                          }
                         />
-                        {param.name !== 'K' && (
-                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {param.name === 'rho_g' ? 't/m³' : 't/h'}
-                          </span>
-                        )}
+                        {param.name === 'rho_g' || param.name === 'rho_s' ? (
+                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>kg/m³</span>
+                        ) : param.name === 'W' ? (
+                          <span className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>kg/h</span>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -11631,9 +14217,9 @@ export default function MainContent({
                   </button>
                 </div>
                 {renderPrimaryResultCallout({
-                  nameZh: '矿浆流量',
-                  symbolMath: 'Q_k',
-                  unitZh: 'm³/s（立方米每秒）',
+                  nameZh: '浆体体积流量',
+                  symbolMath: 'Q_K',
+                  unitZh: 'm³/h（立方米每小时）',
                   value: (
                     <span className={`text-lg font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                       {result?.success && result.result?.intermediate?.step_A_Qk != null
@@ -11649,7 +14235,7 @@ export default function MainContent({
               <div className={`rounded-xl border-2 p-5 mb-5 ${darkMode ? 'bg-gray-600 border-gray-500' : 'bg-white border-gray-300'}`}>
                 <div className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>2. 计算临界管径</div>
                 <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {renderDescriptionWithMath('需先完成步骤1得到矿浆流量 $Q_k$。输入尾矿加权平均粒径 $d_p$（mm）和固体物料相对密度修正系数 $\\beta$，根据 $d_p$ 取值范围自动选用对应公式，由 $Q_k$ 反解得到临界管径 $D_L$（mm）。')}
+                  {renderDescriptionWithMath('需先完成步骤1得到浆体体积流量 $Q_K$（$\\mathrm{m^3/h}$）。输入尾矿加权平均粒径 $d_p$（mm）和固体物料相对密度修正系数 $\\beta$，根据 $d_p$ 取值范围自动选用对应公式，由 $Q_K$ 反解得到临界管径 $D_L$（mm）。')}
                 </p>
                 {(() => {
                   const dpRaw = parameters['dp'] ?? rawInputs['dp']
@@ -11658,8 +14244,8 @@ export default function MainContent({
                     return (
                       <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{renderDescriptionWithMath('当 $d_p\\le0.07$ mm 时使用：')}</span>
-                        <BlockMath math="Q_k = 0.157\beta \cdot D_L \cdot (1 + 3.434 \cdot \sqrt[4]{C_d \cdot D_L^{0.15}})" />
-                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{renderDescriptionWithMath('由 $Q_k$ 反解 $D_L$（$C_d=W/G\\times100$ 由步骤1自动得到）')}</div>
+                        <BlockMath math="Q_K = 0.157\beta \cdot D_L \cdot (1 + 3.434 \cdot \sqrt[4]{C_d \cdot D_L^{0.15}})" />
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{renderDescriptionWithMath('由 $Q_K$ 反解 $D_L$（$C_d=\\dfrac{C_W}{1-C_W}\\times100$ 由步骤1自动得到）')}</div>
                       </div>
                     )
                   }
@@ -11667,8 +14253,8 @@ export default function MainContent({
                     return (
                       <div className={`mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{renderDescriptionWithMath('当 $0.07<d_p\\le0.15$ mm 时使用：')}</span>
-                        <BlockMath math="Q_k = 0.2\beta \cdot D_L \cdot (1 + 2.48 \cdot \sqrt[3]{C_d \cdot \sqrt[4]{D_L}})" />
-                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{renderDescriptionWithMath('由 $Q_k$ 反解 $D_L$（$C_d=W/G\\times100$ 由步骤1自动得到）')}</div>
+                        <BlockMath math="Q_K = 0.2\beta \cdot D_L \cdot (1 + 2.48 \cdot \sqrt[3]{C_d \cdot \sqrt[4]{D_L}})" />
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{renderDescriptionWithMath('由 $Q_K$ 反解 $D_L$（$C_d=\\dfrac{C_W}{1-C_W}\\times100$ 由步骤1自动得到）')}</div>
                       </div>
                     )
                   }
@@ -11748,7 +14334,7 @@ export default function MainContent({
               <div className="rounded-xl border-2 p-5 mb-5 bg-white border-gray-300">
                 <div className="text-lg font-semibold mb-2 text-gray-800">3. 计算临界流速</div>
                 <p className="text-sm mb-3 text-gray-600">
-                  {renderDescriptionWithMath('需先完成步骤1、2。由步骤1得到的 $C_d$（重量砂水比 $=W/G\\times100$）、步骤2得到的 $D_L$（临界管径 mm）及 $\\beta$，计算临界流速 $V_L$（m/s）。')}
+                  {renderDescriptionWithMath('需先完成步骤1、2。由步骤1得到的 $C_d$（$=\\dfrac{C_W}{1-C_W}\\times100$）、步骤2得到的 $D_L$（临界管径 mm）及 $\\beta$，计算临界流速 $V_L$（m/s）。')}
                 </p>
                 <div className="mb-3 text-gray-700">
                   <BlockMath math="V_L = 0.255\beta(1+2.48\sqrt[3]{C_d}\sqrt[4]{D_L})" />
@@ -11773,7 +14359,7 @@ export default function MainContent({
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
-                      {renderDescriptionWithMath('$W$：干尾矿重量，单位为 t/h')}
+                      {renderDescriptionWithMath('$W$：干固体质量流量，单位为 kg/h')}
                     </label>
                     <div className="flex items-center space-x-2">
                       <input
@@ -11784,27 +14370,44 @@ export default function MainContent({
                         onChange={(e) => handleParameterChange('W', e.target.value)}
                         onBlur={() => handleParameterBlur('W')}
                         className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
-                        placeholder="干尾矿重量，如60"
+                        placeholder="干固体质量流量 kg/h，如 42000"
                       />
-                      <span className="text-sm shrink-0 text-gray-500">t/h</span>
+                      <span className="text-sm shrink-0 text-gray-500">kg/h</span>
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
-                      {renderDescriptionWithMath('$G$：矿浆中水重，单位为 t/h')}
+                      {renderDescriptionWithMath('$C_W$：浆体重量浓度（与步骤1一致）')}
                     </label>
                     <div className="flex items-center space-x-2">
                       <input
                         type="text"
                         inputMode="decimal"
                         autoComplete="off"
-                        value={rawInputs['G'] ?? (parameters['G'] != null && !isNaN(parameters['G']!) ? String(parameters['G']) : '')}
-                        onChange={(e) => handleParameterChange('G', e.target.value)}
-                        onBlur={() => handleParameterBlur('G')}
+                        value={rawInputs['C_w'] ?? (parameters['C_w'] != null && !isNaN(parameters['C_w']!) ? String(parameters['C_w']) : '')}
+                        onChange={(e) => handleParameterChange('C_w', e.target.value)}
+                        onBlur={() => handleParameterBlur('C_w')}
                         className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
-                        placeholder="矿浆中水重，如400"
+                        placeholder="如 0.42"
                       />
-                      <span className="text-sm shrink-0 text-gray-500">t/h</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">
+                      {renderDescriptionWithMath('$\\rho_s$：液相密度（与步骤1一致），单位为 kg/m³')}
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={rawInputs['rho_s'] ?? (parameters['rho_s'] != null && !isNaN(parameters['rho_s']!) ? String(parameters['rho_s']) : '')}
+                        onChange={(e) => handleParameterChange('rho_s', e.target.value)}
+                        onBlur={() => handleParameterBlur('rho_s')}
+                        className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
+                        placeholder="清水如1000"
+                      />
+                      <span className="text-sm shrink-0 text-gray-500">kg/m³</span>
                     </div>
                   </div>
                   <div>
@@ -11842,7 +14445,7 @@ export default function MainContent({
                     const displayValue =
                       typeof value === 'number'
                         ? k === 'step_A_Qk'
-                          ? `${value} m³/s`
+                          ? `${value} m³/h`
                           : k === 'step_B_DL_mm'
                             ? `${value} mm`
                             : String(value)
@@ -11855,15 +14458,13 @@ export default function MainContent({
             </>
           ) : (
             <>
-              <div className={`mb-4 p-3 rounded-lg overflow-x-auto ${
-                darkMode ? 'bg-gray-600' : 'bg-gray-50'
-              }`}>
+              <FormulaFrame darkMode={darkMode}>
                 {isSlurryAccelFormula ? (
                   <BlockMath math="\left(Z_1 + \frac{P_1}{\rho_k g}\right) - \left(Z_2 + \frac{P_2}{\rho_k g}\right) > iL" />
                 ) : (
                   <BlockMath math={convertFormulaToLatex(formula.formula)} />
                 )}
-              </div>
+              </FormulaFrame>
               <p className={`text-sm leading-relaxed mb-4 ${
                 darkMode ? 'text-gray-300' : 'text-gray-600'
               }`}>
@@ -11875,17 +14476,16 @@ export default function MainContent({
           )}
 
           {/* Input Parameters - 非 B.C.克诺罗兹法、非浆体摩阻损失、非密度混合 时显示统一参数区 */}
-          {formula?.id !== 'kronodze_pressure' && formula?.id !== 'slurry_friction_loss' && formula?.id !== 'density_mixing' && formula?.id !== 'slurry_friction_workflow' && !isSlurryDissipationFormula && !isClearWaterFrictionLoss && !isTotalHeadFormula && !isPositiveDisplacementPumpFormula && !isCentrifugalPumpTotalHead && !isSlurryDissipationOrifice && (
-          <div className={`border-t pt-4 ${
-            darkMode ? 'border-gray-600' : 'border-gray-200'
-          }`}>
-            <h3 className={`text-base font-semibold mb-3 ${
-              darkMode ? 'text-gray-100' : 'text-gray-900'
-            }`}>
-              参数输入
-            </h3>
+          {formula?.id !== 'kronodze_pressure' && formula?.id !== 'slurry_friction_loss' && formula?.id !== 'density_mixing' && formula?.id !== 'slurry_friction_workflow' && !isSlurryDissipationFormula && !isClearWaterFrictionLoss && !isTotalHeadFormula && !isPositiveDisplacementPumpFormula && !isCentrifugalPumpTotalHead && !isSlurryDissipationOrifice && !isPseudoHomogeneousFlowJudgment && (
+          <div className="mt-4">
+            <ParameterFrame darkMode={darkMode} title="参数输入">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {formula.parameters.map((param) => {
+              {(formula.id === 'fei_xiangjun'
+                ? formula.parameters.filter(
+                    (p) => !['eta_1', 'epsilon', 'fei_iterate_lambda'].includes(p.name)
+                  )
+                : formula.parameters
+              ).map((param) => {
                 const displayValue = (() => {
                   const raw = rawInputs[param.name]
                   if (raw !== undefined) return raw
@@ -11901,22 +14501,24 @@ export default function MainContent({
                     )
                   }
                   if (param.name === 'Cv') {
-                    return cvParameterPlaceholder()
+                    return formula?.id === 'liu_dezhong'
+                      ? '点击输入框展开「体积浓度——辅助计算」'
+                      : cvParameterPlaceholder()
                   }
                   if (formula?.id === 'liu_dezhong' && param.name === 'omega') {
                     return param.default !== undefined
-                      ? `${param.default}（点击展开似均质中加权平均沉速辅助计算）`
-                      : '点击输入框展开「似均质中加权平均沉速」辅助计算'
+                      ? `${param.default}（展开似均质 ω 辅助）`
+                      : '点击展开「似均质中加权平均沉速」辅助'
                   }
                   if (formula?.id === 'liu_dezhong' && param.name === 'omega_s') {
                     return param.default !== undefined
-                      ? `${param.default}（点击展开水中加权平均沉速辅助计算）`
-                      : '点击输入框展开「水中加权平均沉速（斯托克斯）」辅助计算'
+                      ? `${param.default}（展开水中 ω_s 斯托克斯辅助）`
+                      : '点击展开「水中加权平均沉速（斯托克斯）」辅助'
                   }
                   if (formula?.id === 'fei_xiangjun' && param.name === 'lambda_coef') {
                     return language === 'en'
                       ? 'Click the input to expand the「Darcy λ assist」'
-                      : '点击输入框展开「达西摩阻系数辅助计算」'
+                      : '点击输入框展开「达西摩阻系数——辅助计算」'
                   }
                   if (isApiDecimalUnit(param.unit)) {
                     return decimalParameterPlaceholder(
@@ -11955,18 +14557,16 @@ export default function MainContent({
                         onInputChange={(v) => handleParameterChange('Cv', v)}
                         onInputBlur={() => handleParameterBlur('Cv')}
                         placeholder={ph}
-                        unit={
-                          shouldShowParameterUnitSuffix(param.unit) ? (
-                            <span
-                              className={`self-center text-sm shrink-0 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}
-                            >
-                              {param.unit}
-                            </span>
-                          ) : null
+                        unitText={
+                          shouldShowParameterUnitSuffix(param.unit) ? String(param.unit) : null
                         }
                         onApplyCvFromRatio={(s) => handleParameterChange('Cv', s)}
+                        assistKind={formula?.id === 'liu_dezhong' ? 'slurry_mass_fraction' : 'solid_volume_ratio'}
+                        rhoGKgM3FromForm={
+                          formula?.id === 'liu_dezhong' && parameters.rho_g != null && !isNaN(parameters.rho_g)
+                            ? parameters.rho_g
+                            : undefined
+                        }
                       />
                     ) : formula?.id === 'liu_dezhong' && param.name === 'omega' ? (
                       <LiuDezhongOmegaBinghamField
@@ -11975,16 +14575,8 @@ export default function MainContent({
                         onInputChange={(v) => handleParameterChange('omega', v)}
                         onInputBlur={() => handleParameterBlur('omega')}
                         placeholder={ph}
-                        unit={
-                          shouldShowParameterUnitSuffix(param.unit) ? (
-                            <span
-                              className={`self-center text-sm shrink-0 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}
-                            >
-                              {param.unit}
-                            </span>
-                          ) : null
+                        unitText={
+                          shouldShowParameterUnitSuffix(param.unit) ? String(param.unit) : null
                         }
                         parameters={parameters}
                         onApplyOmega={(s, meta) => {
@@ -11992,15 +14584,18 @@ export default function MainContent({
                           if (meta?.eta != null && Number.isFinite(meta.eta)) liuBinghamEtaForAutoRef.current = meta.eta
                           const n = parseFloat(normalizeDecimalInput(String(s).trim()))
                           if (!Number.isFinite(n)) return
-                          const rounded = Math.round(n * 1e6) / 1e6
-                          updateRawInputs((prev) => ({ ...prev, omega: String(rounded) }))
+                          const rounded = roundLiuDezhongSlurryVelocity(n)
+                          updateRawInputs((prev) => ({
+                            ...prev,
+                            omega: formatLiuSlurryVelocityRawInput(rounded),
+                          }))
                           updateParameters((prev) => ({ ...prev, omega: rounded }))
                         }}
-                        onDlComputed={(dL) => {
+                        onDiComputed={(dIM) => {
                           if (!formula) return
-                          setLiuOmegaDLByFormula((prev) => ({
+                          setLiuOmegaDiMByFormula((prev) => ({
                             ...prev,
-                            [formula.id]: dL ?? null,
+                            [formula.id]: dIM ?? null,
                           }))
                         }}
                       />
@@ -12011,28 +14606,23 @@ export default function MainContent({
                         onInputChange={(v) => handleParameterChange('omega_s', v)}
                         onInputBlur={() => handleParameterBlur('omega_s')}
                         placeholder={ph}
-                        unit={
-                          shouldShowParameterUnitSuffix(param.unit) ? (
-                            <span
-                              className={`self-center text-sm shrink-0 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}
-                            >
-                              {param.unit}
-                            </span>
-                          ) : null
+                        unitText={
+                          shouldShowParameterUnitSuffix(param.unit) ? String(param.unit) : null
                         }
                         parameters={parameters}
-                        dLFromOmega={liuOmegaDL}
+                        diMFromBingham={liuOmegaDiM}
                         onApplyOmegaS={(s, meta) => {
                           liuOmegaSManualRef.current = false
-                          if (meta?.dMm != null && Number.isFinite(meta.dMm) && meta.dMm > 0) {
-                            liuStokesDForAutoRef.current = meta.dMm
+                          if (meta?.dM != null && Number.isFinite(meta.dM) && meta.dM > 0) {
+                            liuStokesDiMForAutoRef.current = meta.dM
                           }
                           const n = parseFloat(normalizeDecimalInput(String(s).trim()))
                           if (!Number.isFinite(n)) return
-                          const rounded = Math.round(n * 1e6) / 1e6
-                          updateRawInputs((prev) => ({ ...prev, omega_s: String(rounded) }))
+                          const rounded = roundLiuDezhongSlurryVelocity(n)
+                          updateRawInputs((prev) => ({
+                            ...prev,
+                            omega_s: formatLiuSlurryVelocityRawInput(rounded),
+                          }))
                           updateParameters((prev) => ({ ...prev, omega_s: rounded }))
                         }}
                       />
@@ -12044,61 +14634,42 @@ export default function MainContent({
                         onInputChange={(v) => handleParameterChange('lambda_coef', v)}
                         onInputBlur={() => handleParameterBlur('lambda_coef')}
                         placeholder={ph}
-                        assistPreview={feiLambdaAssistPreview}
-                        unit={
-                          shouldShowParameterUnitSuffix(param.unit) ? (
-                            <span
-                              className={`self-center text-sm shrink-0 ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
-                              }`}
-                            >
-                              {param.unit}
-                            </span>
-                          ) : null
+                        computeAssistPreview={computeFeiAssistPreviewNow}
+                        unitText={
+                          shouldShowParameterUnitSuffix(param.unit) ? String(param.unit) : null
                         }
-                        feiLambdaAuxV={feiLambdaAuxV}
-                        setFeiLambdaAuxV={setFeiLambdaAuxV}
                         feiLambdaAuxEta1={feiLambdaAuxEta1}
                         setFeiLambdaAuxEta1={setFeiLambdaAuxEta1}
                         feiLambdaAuxEpsilonPreset={feiLambdaAuxEpsilonPreset}
                         setFeiLambdaAuxEpsilonPreset={setFeiLambdaAuxEpsilonPreset}
                         feiLambdaAuxEpsilonCustom={feiLambdaAuxEpsilonCustom}
                         setFeiLambdaAuxEpsilonCustom={setFeiLambdaAuxEpsilonCustom}
-                        onApplyLambda={applyFeiLambdaFromAssist}
+                        onApplyLambda={(p) => {
+                          if (p.lambda != null) writeFeiLambdaCoefFromPreview({ lambda: p.lambda })
+                        }}
                         renderDescriptionWithMath={renderDescriptionWithMath}
                       />
                     ) : formula?.id === 'slurry_accel_energy' && param.name === 'L' ? (
                       <div className="relative">
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={displayValue}
-                            onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                            onFocus={() => {
-                              if (slurryAccelAutoL != null) setSlurryAccelLSuggestOpen(true)
-                            }}
-                            onBlur={() => {
-                              handleParameterBlur(param.name)
-                              window.setTimeout(() => setSlurryAccelLSuggestOpen(false), 200)
-                            }}
-                            className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                              darkMode
-                                ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400'
-                                : 'bg-white border-gray-300 text-gray-900'
-                            }`}
-                            placeholder={ph}
-                          />
-                          {shouldShowParameterUnitSuffix(param.unit) && (
-                            <span
-                              className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                            >
-                              {param.unit}
-                            </span>
-                          )}
-                        </div>
+                        <InputWithTrailingUnit
+                          darkMode={darkMode}
+                          value={displayValue}
+                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
+                          onFocus={() => {
+                            if (slurryAccelAutoL != null) setSlurryAccelLSuggestOpen(true)
+                          }}
+                          onBlur={() => {
+                            handleParameterBlur(param.name)
+                            window.setTimeout(() => setSlurryAccelLSuggestOpen(false), 200)
+                          }}
+                          placeholder={ph}
+                          inputMode="decimal"
+                          autoComplete="off"
+                          spellCheck={false}
+                          unit={
+                            shouldShowParameterUnitSuffix(param.unit) ? param.unit ?? null : null
+                          }
+                        />
                         {slurryAccelLSuggestOpen && slurryAccelAutoL != null && (
                           <div
                             role="listbox"
@@ -12142,35 +14713,25 @@ export default function MainContent({
                         )}
                       </div>
                     ) : (
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          spellCheck={false}
-                          value={displayValue}
-                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          onBlur={() => handleParameterBlur(param.name)}
-                          className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            darkMode
-                              ? 'bg-gray-600 border-gray-500 text-gray-100 placeholder-gray-400'
-                              : 'bg-white border-gray-300 text-gray-900'
-                          }`}
-                          placeholder={ph}
-                        />
-                        {shouldShowParameterUnitSuffix(param.unit) && (
-                          <span
-                            className={`text-sm shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                          >
-                            {param.unit}
-                          </span>
-                        )}
-                      </div>
+                      <InputWithTrailingUnit
+                        darkMode={darkMode}
+                        value={displayValue}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => handleParameterChange(param.name, e.target.value)}
+                        onBlur={() => handleParameterBlur(param.name)}
+                        placeholder={ph}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        spellCheck={false}
+                        unit={
+                          shouldShowParameterUnitSuffix(param.unit) ? param.unit ?? null : null
+                        }
+                      />
                     )}
                   </div>
                 )
               })}
             </div>
+            </ParameterFrame>
           </div>
           )}
         </div>
@@ -12180,6 +14741,7 @@ export default function MainContent({
           formula?.id !== 'slurry_friction_loss' &&
           formula?.id !== 'density_mixing' &&
           formula?.id !== 'slurry_friction_workflow' &&
+          formula?.id !== 'pseudo_homogeneous_flow_judgment' &&
           !isSlurryDissipationFormula &&
           !isClearWaterFrictionLoss &&
           !isTotalHeadFormula &&
@@ -12812,7 +15374,9 @@ export default function MainContent({
               !isSlurryAccelFormula &&
               !isSlurryDissipationFormula &&
               renderIntermediateResultsBlock(
-                Object.entries(result.result.intermediate),
+                formula?.id === 'fei_xiangjun'
+                  ? sortFeiXiangjunIntermediateEntries(Object.entries(result.result.intermediate))
+                  : Object.entries(result.result.intermediate),
                 formula?.id
               )}
 

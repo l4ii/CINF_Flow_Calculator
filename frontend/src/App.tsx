@@ -13,8 +13,27 @@ function initialLicenseGate(): 'unknown' | 'ok' | 'blocked' {
   return (window as { electronAPI?: { license?: unknown } }).electronAPI?.license ? 'unknown' : 'ok'
 }
 
+/** 与侧边栏/大标题一致的 canonical 中文名（避免后端或缓存仍为旧 name） */
+const FORMULA_DISPLAY_NAME_ZH: Partial<Record<string, string>> = {
+  pseudo_homogeneous_flow_judgment: '浆体管道流态判断公式',
+}
+
+function normalizeFormulaDisplayNames(data: FlowState): FlowState {
+  const out: FlowState = { ...data }
+  ;(Object.keys(out) as (keyof FlowState)[]).forEach((key) => {
+    const list = out[key]
+    if (!Array.isArray(list)) return
+    out[key] = list.map((f) => {
+      const zh = FORMULA_DISPLAY_NAME_ZH[f.id]
+      return zh ? { ...f, name: zh } : f
+    })
+  })
+  return out
+}
+
 function App() {
   const [formulas, setFormulas] = useState<FlowState>({
+    浆体管道流态判断公式: [],
     临界流速计算: [],
     清水摩阻损失: [],
     浆体摩阻损失: [],
@@ -184,6 +203,8 @@ function App() {
                   ]
                 }]
               })()
+          data.浆体管道流态判断公式 =
+            raw['浆体管道流态判断公式'] ?? raw['浆体管道流态计算'] ?? raw['流态判别计算'] ?? []
           data.临界流速计算 = raw['临界流速计算'] ?? []
           data.清水摩阻损失 = raw['清水摩阻损失'] ?? []
           data.浆体摩阻损失 = raw['浆体摩阻损失'] ?? []
@@ -206,6 +227,8 @@ function App() {
           data.浆体加速流 = accelFormulas
           data.浆体消能 = energyFormulas
         } else if (raw['临界流速计算'] || raw['摩阻损失'] || raw['沿程摩阻损失'] || raw['密度混合公式']) {
+          data.浆体管道流态判断公式 =
+            raw['浆体管道流态判断公式'] ?? raw['浆体管道流态计算'] ?? raw['流态判别计算'] ?? []
           data.临界流速计算 = raw['临界流速计算'] ?? []
           const legacyM = [...(raw['摩阻损失'] || raw['沿程摩阻损失'] || []), ...(raw['密度混合公式'] || [])]
           data.清水摩阻损失 = legacyM.filter((f: any) => f?.id === 'clear_water_friction_loss')
@@ -216,6 +239,8 @@ function App() {
           data.浆体加速流 = []
           data.浆体消能 = []
         } else if (raw['似均质流态'] || raw['非均质流态']) {
+          data.浆体管道流态判断公式 =
+            raw['浆体管道流态判断公式'] ?? raw['浆体管道流态计算'] ?? raw['流态判别计算'] ?? []
           data.临界流速计算 = [...(raw['似均质流态'] || []), ...(raw['非均质流态'] || [])]
           data.清水摩阻损失 = []
           data.浆体摩阻损失 = []
@@ -226,7 +251,7 @@ function App() {
           throw new Error('后端返回的数据格式不正确')
         }
         // 仅保存公式列表，不自动选择首个公式
-        setFormulas(data)
+        setFormulas(normalizeFormulaDisplayNames(data))
         setLoadingHint(null)
         setLoading(false)
         return

@@ -33,13 +33,14 @@ export default function Sidebar({
   currentView,
   aboutDepartment
 }: SidebarProps) {
-  const groupOrder: (keyof FlowState)[] = ['临界流速计算']
+  const groupOrder: (keyof FlowState)[] = ['浆体管道流态判断公式', '临界流速计算']
 
   const translations = useMemo(
     () => ({
       zh: {
         appTitle: APP_TITLE_SIDEBAR_ZH,
         appSubtitle: APP_TAGLINE_SIDEBAR_ZH,
+        flowRegimeDiscrimination: '浆体管道流态判断公式',
         criticalVelocity: '临界流速计算',
         frictionLossParent: '摩阻损失计算',
         pressureHead: '压力与扬程计算',
@@ -63,6 +64,7 @@ export default function Sidebar({
       en: {
         appTitle: APP_TITLE_SIDEBAR_EN,
         appSubtitle: APP_TAGLINE_SIDEBAR_EN,
+        flowRegimeDiscrimination: 'Slurry pipeline regime judgment formulas',
         criticalVelocity: 'Critical Velocity',
         frictionLossParent: 'Friction Loss',
         pressureHead: 'Pressure & Head',
@@ -92,6 +94,7 @@ export default function Sidebar({
     wasp: 'E.J. Wasp Formula',
     fei_xiangjun: 'Fei Xiangjun Formula',
     kronodze_pressure: 'B.C. Kronodze Method',
+    pseudo_homogeneous_flow_judgment: 'Slurry pipeline regime judgment formulas',
     friction_loss: 'Friction Loss',
     density_mixing: 'Density Mixing',
     slurry_friction_loss: 'Slurry Friction Loss',
@@ -140,12 +143,19 @@ export default function Sidebar({
 
   const hasAnyFriction = clearFrictionList.length > 0 || slurryFrictionList.length > 0
   const hasAnyFormula =
+    (formulas['浆体管道流态判断公式']?.length ?? 0) > 0 ||
     (formulas['临界流速计算']?.length ?? 0) > 0 ||
     hasAnyFriction ||
     pressureHeadList.length > 0 ||
     !!slurryAccelFormula ||
     dissipationReducer != null ||
     dissipationOrifice != null
+
+  const groupSectionTitle = (key: keyof FlowState) => {
+    if (key === '浆体管道流态判断公式') return t.flowRegimeDiscrimination
+    if (key === '临界流速计算') return t.criticalVelocity
+    return String(key)
+  }
 
   return (
     <div
@@ -180,6 +190,37 @@ export default function Sidebar({
         {groupOrder.map((groupKey) => {
           const list = formulas[groupKey] || []
           if (list.length === 0) return null
+
+          if (groupKey === '浆体管道流态判断公式') {
+            const sf = list[0]
+            if (!sf) return null
+            const active = selectedFormula?.id === sf.id
+            return (
+              <div key={String(groupKey)} className="mb-4">
+                <h2
+                  className={`text-base font-semibold mb-2 uppercase tracking-wide ${
+                    darkMode ? 'text-gray-300' : 'text-gray-700'
+                  }`}
+                >
+                  {groupSectionTitle(groupKey)}
+                </h2>
+                <div className="space-y-1 pl-2">
+                  <button
+                    type="button"
+                    onClick={() => onFormulaSelect(sf)}
+                    className={btnCls(active)}
+                  >
+                    {language === 'en'
+                      ? formulaNameEn[sf.id] ?? sf.name
+                      : sf.id === 'pseudo_homogeneous_flow_judgment'
+                        ? '浆体管道流态判断公式'
+                        : sf.name}
+                  </button>
+                </div>
+              </div>
+            )
+          }
+
           return (
             <div key={String(groupKey)} className="mb-4">
               <h2
@@ -187,7 +228,7 @@ export default function Sidebar({
                   darkMode ? 'text-gray-300' : 'text-gray-700'
                 }`}
               >
-                {t.criticalVelocity}
+                {groupSectionTitle(groupKey)}
               </h2>
               <div className="space-y-1 pl-2">
                 {list.map((formula) => (
