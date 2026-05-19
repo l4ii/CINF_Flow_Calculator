@@ -5,6 +5,7 @@
 import os
 import sys
 import glob
+import shutil
 
 # 当前 Python 的所有 site-packages 目录（可能有多个）
 def get_site_packages_dirs():
@@ -68,6 +69,28 @@ def local_ai_pack_enabled() -> bool:
     raw = os.environ.get("CINF_PACK_LOCAL_AI", "1").strip().lower()
     return raw not in ("0", "false", "off", "no")
 
+
+def remove_path(path):
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    elif os.path.exists(path):
+        os.remove(path)
+
+
+def clean_previous_pyinstaller_outputs(current_dir):
+    dist_dir = os.path.join(current_dir, "dist")
+    build_dir = os.path.join(current_dir, "build")
+    stale_paths = [
+        os.path.join(build_dir, "backend"),
+        os.path.join(dist_dir, "backend.exe"),
+        os.path.join(dist_dir, "backend"),
+    ]
+    for p in stale_paths:
+        if os.path.exists(p):
+            remove_path(p)
+            print(f"Removed stale PyInstaller output: {p}")
+
+
 def main():
     # 若曾误把 Anaconda lib 下的 pathlib.py 改名为 pathlib.py.backup，先提示恢复
     anaconda_lib = r"C:\ProgramData\anaconda3\lib"
@@ -130,6 +153,7 @@ def main():
             sys.exit(1)
 
     onefile_mode = os.environ.get("CINF_PYINSTALLER_MODE", "onefile").strip().lower() != "onedir"
+    clean_previous_pyinstaller_outputs(current_dir)
 
     args = [
         'app.py',
