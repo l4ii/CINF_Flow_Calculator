@@ -6,6 +6,7 @@ const fs = require('fs')
 const os = require('os')
 const { autoUpdater } = require('electron-updater')
 const license = require('./license')
+const { getBackendExecutable } = require('./backend-runtime')
 
 /**
  * 打包后固定 userData 目录，避免 package name / productName 与 Electron 默认规则变化时，
@@ -327,27 +328,21 @@ function isWindows7KernelOrOlder() {
 
 // 查找打包的 Python 后端可执行文件或系统 Python
 function findBackendExecutable() {
+  const resourceRoot = getResourcePath()
+  const backendExe = getBackendExecutable(resourceRoot, fs.existsSync)
+
+  if (backendExe) {
+    console.log('找到打包的后端可执行文件:', backendExe)
+    return backendExe
+  }
+
   // 生产环境：优先策略随系统内核变化（见下方注释）
   if (!isDev) {
-    const bundledPython = getResourcePath('backend', 'python38', 'python.exe')
-    // 注意顺序：onedir（dist/backend/backend.exe）必须优先于 onefile（dist/backend.exe）。
-    // 若两种产物同时存在，否则会一直跑 onefile（Temp\_MEI*），与「已改为 onedir 打包」的预期不一致。
-    const possibleExePaths = [
-      getResourcePath('backend', 'dist', 'backend', 'backend.exe'),
-      getResourcePath('backend', 'dist', 'backend.exe'),
-      getResourcePath('backend', 'backend.exe'),
-    ]
+    const bundledPython = path.join(resourceRoot, 'backend', 'python38', 'python.exe')
 
     // 始终优先 PyInstaller 打包的 backend（含 Flask 与 llama_cpp）；安装包不再分发 .py 源码。
     // Win7：若系统无法运行该 exe，再回退内置 Python 3.8（仅当安装包仍带 app.py 时可用；现以 exe 为主）。
     const tryWin7Order = isWindows7KernelOrOlder()
-
-    for (const exePath of possibleExePaths) {
-      if (fs.existsSync(exePath)) {
-        console.log('找到打包的后端可执行文件:', exePath)
-        return exePath
-      }
-    }
 
     if (tryWin7Order && fs.existsSync(bundledPython)) {
       console.log('Win7/旧内核：未找到 backend.exe，尝试内置 Python 3.8（无 app.py 时无法启动，请重新打包并包含 dist/backend.exe）:', bundledPython)
