@@ -32,6 +32,7 @@ lerna-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea
+.worktrees/
 *.suo
 *.ntvs*
 *.njsproj
