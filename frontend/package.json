@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && npx electron ..\"",
+    "dev": "concurrently --kill-others-on-fail \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && npx electron ..\"",
     "build": "vite build",
     "dist:builder": "npx electron-builder --config ../electron-builder.yml"
   },

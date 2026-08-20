@@ -1,0 +1,4 @@
+const DEV_FRONTEND_PORT = 5173
+const DEV_FRONTEND_URL = `http://127.0.0.1:${DEV_FRONTEND_PORT}`
+
+module.exports = { DEV_FRONTEND_PORT, DEV_FRONTEND_URL }

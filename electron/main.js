@@ -7,6 +7,7 @@ const os = require('os')
 const { autoUpdater } = require('electron-updater')
 const license = require('./license')
 const { getBackendExecutable } = require('./backend-runtime')
+const { DEV_FRONTEND_URL } = require('./dev-frontend-runtime')
 
 /**
  * 打包后固定 userData 目录，避免 package name / productName 与 Electron 默认规则变化时，
@@ -726,7 +727,7 @@ function createWindow() {
 
   // 开发环境加载本地服务器，生产环境加载打包后的文件（不自动打开 DevTools）
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL(DEV_FRONTEND_URL)
     // 需要调试时可在控制台或菜单中手动打开 DevTools
   } else {
     // 生产环境：前端在 app.asar 内 frontend/dist（见 electron-builder.yml files 映射）
